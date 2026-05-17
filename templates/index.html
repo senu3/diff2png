@@ -431,7 +431,7 @@
       padding: 16px;
       display: grid;
       grid-template-columns: 1fr;
-      gap: 10px;
+      gap: 12px;
     }
 
     .source-modal-actions {
@@ -442,11 +442,65 @@
       gap: 8px;
     }
 
-    .source-grid {
+    .source-mode-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr auto;
+      grid-template-columns: 1fr;
       gap: 8px;
+    }
+
+    .source-mode-item {
+      display: flex;
       align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .source-mode-item:hover {
+      border-color: var(--accent-dim);
+    }
+
+    .source-mode-item input[type="radio"] {
+      margin: 0;
+      accent-color: var(--accent);
+    }
+
+    .source-controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .source-control {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+
+    .source-control-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .source-control.single {
+      grid-column: 1 / -1;
+    }
+
+    .source-controls.hidden {
+      display: none;
+    }
+
+    .source-commit-status {
+      font-size: 11px;
+      color: var(--text-dim);
+      min-height: 18px;
     }
 
     .source-hint {
@@ -917,16 +971,35 @@
       <button class="drawer-close" onclick="closeSourceModal()">✕</button>
     </div>
     <div class="source-modal-body">
-      <select id="diffSourceMode" onchange="onDiffSourceModeChange()">
-        <option value="worktree">作業ツリー (HEAD差分)</option>
-        <option value="commit">単一コミット</option>
-        <option value="range">コミット比較</option>
-      </select>
-      <div class="source-grid">
-        <select id="sourceBase" class="hidden" onchange="updateSourceSummary()"></select>
-        <select id="sourceTarget" class="hidden" onchange="updateSourceSummary()"></select>
-        <button class="btn btn-ghost hidden" id="reloadCommitsBtn" onclick="loadCommits(true)">更新</button>
+      <div class="source-mode-grid" id="diffSourceMode" onchange="onDiffSourceModeChange()">
+        <label class="source-mode-item">
+          <input type="radio" name="sourceMode" value="worktree" checked>
+          <span>作業ツリー (HEAD差分)</span>
+        </label>
+        <label class="source-mode-item">
+          <input type="radio" name="sourceMode" value="commit">
+          <span>単一コミット</span>
+        </label>
+        <label class="source-mode-item">
+          <input type="radio" name="sourceMode" value="range">
+          <span>コミット比較</span>
+        </label>
       </div>
+      <div class="source-controls hidden" id="sourceControls">
+        <div class="source-control single hidden" id="sourceTargetWrap">
+          <div class="source-control-label">対象コミット</div>
+          <select id="sourceTarget" onchange="updateSourceSummary()"></select>
+        </div>
+        <div class="source-control hidden" id="sourceBaseWrap">
+          <div class="source-control-label">比較元</div>
+          <select id="sourceBase" onchange="updateSourceSummary()"></select>
+        </div>
+        <div class="source-control hidden" id="sourceTargetRangeWrap">
+          <div class="source-control-label">比較先</div>
+          <select id="sourceTargetRange" onchange="syncRangeTarget()"></select>
+        </div>
+      </div>
+      <div class="source-commit-status" id="sourceCommitStatus"> </div>
       <div class="source-hint">単一コミット: 選択コミット 1 件の変更 / コミット比較: 比較元と比較先の差分</div>
     </div>
     <div class="source-modal-actions">
@@ -994,18 +1067,26 @@
       btn.textContent = path ? '解析' : '参照';
     }
 
+    function getSelectedSourceMode() {
+      return document.querySelector('input[name="sourceMode"]:checked')?.value || 'worktree';
+    }
+
     function getDiffSourceValues() {
+      const mode = getSelectedSourceMode();
       return {
-        sourceMode: document.getElementById('diffSourceMode').value,
-        baseRef: document.getElementById('sourceBase').value,
-        targetRef: document.getElementById('sourceTarget').value,
+        sourceMode: mode,
+        baseRef: mode === 'range' ? document.getElementById('sourceBase').value : '',
+        targetRef: mode === 'range'
+          ? document.getElementById('sourceTargetRange').value
+          : document.getElementById('sourceTarget').value,
       };
     }
 
     function updateSourceSummary() {
-      const mode = document.getElementById('diffSourceMode').value;
+      const mode = getSelectedSourceMode();
       const baseEl = document.getElementById('sourceBase');
       const targetEl = document.getElementById('sourceTarget');
+      const rangeTargetEl = document.getElementById('sourceTargetRange');
       const summaryEl = document.getElementById('sourceSummary');
 
       if (mode === 'worktree') {
@@ -1020,14 +1101,14 @@
       }
 
       const b = baseEl.selectedOptions[0]?.textContent || '未選択';
-      const t = targetEl.selectedOptions[0]?.textContent || '未選択';
+      const t = rangeTargetEl.selectedOptions[0]?.textContent || '未選択';
       summaryEl.textContent = `コミット比較: ${b} .. ${t}`;
     }
 
     async function openSourceModal() {
       document.getElementById('sourceModal').classList.add('open');
       document.getElementById('sourceOverlay').classList.add('open');
-      if (document.getElementById('diffSourceMode').value !== 'worktree') {
+      if (getSelectedSourceMode() !== 'worktree') {
         await loadCommits(false);
       }
       updateSourceSummary();
@@ -1044,18 +1125,34 @@
       await onAnalyzeButtonClick();
     }
 
-    function onDiffSourceModeChange() {
-      const mode = document.getElementById('diffSourceMode').value;
-      const baseEl = document.getElementById('sourceBase');
-      const targetEl = document.getElementById('sourceTarget');
-      const reloadBtn = document.getElementById('reloadCommitsBtn');
+    function syncRangeTarget() {
+      const rangeTarget = document.getElementById('sourceTargetRange').value;
+      if (rangeTarget) {
+        document.getElementById('sourceTarget').value = rangeTarget;
+      }
+      updateSourceSummary();
+    }
 
-      baseEl.classList.toggle('hidden', mode !== 'range');
-      targetEl.classList.toggle('hidden', mode === 'worktree');
-      reloadBtn.classList.toggle('hidden', mode === 'worktree');
+    function setSourceCommitStatus(text) {
+      document.getElementById('sourceCommitStatus').textContent = text || ' ';
+    }
+
+    function onDiffSourceModeChange() {
+      const mode = getSelectedSourceMode();
+      const controls = document.getElementById('sourceControls');
+      const baseWrap = document.getElementById('sourceBaseWrap');
+      const targetWrap = document.getElementById('sourceTargetWrap');
+      const targetRangeWrap = document.getElementById('sourceTargetRangeWrap');
+
+      controls.classList.toggle('hidden', mode === 'worktree');
+      baseWrap.classList.toggle('hidden', mode !== 'range');
+      targetRangeWrap.classList.toggle('hidden', mode !== 'range');
+      targetWrap.classList.toggle('hidden', mode === 'range' || mode === 'worktree');
 
       if (mode !== 'worktree') {
         loadCommits(false);
+      } else {
+        setSourceCommitStatus('作業ツリーの未コミット差分を解析します');
       }
       updateSourceSummary();
     }
@@ -1063,11 +1160,14 @@
     function renderCommitOptions(items) {
       const baseEl = document.getElementById('sourceBase');
       const targetEl = document.getElementById('sourceTarget');
+      const targetRangeEl = document.getElementById('sourceTargetRange');
       const prevBase = baseEl.value;
       const prevTarget = targetEl.value;
+      const prevRangeTarget = targetRangeEl.value;
 
       baseEl.innerHTML = '';
       targetEl.innerHTML = '';
+      targetRangeEl.innerHTML = '';
 
       items.forEach(c => {
         const label = `${c.short} ${c.subject}`;
@@ -1081,6 +1181,11 @@
         opTarget.value = c.hash;
         opTarget.textContent = label;
         targetEl.appendChild(opTarget);
+
+        const opTargetRange = document.createElement('option');
+        opTargetRange.value = c.hash;
+        opTargetRange.textContent = label;
+        targetRangeEl.appendChild(opTargetRange);
       });
 
       if (prevBase && items.some(c => c.hash === prevBase)) {
@@ -1089,25 +1194,33 @@
       if (prevTarget && items.some(c => c.hash === prevTarget)) {
         targetEl.value = prevTarget;
       }
+      if (prevRangeTarget && items.some(c => c.hash === prevRangeTarget)) {
+        targetRangeEl.value = prevRangeTarget;
+      }
 
       if (!targetEl.value && targetEl.options.length > 0) {
         targetEl.selectedIndex = 0;
+      }
+      if (!targetRangeEl.value && targetRangeEl.options.length > 0) {
+        targetRangeEl.selectedIndex = 0;
       }
       if (!baseEl.value && baseEl.options.length > 1) {
         baseEl.selectedIndex = 1;
       } else if (!baseEl.value && baseEl.options.length > 0) {
         baseEl.selectedIndex = 0;
       }
+      document.getElementById('sourceTarget').value = targetRangeEl.value || targetEl.value;
       updateSourceSummary();
     }
 
     async function loadCommits(showErrorToast = true) {
       const repoPath = document.getElementById('repoPath').value.trim();
-      if (!repoPath) return false;
+      if (!repoPath) {
+        setSourceCommitStatus('先にリポジトリパスを指定してください');
+        return false;
+      }
 
-      const btn = document.getElementById('reloadCommitsBtn');
-      const prevDisabled = btn.disabled;
-      btn.disabled = true;
+      setSourceCommitStatus('コミット一覧を取得中...');
       try {
         const res = await fetch('/api/commits', {
           method: 'POST',
@@ -1117,15 +1230,17 @@
         const data = await res.json();
         if (!res.ok) {
           if (showErrorToast) showToast(data.error || 'コミット取得に失敗しました', 'error');
+          setSourceCommitStatus('コミット取得に失敗しました');
           return false;
         }
-        renderCommitOptions(data.commits || []);
-        return (data.commits || []).length > 0;
+        const items = data.commits || [];
+        renderCommitOptions(items);
+        setSourceCommitStatus(`${items.length} 件のコミットを読み込みました`);
+        return items.length > 0;
       } catch (e) {
         if (showErrorToast) showToast('コミット取得に失敗しました: ' + e.message, 'error');
+        setSourceCommitStatus('コミット取得に失敗しました');
         return false;
-      } finally {
-        btn.disabled = prevDisabled;
       }
     }
 
@@ -1167,7 +1282,7 @@
         if (!selected) return;
       }
 
-      const mode = document.getElementById('diffSourceMode').value;
+      const mode = getSelectedSourceMode();
       if (mode !== 'worktree') {
         const hasCommits = await loadCommits(true);
         if (!hasCommits) {
@@ -1491,15 +1606,23 @@
         const res = await fetch('/api/config');
         const cfg = await res.json();
         document.getElementById('diffModeSwitch').value = cfg.diff_mode || 'file';
-        document.getElementById('diffSourceMode').value = 'worktree';
+        const defaultMode = document.querySelector('input[name="sourceMode"][value="worktree"]');
+        if (defaultMode) defaultMode.checked = true;
         onDiffSourceModeChange();
         setSlider('cfg-context', 'cfg-context-val', cfg.context_lines);
         setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);
         setSlider('cfg-width', 'cfg-width-val', cfg.html_width);
         document.getElementById('cfg-outdir').value = cfg.output_dir;
         updateAnalyzeButtonLabel();
+        updateSourceSummary();
       } catch (_) { }
     })();
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && document.getElementById('sourceModal').classList.contains('open')) {
+        closeSourceModal();
+      }
+    });
   </script>
 </body>
 

@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>diff shot</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Noto+Sans+JP:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #21253a;
+    --border: #2a2f45;
+    --accent: #5b8af0;
+    --accent-dim: #3d5fad;
+    --green: #3ecf6e;
+    --yellow: #f5c842;
+    --text: #c8cfe8;
+    --text-dim: #5a6080;
+    --danger: #e05c5c;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Noto Sans JP', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    height: 100vh;
+    display: grid;
+    grid-template-rows: 52px 1fr;
+    grid-template-columns: 340px 1fr;
+    overflow: hidden;
+  }
+
+  /* ---- Header ---- */
+  header {
+    grid-column: 1 / -1;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 16px;
+  }
+  header h1 {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.04em;
+  }
+  header .subtitle {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  header .spacer { flex: 1; }
+  header .status {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* ---- Sidebar ---- */
+  aside {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .repo-section {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .repo-section label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+  .repo-row {
+    display: flex;
+    gap: 8px;
+  }
+  input[type="text"] {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input[type="text"]:focus { border-color: var(--accent); }
+
+  /* ---- Buttons ---- */
+  .btn {
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 7px 14px;
+    transition: opacity 0.15s, transform 0.1s;
+    white-space: nowrap;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-success { background: var(--green); color: #0a1a10; }
+  .btn-danger  { background: var(--danger); color: #fff; }
+  .btn-ghost   { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* ---- Hunk list ---- */
+  .hunk-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .hunk-header span {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .select-all-row {
+    display: flex;
+    gap: 6px;
+  }
+
+  .hunk-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+  .hunk-list::-webkit-scrollbar { width: 4px; }
+  .hunk-list::-webkit-scrollbar-track { background: transparent; }
+  .hunk-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .hunk-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.1s, border-color 0.1s;
+    margin-bottom: 4px;
+  }
+  .hunk-item:hover { background: var(--surface2); }
+  .hunk-item.active {
+    background: var(--surface2);
+    border-color: var(--accent-dim);
+  }
+  .hunk-item input[type="checkbox"] {
+    accent-color: var(--accent);
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+  }
+  .hunk-info { flex: 1; min-width: 0; }
+  .hunk-file {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hunk-range {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .hunk-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--green);
+    background: rgba(62,207,110,0.12);
+    padding: 2px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .export-section {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .export-info {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .export-buttons {
+    display: flex;
+    gap: 8px;
+  }
+  .export-buttons .btn { flex: 1; font-size: 12px; padding: 8px; }
+
+  /* ---- Preview ---- */
+  main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  .preview-toolbar {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .preview-toolbar .preview-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .preview-toolbar .preview-file {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    flex: 1;
+  }
+  .preview-toolbar .nav-btns {
+    display: flex;
+    gap: 4px;
+  }
+  .nav-btns .btn {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  .preview-frame-wrap {
+    flex: 1;
+    overflow: auto;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+  }
+  .preview-frame-wrap::-webkit-scrollbar { width: 6px; height: 6px; }
+  .preview-frame-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  iframe {
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 4px 32px rgba(0,0,0,0.5);
+    background: #fff;
+    width: 100%;
+    max-width: 992px;
+    height: 600px;
+  }
+
+  /* ---- Empty / Loading states ---- */
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-dim);
+  }
+  .empty-icon { font-size: 40px; opacity: 0.3; }
+  .empty-label { font-size: 13px; }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 100;
+    max-width: 320px;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.success { border-color: var(--green); color: var(--green); }
+  .toast.error { border-color: var(--danger); color: var(--danger); }
+
+  .spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>diff shot</h1>
+  <span class="subtitle">git diff HEAD → PNG</span>
+  <span class="spacer"></span>
+  <span class="status" id="statusBar">待機中</span>
+</header>
+
+<aside>
+  <div class="repo-section">
+    <label>リポジトリパス</label>
+    <div class="repo-row">
+      <input type="text" id="repoPath" placeholder="/path/to/your/repo" />
+      <button class="btn btn-primary" id="analyzeBtn" onclick="analyze()">解析</button>
+    </div>
+  </div>
+
+  <div class="hunk-header">
+    <span>変更 hunk <span id="hunkCount"></span></span>
+    <div class="select-all-row">
+      <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="selectAll(true)">全選択</button>
+      <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="selectAll(false)">解除</button>
+    </div>
+  </div>
+
+  <div class="hunk-list" id="hunkList">
+    <div class="empty-state" style="height:200px">
+      <div class="empty-icon">📂</div>
+      <div class="empty-label">リポジトリを解析してください</div>
+    </div>
+  </div>
+
+  <div class="export-section">
+    <div class="export-info" id="exportInfo">選択: 0 件</div>
+    <div class="export-buttons">
+      <button class="btn btn-success" id="exportSelectedBtn" onclick="exportSelected()" disabled>選択を出力</button>
+      <button class="btn btn-primary" id="exportAllBtn" onclick="exportAll()" disabled>全て出力</button>
+    </div>
+  </div>
+</aside>
+
+<main>
+  <div class="preview-toolbar">
+    <span class="preview-label">Preview</span>
+    <span class="preview-file" id="previewFile">—</span>
+    <div class="nav-btns">
+      <button class="btn btn-ghost" id="prevBtn" onclick="navigate(-1)" disabled>◀</button>
+      <button class="btn btn-ghost" id="nextBtn" onclick="navigate(1)" disabled>▶</button>
+    </div>
+  </div>
+
+  <div class="preview-frame-wrap" id="previewWrap">
+    <div class="empty-state">
+      <div class="empty-icon">🔍</div>
+      <div class="empty-label">hunkを選択するとプレビューが表示されます</div>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let state = {
+  repoPath: '',
+  hunks: [],
+  selected: new Set(),
+  activeIndex: -1,
+};
+
+// ---- 解析 ----
+async function analyze() {
+  const repoPath = document.getElementById('repoPath').value.trim();
+  if (!repoPath) { showToast('リポジトリパスを入力してください', 'error'); return; }
+
+  setStatus('<span class="spinner"></span>解析中...');
+  document.getElementById('analyzeBtn').disabled = true;
+
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_path: repoPath }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error, 'error'); return; }
+
+    state.repoPath = repoPath;
+    state.hunks = data.hunks;
+    state.selected = new Set();
+    state.activeIndex = -1;
+
+    renderHunkList();
+    clearPreview();
+
+    if (data.hunks.length === 0) {
+      showToast(data.message || '差分がありません', '');
+      setStatus('差分なし');
+    } else {
+      showToast(`${data.hunks.length} 件のhunkを検出しました`, 'success');
+      setStatus(`${data.hunks.length} hunks`);
+      selectAll(true);
+      showPreview(0);
+    }
+  } catch (e) {
+    showToast('通信エラー: ' + e.message, 'error');
+  } finally {
+    document.getElementById('analyzeBtn').disabled = false;
+  }
+}
+
+// ---- hunk一覧描画 ----
+function renderHunkList() {
+  const list = document.getElementById('hunkList');
+  const count = state.hunks.length;
+  document.getElementById('hunkCount').textContent = count ? `(${count})` : '';
+
+  if (count === 0) {
+    list.innerHTML = '<div class="empty-state" style="height:200px"><div class="empty-icon">✅</div><div class="empty-label">差分がありません</div></div>';
+    updateExportButtons();
+    return;
+  }
+
+  list.innerHTML = state.hunks.map((h, i) => {
+    const shortPath = h.filepath.split('/').slice(-2).join('/');
+    const changed = h.changed_lines.length;
+    return `
+    <div class="hunk-item" id="hunk-item-${i}" onclick="onHunkClick(${i}, event)">
+      <input type="checkbox" id="chk-${i}" onclick="onCheck(${i}, event)" ${state.selected.has(i) ? 'checked' : ''}>
+      <div class="hunk-info">
+        <div class="hunk-file" title="${h.filepath}">${shortPath}</div>
+        <div class="hunk-range">L${h.start}–${h.end}</div>
+      </div>
+      <span class="hunk-badge">+${changed}</span>
+    </div>`;
+  }).join('');
+
+  updateExportButtons();
+}
+
+function onHunkClick(i, e) {
+  if (e.target.type === 'checkbox') return;
+  showPreview(i);
+}
+
+function onCheck(i, e) {
+  e.stopPropagation();
+  if (e.target.checked) state.selected.add(i);
+  else state.selected.delete(i);
+  updateExportButtons();
+}
+
+function selectAll(flag) {
+  state.hunks.forEach((_, i) => flag ? state.selected.add(i) : state.selected.delete(i));
+  state.hunks.forEach((_, i) => {
+    const chk = document.getElementById(`chk-${i}`);
+    if (chk) chk.checked = flag;
+  });
+  updateExportButtons();
+}
+
+function updateExportButtons() {
+  const n = state.selected.size;
+  document.getElementById('exportInfo').textContent = `選択: ${n} 件`;
+  document.getElementById('exportSelectedBtn').disabled = n === 0;
+  document.getElementById('exportAllBtn').disabled = state.hunks.length === 0;
+}
+
+// ---- プレビュー ----
+async function showPreview(index) {
+  if (index < 0 || index >= state.hunks.length) return;
+
+  state.activeIndex = index;
+
+  // アクティブ表示
+  document.querySelectorAll('.hunk-item').forEach(el => el.classList.remove('active'));
+  const activeEl = document.getElementById(`hunk-item-${index}`);
+  if (activeEl) { activeEl.classList.add('active'); activeEl.scrollIntoView({ block: 'nearest' }); }
+
+  const h = state.hunks[index];
+  document.getElementById('previewFile').textContent = `${h.filepath}  L${h.start}–${h.end}`;
+  document.getElementById('prevBtn').disabled = index === 0;
+  document.getElementById('nextBtn').disabled = index === state.hunks.length - 1;
+
+  const wrap = document.getElementById('previewWrap');
+  wrap.innerHTML = '<div class="empty-state"><span class="spinner"></span><div class="empty-label">読み込み中...</div></div>';
+
+  try {
+    const res = await fetch(`/api/preview/${index}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_path: state.repoPath, hunks: state.hunks }),
+    });
+    const html = await res.text();
+
+    const iframe = document.createElement('iframe');
+    wrap.innerHTML = '';
+    wrap.appendChild(iframe);
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(html);
+    iframe.contentDocument.close();
+
+    // iframeの高さをコンテンツに合わせる
+    iframe.onload = () => {
+      const h = iframe.contentDocument.body.scrollHeight;
+      iframe.style.height = Math.min(Math.max(h + 32, 200), 800) + 'px';
+    };
+  } catch (e) {
+    wrap.innerHTML = `<div class="empty-state"><div class="empty-label" style="color:var(--danger)">読み込みエラー</div></div>`;
+  }
+}
+
+function clearPreview() {
+  const wrap = document.getElementById('previewWrap');
+  wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-label">hunkを選択するとプレビューが表示されます</div></div>';
+  document.getElementById('previewFile').textContent = '—';
+  document.getElementById('prevBtn').disabled = true;
+  document.getElementById('nextBtn').disabled = true;
+}
+
+function navigate(dir) {
+  showPreview(state.activeIndex + dir);
+}
+
+// ---- エクスポート ----
+async function exportSelected() {
+  await doExport([...state.selected].sort((a, b) => a - b));
+}
+
+async function exportAll() {
+  await doExport(state.hunks.map((_, i) => i));
+}
+
+async function doExport(indices) {
+  if (indices.length === 0) return;
+
+  setStatus('<span class="spinner"></span>PNG出力中...');
+  document.getElementById('exportSelectedBtn').disabled = true;
+  document.getElementById('exportAllBtn').disabled = true;
+
+  try {
+    const res = await fetch('/api/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_path: state.repoPath, hunks: state.hunks, indices }),
+    });
+    const data = await res.json();
+    showToast(`✅ ${data.count} 枚出力しました → diff_screenshots/`, 'success');
+    setStatus(`出力完了: ${data.count} 枚`);
+  } catch (e) {
+    showToast('出力エラー: ' + e.message, 'error');
+    setStatus('エラー');
+  } finally {
+    updateExportButtons();
+  }
+}
+
+// ---- UI utils ----
+function setStatus(html) {
+  document.getElementById('statusBar').innerHTML = html;
+}
+
+let toastTimer;
+function showToast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + (type || '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// Enter キーで解析
+document.getElementById('repoPath').addEventListener('keydown', e => {
+  if (e.key === 'Enter') analyze();
+});
+</script>
+</body>
+</html>

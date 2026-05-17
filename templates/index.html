@@ -996,6 +996,41 @@
     }
 
     let currentDiffMode = 'file';
+    const UI_PREFS_KEY = 'diff2png.ui.v1';
+
+    function loadUiPrefs() {
+      try {
+        const raw = localStorage.getItem(UI_PREFS_KEY);
+        return raw ? JSON.parse(raw) : {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function saveUiPrefsFromPayload(payload) {
+      try {
+        localStorage.setItem(UI_PREFS_KEY, JSON.stringify(payload));
+      } catch (_) { }
+    }
+
+    function applyUiPrefsToControls(prefs) {
+      if (prefs.diff_mode === 'file' || prefs.diff_mode === 'patch') {
+        document.getElementById('sourceDiffMode').value = prefs.diff_mode;
+      }
+
+      if (Number.isFinite(Number(prefs.context_lines))) {
+        setSlider('cfg-context', 'cfg-context-val', Number(prefs.context_lines));
+      }
+      if (Number.isFinite(Number(prefs.merge_threshold))) {
+        setSlider('cfg-merge', 'cfg-merge-val', Number(prefs.merge_threshold));
+      }
+      if (Number.isFinite(Number(prefs.html_width))) {
+        setSlider('cfg-width', 'cfg-width-val', Number(prefs.html_width));
+      }
+      if (typeof prefs.output_dir === 'string' && prefs.output_dir.trim()) {
+        document.getElementById('cfg-outdir').value = prefs.output_dir;
+      }
+    }
 
     function getSelectedSourceMode() {
       return document.getElementById('diffSourceMode').value || 'worktree';
@@ -1013,6 +1048,16 @@
         targetRef: mode === 'range'
           ? document.getElementById('sourceTargetRange').value
           : document.getElementById('sourceTarget').value,
+      };
+    }
+
+    function buildConfigPayload() {
+      return {
+        diff_mode: getSelectedDiffMode(),
+        context_lines: parseInt(document.getElementById('cfg-context').value, 10),
+        merge_threshold: parseInt(document.getElementById('cfg-merge').value, 10),
+        html_width: parseInt(document.getElementById('cfg-width').value, 10),
+        output_dir: document.getElementById('cfg-outdir').value.trim(),
       };
     }
 
@@ -1042,6 +1087,7 @@
     }
 
     function onSourceDiffModeChange() {
+      saveUiPrefsFromPayload(buildConfigPayload());
       updateSourceSummary();
     }
 
@@ -1516,12 +1562,7 @@
     }
 
     async function applyConfig() {
-      const payload = {
-        context_lines: parseInt(document.getElementById('cfg-context').value, 10),
-        merge_threshold: parseInt(document.getElementById('cfg-merge').value, 10),
-        html_width: parseInt(document.getElementById('cfg-width').value, 10),
-        output_dir: document.getElementById('cfg-outdir').value.trim(),
-      };
+      const payload = buildConfigPayload();
       try {
         const res = await fetch('/api/config', {
           method: 'POST',
@@ -1530,6 +1571,8 @@
         });
         const data = await res.json();
         if (!res.ok) { showToast(data.error || '設定の適用に失敗しました', 'error'); return; }
+        currentDiffMode = payload.diff_mode;
+        saveUiPrefsFromPayload(payload);
         showToast('設定を適用しました', 'success');
         closeDrawer();
         if (document.getElementById('repoPath').value.trim()) {
@@ -1557,11 +1600,22 @@
         currentDiffMode = cfg.diff_mode || 'file';
         document.getElementById('sourceDiffMode').value = currentDiffMode;
         document.getElementById('diffSourceMode').value = 'worktree';
-        onDiffSourceModeChange();
         setSlider('cfg-context', 'cfg-context-val', cfg.context_lines);
         setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);
         setSlider('cfg-width', 'cfg-width-val', cfg.html_width);
         document.getElementById('cfg-outdir').value = cfg.output_dir;
+
+        const prefs = loadUiPrefs();
+        applyUiPrefsToControls(prefs);
+        await ensureDiffMode(getSelectedDiffMode());
+        const syncPayload = buildConfigPayload();
+        await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(syncPayload),
+        });
+
+        onDiffSourceModeChange();
         updateAnalyzeButtonLabel();
         updateSourceSummary();
       } catch (_) { }

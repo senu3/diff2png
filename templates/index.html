@@ -349,26 +349,110 @@
       gap: 8px;
     }
 
-    .source-row {
+    .source-summary {
       margin-top: 10px;
       display: flex;
       gap: 8px;
       align-items: center;
+      justify-content: space-between;
     }
 
-    .source-row select {
+    .source-summary-text {
       min-width: 0;
-      width: auto;
       flex: 1;
+      font-size: 11px;
+      color: var(--text-dim);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
-    .source-row .btn {
+    .source-summary .btn {
       padding: 7px 10px;
       font-size: 12px;
     }
 
-    .source-row .hidden {
+    .hidden {
       display: none;
+    }
+
+    .source-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 220;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+
+    .source-modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .source-modal {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -48%) scale(0.98);
+      width: min(680px, calc(100vw - 36px));
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+      z-index: 221;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+
+    .source-modal.open {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    .source-modal-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .source-modal-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .source-modal-body {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .source-modal-actions {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .source-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .source-hint {
+      font-size: 11px;
+      color: var(--text-dim);
+      line-height: 1.5;
     }
 
     input[type="text"] {
@@ -796,15 +880,9 @@
         <input type="text" id="repoPath" placeholder="/path/to/your/repo" />
         <button class="btn btn-primary" id="analyzeBtn" onclick="onAnalyzeButtonClick()">参照</button>
       </div>
-      <div class="source-row">
-        <select id="diffSourceMode" onchange="onDiffSourceModeChange()">
-          <option value="worktree">作業ツリー (HEAD差分)</option>
-          <option value="commit">単一コミット</option>
-          <option value="range">コミット比較</option>
-        </select>
-        <select id="sourceBase" class="hidden"></select>
-        <select id="sourceTarget" class="hidden"></select>
-        <button class="btn btn-ghost" id="reloadCommitsBtn" onclick="loadCommits(true)">更新</button>
+      <div class="source-summary">
+        <span class="source-summary-text" id="sourceSummary">作業ツリー (HEAD差分)</span>
+        <button class="btn btn-ghost" onclick="openSourceModal()">差分ソース</button>
       </div>
     </div>
 
@@ -831,6 +909,31 @@
       </div>
     </div>
   </aside>
+
+  <div class="source-modal-overlay" id="sourceOverlay" onclick="closeSourceModal()"></div>
+  <div class="source-modal" id="sourceModal">
+    <div class="source-modal-header">
+      <div class="source-modal-title">差分ソース選択</div>
+      <button class="drawer-close" onclick="closeSourceModal()">✕</button>
+    </div>
+    <div class="source-modal-body">
+      <select id="diffSourceMode" onchange="onDiffSourceModeChange()">
+        <option value="worktree">作業ツリー (HEAD差分)</option>
+        <option value="commit">単一コミット</option>
+        <option value="range">コミット比較</option>
+      </select>
+      <div class="source-grid">
+        <select id="sourceBase" class="hidden" onchange="updateSourceSummary()"></select>
+        <select id="sourceTarget" class="hidden" onchange="updateSourceSummary()"></select>
+        <button class="btn btn-ghost hidden" id="reloadCommitsBtn" onclick="loadCommits(true)">更新</button>
+      </div>
+      <div class="source-hint">単一コミット: 選択コミット 1 件の変更 / コミット比較: 比較元と比較先の差分</div>
+    </div>
+    <div class="source-modal-actions">
+      <button class="btn btn-primary" onclick="analyzeFromSourceModal()">この条件で解析</button>
+      <button class="btn btn-ghost" onclick="closeSourceModal()">閉じる</button>
+    </div>
+  </div>
 
   <main>
     <div class="preview-toolbar">
@@ -899,6 +1002,48 @@
       };
     }
 
+    function updateSourceSummary() {
+      const mode = document.getElementById('diffSourceMode').value;
+      const baseEl = document.getElementById('sourceBase');
+      const targetEl = document.getElementById('sourceTarget');
+      const summaryEl = document.getElementById('sourceSummary');
+
+      if (mode === 'worktree') {
+        summaryEl.textContent = '作業ツリー (HEAD差分)';
+        return;
+      }
+
+      if (mode === 'commit') {
+        const t = targetEl.selectedOptions[0]?.textContent || '未選択';
+        summaryEl.textContent = `単一コミット: ${t}`;
+        return;
+      }
+
+      const b = baseEl.selectedOptions[0]?.textContent || '未選択';
+      const t = targetEl.selectedOptions[0]?.textContent || '未選択';
+      summaryEl.textContent = `コミット比較: ${b} .. ${t}`;
+    }
+
+    async function openSourceModal() {
+      document.getElementById('sourceModal').classList.add('open');
+      document.getElementById('sourceOverlay').classList.add('open');
+      if (document.getElementById('diffSourceMode').value !== 'worktree') {
+        await loadCommits(false);
+      }
+      updateSourceSummary();
+    }
+
+    function closeSourceModal() {
+      document.getElementById('sourceModal').classList.remove('open');
+      document.getElementById('sourceOverlay').classList.remove('open');
+      updateSourceSummary();
+    }
+
+    async function analyzeFromSourceModal() {
+      closeSourceModal();
+      await onAnalyzeButtonClick();
+    }
+
     function onDiffSourceModeChange() {
       const mode = document.getElementById('diffSourceMode').value;
       const baseEl = document.getElementById('sourceBase');
@@ -912,6 +1057,7 @@
       if (mode !== 'worktree') {
         loadCommits(false);
       }
+      updateSourceSummary();
     }
 
     function renderCommitOptions(items) {
@@ -952,6 +1098,7 @@
       } else if (!baseEl.value && baseEl.options.length > 0) {
         baseEl.selectedIndex = 0;
       }
+      updateSourceSummary();
     }
 
     async function loadCommits(showErrorToast = true) {

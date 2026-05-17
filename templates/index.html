@@ -65,21 +65,6 @@
       color: var(--text-dim);
     }
 
-    .mode-switch {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 11px;
-      color: var(--text-dim);
-    }
-
-    .mode-switch select {
-      width: 170px;
-      padding: 5px 8px;
-      font-size: 11px;
-      font-family: var(--sans);
-    }
-
     header .spacer {
       flex: 1;
     }
@@ -442,38 +427,14 @@
       gap: 8px;
     }
 
-    .source-mode-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 8px;
-    }
-
-    .source-mode-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--bg);
-      cursor: pointer;
-      font-size: 12px;
-      color: var(--text);
-    }
-
-    .source-mode-item:hover {
-      border-color: var(--accent-dim);
-    }
-
-    .source-mode-item input[type="radio"] {
-      margin: 0;
-      accent-color: var(--accent);
-    }
-
     .source-controls {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 8px;
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transition: max-height 0.24s ease, opacity 0.24s ease;
     }
 
     .source-control {
@@ -493,8 +454,9 @@
       grid-column: 1 / -1;
     }
 
-    .source-controls.hidden {
-      display: none;
+    .source-controls.open {
+      max-height: 240px;
+      opacity: 1;
     }
 
     .source-commit-status {
@@ -843,13 +805,6 @@
   <header>
     <h1>diff shot</h1>
     <span class="subtitle">git diff HEAD → PNG</span>
-    <label class="mode-switch">
-      <span>差分表示</span>
-      <select id="diffModeSwitch" onchange="applyDiffMode()">
-        <option value="file">通常表示</option>
-        <option value="patch">パッチ表示（+/-）</option>
-      </select>
-    </label>
     <span class="spacer"></span>
     <span class="status" id="statusBar">待機中</span>
     <button class="gear-btn" id="gearBtn" onclick="toggleDrawer()" title="設定">⚙</button>
@@ -971,21 +926,22 @@
       <button class="drawer-close" onclick="closeSourceModal()">✕</button>
     </div>
     <div class="source-modal-body">
-      <div class="source-mode-grid" id="diffSourceMode" onchange="onDiffSourceModeChange()">
-        <label class="source-mode-item">
-          <input type="radio" name="sourceMode" value="worktree" checked>
-          <span>作業ツリー (HEAD差分)</span>
-        </label>
-        <label class="source-mode-item">
-          <input type="radio" name="sourceMode" value="commit">
-          <span>単一コミット</span>
-        </label>
-        <label class="source-mode-item">
-          <input type="radio" name="sourceMode" value="range">
-          <span>コミット比較</span>
-        </label>
+      <div class="source-control single">
+        <div class="source-control-label">差分表示モード</div>
+        <select id="sourceDiffMode" onchange="onSourceDiffModeChange()">
+          <option value="file">通常表示</option>
+          <option value="patch">パッチ表示（+/-）</option>
+        </select>
       </div>
-      <div class="source-controls hidden" id="sourceControls">
+      <div class="source-control single">
+        <div class="source-control-label">差分ソース</div>
+        <select id="diffSourceMode" onchange="onDiffSourceModeChange()">
+          <option value="worktree">作業ツリー (HEAD差分)</option>
+          <option value="commit">単一コミット</option>
+          <option value="range">コミット比較</option>
+        </select>
+      </div>
+      <div class="source-controls" id="sourceControls">
         <div class="source-control single hidden" id="sourceTargetWrap">
           <div class="source-control-label">対象コミット</div>
           <select id="sourceTarget" onchange="updateSourceSummary()"></select>
@@ -1067,8 +1023,14 @@
       btn.textContent = path ? '解析' : '参照';
     }
 
+    let currentDiffMode = 'file';
+
     function getSelectedSourceMode() {
-      return document.querySelector('input[name="sourceMode"]:checked')?.value || 'worktree';
+      return document.getElementById('diffSourceMode').value || 'worktree';
+    }
+
+    function getSelectedDiffMode() {
+      return document.getElementById('sourceDiffMode').value || 'file';
     }
 
     function getDiffSourceValues() {
@@ -1084,25 +1046,31 @@
 
     function updateSourceSummary() {
       const mode = getSelectedSourceMode();
+      const diffMode = getSelectedDiffMode();
       const baseEl = document.getElementById('sourceBase');
       const targetEl = document.getElementById('sourceTarget');
       const rangeTargetEl = document.getElementById('sourceTargetRange');
       const summaryEl = document.getElementById('sourceSummary');
+      const diffLabel = diffMode === 'patch' ? 'パッチ表示' : '通常表示';
 
       if (mode === 'worktree') {
-        summaryEl.textContent = '作業ツリー (HEAD差分)';
+        summaryEl.textContent = `作業ツリー (HEAD差分) / ${diffLabel}`;
         return;
       }
 
       if (mode === 'commit') {
         const t = targetEl.selectedOptions[0]?.textContent || '未選択';
-        summaryEl.textContent = `単一コミット: ${t}`;
+        summaryEl.textContent = `単一コミット: ${t} / ${diffLabel}`;
         return;
       }
 
       const b = baseEl.selectedOptions[0]?.textContent || '未選択';
       const t = rangeTargetEl.selectedOptions[0]?.textContent || '未選択';
-      summaryEl.textContent = `コミット比較: ${b} .. ${t}`;
+      summaryEl.textContent = `コミット比較: ${b} .. ${t} / ${diffLabel}`;
+    }
+
+    function onSourceDiffModeChange() {
+      updateSourceSummary();
     }
 
     async function openSourceModal() {
@@ -1144,7 +1112,7 @@
       const targetWrap = document.getElementById('sourceTargetWrap');
       const targetRangeWrap = document.getElementById('sourceTargetRangeWrap');
 
-      controls.classList.toggle('hidden', mode === 'worktree');
+      controls.classList.toggle('open', mode !== 'worktree');
       baseWrap.classList.toggle('hidden', mode !== 'range');
       targetRangeWrap.classList.toggle('hidden', mode !== 'range');
       targetWrap.classList.toggle('hidden', mode === 'range' || mode === 'worktree');
@@ -1155,6 +1123,31 @@
         setSourceCommitStatus('作業ツリーの未コミット差分を解析します');
       }
       updateSourceSummary();
+    }
+
+    async function ensureDiffMode(appliedMode = null) {
+      const mode = appliedMode || getSelectedDiffMode();
+      if (mode === currentDiffMode) {
+        return true;
+      }
+
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ diff_mode: mode }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || '差分表示モード変更に失敗しました', 'error');
+          return false;
+        }
+        currentDiffMode = mode;
+        return true;
+      } catch (e) {
+        showToast('差分表示モード変更に失敗しました: ' + e.message, 'error');
+        return false;
+      }
     }
 
     function renderCommitOptions(items) {
@@ -1281,6 +1274,9 @@
         const selected = await browseRepo();
         if (!selected) return;
       }
+
+      const modeApplied = await ensureDiffMode();
+      if (!modeApplied) return;
 
       const mode = getSelectedSourceMode();
       if (mode !== 'worktree') {
@@ -1518,25 +1514,6 @@
     // ---- 設定ドロワー ----
     const DEFAULTS = { context: 5, merge: 8, width: 960, outdir: 'diff_screenshots' };
 
-    async function applyDiffMode() {
-      const mode = document.getElementById('diffModeSwitch').value;
-      try {
-        const res = await fetch('/api/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ diff_mode: mode }),
-        });
-        const data = await res.json();
-        if (!res.ok) { showToast(data.error || '差分モード変更に失敗しました', 'error'); return; }
-        showToast('差分表示モードを切り替えました', 'success');
-        if (document.getElementById('repoPath').value.trim()) {
-          await analyze({ preserveActive: true });
-        }
-      } catch (e) {
-        showToast('差分モード変更に失敗しました: ' + e.message, 'error');
-      }
-    }
-
     function toggleDrawer() {
       const isOpen = document.getElementById('drawer').classList.contains('open');
       isOpen ? closeDrawer() : openDrawer();
@@ -1605,9 +1582,9 @@
       try {
         const res = await fetch('/api/config');
         const cfg = await res.json();
-        document.getElementById('diffModeSwitch').value = cfg.diff_mode || 'file';
-        const defaultMode = document.querySelector('input[name="sourceMode"][value="worktree"]');
-        if (defaultMode) defaultMode.checked = true;
+        currentDiffMode = cfg.diff_mode || 'file';
+        document.getElementById('sourceDiffMode').value = currentDiffMode;
+        document.getElementById('diffSourceMode').value = 'worktree';
         onDiffSourceModeChange();
         setSlider('cfg-context', 'cfg-context-val', cfg.context_lines);
         setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);

@@ -275,6 +275,23 @@
       border-color: var(--accent);
     }
 
+    select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 12px;
+      padding: 7px 10px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    select:focus {
+      border-color: var(--accent);
+    }
+
     .drawer-footer {
       padding: 16px 20px;
       border-top: 1px solid var(--border);
@@ -670,6 +687,18 @@
 
         <div class="setting-item">
           <div class="setting-label">
+            <span>差分表示モード</span>
+            <code>DIFF_MODE</code>
+          </div>
+          <div class="setting-desc">通常表示（追加行ハイライト）と、追加/削除を含むパッチ表示を切り替える。</div>
+          <select id="cfg-diffmode">
+            <option value="file">通常表示</option>
+            <option value="patch">パッチ表示（+/-）</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-label">
             <span>前後コンテキスト行数</span>
             <code>CONTEXT_LINES</code>
           </div>
@@ -890,7 +919,7 @@
 
       list.innerHTML = state.hunks.map((h, i) => {
         const shortPath = h.filepath.split('/').slice(-2).join('/');
-        const changed = h.changed_lines.length;
+        const changed = h.changed_count ?? h.changed_lines.length;
         return `
     <div class="hunk-item" id="hunk-item-${i}" onclick="onHunkClick(${i}, event)">
       <input type="checkbox" id="chk-${i}" onclick="onCheck(${i}, event)" ${state.selected.has(i) ? 'checked' : ''}>
@@ -1043,7 +1072,7 @@
     }
 
     // ---- 設定ドロワー ----
-    const DEFAULTS = { context: 5, merge: 8, width: 960, outdir: 'diff_screenshots' };
+    const DEFAULTS = { context: 5, merge: 8, width: 960, outdir: 'diff_screenshots', diffMode: 'file' };
 
     function toggleDrawer() {
       const isOpen = document.getElementById('drawer').classList.contains('open');
@@ -1063,6 +1092,7 @@
     }
 
     function resetConfig() {
+      document.getElementById('cfg-diffmode').value = DEFAULTS.diffMode;
       setSlider('cfg-context', 'cfg-context-val', DEFAULTS.context);
       setSlider('cfg-merge', 'cfg-merge-val', DEFAULTS.merge);
       setSlider('cfg-width', 'cfg-width-val', DEFAULTS.width);
@@ -1076,6 +1106,7 @@
 
     async function applyConfig() {
       const payload = {
+        diff_mode: document.getElementById('cfg-diffmode').value,
         context_lines: parseInt(document.getElementById('cfg-context').value, 10),
         merge_threshold: parseInt(document.getElementById('cfg-merge').value, 10),
         html_width: parseInt(document.getElementById('cfg-width').value, 10),
@@ -1113,6 +1144,7 @@
       try {
         const res = await fetch('/api/config');
         const cfg = await res.json();
+        document.getElementById('cfg-diffmode').value = cfg.diff_mode || 'file';
         setSlider('cfg-context', 'cfg-context-val', cfg.context_lines);
         setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);
         setSlider('cfg-width', 'cfg-width-val', cfg.html_width);

@@ -20,6 +20,7 @@ APP_ROOT = Path(__file__).resolve().parent
 OUTPUT_DIR_NAME = "diff_screenshots"
 OUTPUT_DIR = APP_ROOT / OUTPUT_DIR_NAME
 HTML_WIDTH = 960
+DIFF_MODE = "file"
 
 app = Flask(__name__)
 
@@ -93,41 +94,64 @@ def parse_output_dir(value: str) -> tuple[str, Path]:
 def parse_hunks(diff_text: str) -> list[dict]:
     hunks = []
     current_file = None
-    file_re = re.compile(r"^\+\+\+ b/(.+)$")
-    hunk_re = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+    old_file = None
+    new_file = None
+    old_re = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
+    new_re = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
+    hunk_re = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
     for line in diff_text.splitlines():
-        m = file_re.match(line)
+        m = old_re.match(line)
         if m:
-            current_file = m.group(1)
+            old_file = m.group(1)
+            continue
+
+        m = new_re.match(line)
+        if m:
+            new_file = m.group(1)
+            current_file = new_file or old_file
             continue
 
         m = hunk_re.match(line)
         if m and current_file:
-            start = int(m.group(1))
-            count = int(m.group(2)) if m.group(2) is not None else 1
+            old_start = int(m.group(1))
+            old_count = int(m.group(2)) if m.group(2) is not None else 1
+            new_start = int(m.group(3))
+            new_count = int(m.group(4)) if m.group(4) is not None else 1
             hunks.append({
                 "filepath": current_file,
-                "start": start,
-                "end": start + count - 1,
+                "start": new_start,
+                "end": max(new_start, new_start + new_count - 1),
+                "old_start": old_start,
+                "old_end": max(old_start, old_start + old_count - 1),
                 "changed_lines": set(),
-                "_cursor": start,
+                "_cursor": new_start,
+                "diff_lines": [],
+                "added_count": 0,
+                "deleted_count": 0,
             })
             continue
 
         if hunks and current_file == hunks[-1]["filepath"]:
             h = hunks[-1]
             if line.startswith("+") and not line.startswith("+++"):
+                h["diff_lines"].append(line)
                 h["changed_lines"].add(h["_cursor"])
                 h["_cursor"] += 1
+                h["added_count"] += 1
             elif line.startswith("-"):
-                pass
-            elif not line.startswith("\\"):
+                h["diff_lines"].append(line)
+                h["deleted_count"] += 1
+            elif line.startswith(" "):
+                h["diff_lines"].append(line)
                 h["_cursor"] += 1
+            elif line.startswith("\\"):
+                h["diff_lines"].append(line)
 
     for h in hunks:
         h.pop("_cursor", None)
         h["changed_lines"] = sorted(h["changed_lines"])
+        h["changed_count"] = h["added_count"] + h["deleted_count"]
 
     return hunks
 
@@ -198,6 +222,9 @@ def detect_language(filepath: str) -> str:
 # ================================================================
 
 def build_code_html(hunk: dict, repo_path: str, hunk_index: int, total: int, timestamp: str) -> str:
+    if DIFF_MODE == "patch":
+        return build_patch_html(hunk, hunk_index, total, timestamp)
+
     lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"])
     lang = detect_language(hunk["filepath"])
     changed_set = set(hunk["changed_lines"])
@@ -242,6 +269,102 @@ td.code{{padding:2px 8px;white-space:pre}}
 <div class="header">
   <span class="filepath">{hunk['filepath']}</span>
   <span class="meta">L{hunk['start']}–{hunk['end']} | {hunk_index}/{total} | {lang}</span>
+</div>
+<div class="code-block"><table>
+{''.join(rows)}
+</table></div>
+<div class="footer">{timestamp} | git diff HEAD</div>
+</body></html>"""
+
+
+def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) -> str:
+    lang = detect_language(hunk["filepath"])
+    old_ln = int(hunk.get("old_start", hunk["start"]))
+    new_ln = int(hunk.get("start", 1))
+    rows = []
+
+    for raw in hunk.get("diff_lines", []):
+        if not raw:
+            continue
+
+        if raw.startswith("\\"):
+            note = raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            rows.append(
+                '<tr class="note">'
+                '<td class="lineno old"></td>'
+                '<td class="lineno new"></td>'
+                '<td class="marker">\\</td>'
+                f'<td class="code">{note}</td>'
+                '</tr>'
+            )
+            continue
+
+        prefix = raw[0]
+        text = raw[1:]
+        escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+        if prefix == "+":
+            rows.append(
+                '<tr class="added">'
+                '<td class="lineno old"></td>'
+                f'<td class="lineno new">{new_ln}</td>'
+                '<td class="marker">+</td>'
+                f'<td class="code">{escaped}</td>'
+                '</tr>'
+            )
+            new_ln += 1
+        elif prefix == "-":
+            rows.append(
+                '<tr class="deleted">'
+                f'<td class="lineno old">{old_ln}</td>'
+                '<td class="lineno new"></td>'
+                '<td class="marker">-</td>'
+                f'<td class="code">{escaped}</td>'
+                '</tr>'
+            )
+            old_ln += 1
+        else:
+            rows.append(
+                '<tr>'
+                f'<td class="lineno old">{old_ln}</td>'
+                f'<td class="lineno new">{new_ln}</td>'
+                '<td class="marker"> </td>'
+                f'<td class="code">{escaped}</td>'
+                '</tr>'
+            )
+            old_ln += 1
+            new_ln += 1
+
+    return f"""<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:#fff;font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
+  color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
+.header{{background:#1e1e2e;color:#cdd6f4;padding:10px 14px;border-radius:6px 6px 0 0;
+  display:flex;justify-content:space-between;align-items:center;font-size:12px}}
+.filepath{{color:#89dceb;font-weight:bold;word-break:break-all}}
+.meta{{color:#6c7086;white-space:nowrap;margin-left:12px;flex-shrink:0}}
+.code-block{{border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden}}
+table{{width:100%;border-collapse:collapse}}
+tr{{border-bottom:1px solid #f1f5f9}}
+tr:last-child{{border-bottom:none}}
+tr.added{{background:#ecfdf5}}
+tr.deleted{{background:#fef2f2}}
+tr.note td{{color:#64748b;font-style:italic}}
+td{{vertical-align:top;padding:2px 0;line-height:1.6}}
+td.lineno{{width:52px;text-align:right;color:#94a3b8;padding:2px 10px 2px 6px;
+  border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
+td.lineno.new{{border-right:none}}
+td.marker{{width:18px;text-align:center;color:#64748b;font-weight:bold}}
+tr.added td.marker{{color:#16a34a}}
+tr.deleted td.marker{{color:#dc2626}}
+td.code{{padding:2px 8px;white-space:pre}}
+.footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
+</style></head><body>
+<div class="header">
+  <span class="filepath">{hunk['filepath']}</span>
+  <span class="meta">-{hunk.get('old_start', hunk['start'])} +{hunk['start']} | {hunk_index}/{total} | {lang} | patch</span>
 </div>
 <div class="code-block"><table>
 {''.join(rows)}
@@ -302,13 +425,14 @@ def browse_repo():
 
 @app.route("/api/config", methods=["GET", "POST"])
 def config():
-    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME
+    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME, DIFF_MODE
     if request.method == "GET":
         return jsonify({
             "context_lines": CONTEXT_LINES,
             "merge_threshold": MERGE_THRESHOLD,
             "html_width": HTML_WIDTH,
             "output_dir": OUTPUT_DIR_NAME,
+            "diff_mode": DIFF_MODE,
         })
     data = request.get_json(silent=True) or {}
     try:
@@ -320,6 +444,11 @@ def config():
             HTML_WIDTH = max(400, int(data["html_width"]))
         if "output_dir" in data:
             OUTPUT_DIR_NAME, OUTPUT_DIR = parse_output_dir(str(data["output_dir"]))
+        if "diff_mode" in data:
+            mode = str(data["diff_mode"]).strip().lower()
+            if mode not in ("file", "patch"):
+                raise ValueError("diff_mode は file または patch を指定してください")
+            DIFF_MODE = mode
     except (ValueError, TypeError) as e:
         return jsonify({"error": f"不正な値: {e}"}), 400
     return jsonify({"ok": True})
@@ -346,7 +475,13 @@ def analyze():
         return jsonify({"hunks": [], "message": "差分がありません"})
 
     hunks = parse_hunks(diff_text)
-    hunks = expand_and_merge(hunks, str(repo), CONTEXT_LINES, MERGE_THRESHOLD)
+    if DIFF_MODE == "file":
+        hunks = expand_and_merge(hunks, str(repo), CONTEXT_LINES, MERGE_THRESHOLD)
+        for h in hunks:
+            h["changed_count"] = len(h.get("changed_lines", []))
+    else:
+        for h in hunks:
+            h["changed_count"] = int(h.get("added_count", 0)) + int(h.get("deleted_count", 0))
 
     return jsonify({"hunks": hunks, "total": len(hunks)})
 

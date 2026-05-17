@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-diff_shot / app.py
+diff2png / app.py
 Flask + Playwright によるエビデンス用 git diff スクリーンショットツール
 """
 

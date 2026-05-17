@@ -1,6 +1,8 @@
 # diff2png
 
-`git diff HEAD` の変更hunkを確認・選択してPNG出力するエビデンスツールです。
+`git diff` の変更hunkを確認・選択してPNG出力するエビデンスツールです。
+
+<img width="1328" height="599" alt="top" src="https://github.com/user-attachments/assets/08fc70f0-6b9a-43e8-8e53-b90ebe0b94d8" />
 
 ## セットアップ
 

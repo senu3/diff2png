@@ -574,6 +574,7 @@ def analyze():
         hunks = expand_and_merge(hunks, str(repo), CONTEXT_LINES, MERGE_THRESHOLD)
         for h in hunks:
             h["changed_count"] = len(h.get("changed_lines", []))
+        hunks = [h for h in hunks if h.get("changed_count", 0) > 0]
     else:
         for h in hunks:
             h["changed_count"] = int(h.get("added_count", 0)) + int(h.get("deleted_count", 0))

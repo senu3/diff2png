@@ -75,32 +75,6 @@
       color: var(--text-dim);
     }
 
-    .gear-btn {
-      background: none;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text-dim);
-      cursor: pointer;
-      font-size: 15px;
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: color 0.15s, border-color 0.15s, transform 0.3s;
-      flex-shrink: 0;
-    }
-
-    .gear-btn:hover {
-      color: var(--text);
-      border-color: var(--accent);
-    }
-
-    .gear-btn.open {
-      color: var(--accent);
-      border-color: var(--accent);
-      transform: rotate(60deg);
-    }
 
     /* ---- Settings Drawer ---- */
     .drawer-overlay {
@@ -187,8 +161,6 @@
       background: var(--border);
       border-radius: 2px;
     }
-
-    .setting-group {}
 
     .setting-group-label {
       font-size: 10px;
@@ -358,7 +330,7 @@
     }
 
     .hidden {
-      display: none;
+      display: none !important;
     }
 
     .source-modal-overlay {
@@ -807,14 +779,14 @@
     <span class="subtitle">git diff HEAD → PNG</span>
     <span class="spacer"></span>
     <span class="status" id="statusBar">待機中</span>
-    <button class="gear-btn" id="gearBtn" onclick="toggleDrawer()" title="設定">⚙</button>
+    <button class="btn btn-ghost" id="gearBtn" onclick="toggleDrawer()" title="設定">⚙ 出力設定</button>
   </header>
 
   <!-- Settings Drawer -->
   <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
   <div class="drawer" id="drawer">
     <div class="drawer-header">
-      <h2>⚙ 設定</h2>
+      <h2>⚙ 出力設定</h2>
       <button class="drawer-close" onclick="closeDrawer()">✕</button>
     </div>
     <div class="drawer-body">
@@ -891,15 +863,15 @@
       </div>
       <div class="source-summary">
         <span class="source-summary-text" id="sourceSummary">作業ツリー (HEAD差分)</span>
-        <button class="btn btn-ghost" onclick="openSourceModal()">差分ソース</button>
+        <button class="btn btn-ghost" onclick="openSourceModal()">変更...</button>
       </div>
     </div>
 
     <div class="hunk-header">
       <span>変更 hunk <span id="hunkCount"></span></span>
       <div class="select-all-row">
-        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="selectAll(true)">全選択</button>
-        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="selectAll(false)">解除</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="selectAll(true)">✅️全選択</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="selectAll(false)">❌️全解除</button>
       </div>
     </div>
 
@@ -922,7 +894,7 @@
   <div class="source-modal-overlay" id="sourceOverlay" onclick="closeSourceModal()"></div>
   <div class="source-modal" id="sourceModal">
     <div class="source-modal-header">
-      <div class="source-modal-title">差分ソース選択</div>
+      <div class="source-modal-title">差分ソース / 表示変更</div>
       <button class="drawer-close" onclick="closeSourceModal()">✕</button>
     </div>
     <div class="source-modal-body">

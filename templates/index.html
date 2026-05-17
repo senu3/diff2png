@@ -733,7 +733,7 @@
       <label>リポジトリパス</label>
       <div class="repo-row">
         <input type="text" id="repoPath" placeholder="/path/to/your/repo" />
-        <button class="btn btn-primary" id="analyzeBtn" onclick="analyze()">解析</button>
+        <button class="btn btn-primary" id="analyzeBtn" onclick="onAnalyzeButtonClick()">参照</button>
       </div>
     </div>
 
@@ -788,6 +788,52 @@
       selected: new Set(),
       activeIndex: -1,
     };
+
+    function updateAnalyzeButtonLabel() {
+      const btn = document.getElementById('analyzeBtn');
+      const path = document.getElementById('repoPath').value.trim();
+      btn.textContent = path ? '解析' : '参照';
+    }
+
+    async function browseRepo() {
+      const btn = document.getElementById('analyzeBtn');
+      const prev = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '選択中...';
+
+      try {
+        const res = await fetch('/api/browse');
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || 'フォルダ選択に失敗しました', 'error');
+          return false;
+        }
+        if (data.cancelled) {
+          return false;
+        }
+        document.getElementById('repoPath').value = data.repo_path;
+        updateAnalyzeButtonLabel();
+        return true;
+      } catch (e) {
+        showToast('フォルダ選択に失敗しました: ' + e.message, 'error');
+        return false;
+      } finally {
+        btn.disabled = false;
+        if (btn.textContent === '選択中...') {
+          btn.textContent = prev;
+        }
+        updateAnalyzeButtonLabel();
+      }
+    }
+
+    async function onAnalyzeButtonClick() {
+      const repoPath = document.getElementById('repoPath').value.trim();
+      if (!repoPath) {
+        const selected = await browseRepo();
+        if (!selected) return;
+      }
+      await analyze();
+    }
 
     // ---- 解析 ----
     async function analyze() {
@@ -1045,6 +1091,9 @@
         if (!res.ok) { showToast(data.error || '設定の適用に失敗しました', 'error'); return; }
         showToast('設定を適用しました', 'success');
         closeDrawer();
+        if (document.getElementById('repoPath').value.trim()) {
+          await analyze();
+        }
       } catch (e) {
         showToast('設定の適用に失敗しました: ' + e.message, 'error');
       }
@@ -1053,6 +1102,10 @@
     // Enter キーで解析
     document.getElementById('repoPath').addEventListener('keydown', e => {
       if (e.key === 'Enter') analyze();
+    });
+
+    document.getElementById('repoPath').addEventListener('input', () => {
+      updateAnalyzeButtonLabel();
     });
 
     // 起動時にサーバーの現在値を取得してスライダーに反映
@@ -1064,6 +1117,7 @@
         setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);
         setSlider('cfg-width', 'cfg-width-val', cfg.html_width);
         document.getElementById('cfg-outdir').value = cfg.output_dir;
+        updateAnalyzeButtonLabel();
       } catch (_) { }
     })();
   </script>

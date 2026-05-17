@@ -281,6 +281,25 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/browse", methods=["GET"])
+def browse_repo():
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected = filedialog.askdirectory(title="リポジトリフォルダを選択")
+        root.destroy()
+    except Exception as e:
+        return jsonify({"error": f"フォルダ選択に失敗しました: {e}"}), 500
+
+    if not selected:
+        return jsonify({"cancelled": True})
+    return jsonify({"repo_path": selected})
+
+
 @app.route("/api/config", methods=["GET", "POST"])
 def config():
     global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME

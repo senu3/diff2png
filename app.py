@@ -29,9 +29,15 @@ app = Flask(__name__)
 # git / diff ユーティリティ
 # ================================================================
 
-def get_diff(repo_path: str) -> str:
+def get_diff(repo_path: str, context_lines: int | None = None, merge_threshold: int | None = None) -> str:
+    cmd = ["git", "diff", "HEAD"]
+    if context_lines is not None:
+        cmd.append(f"-U{max(0, int(context_lines))}")
+    if merge_threshold is not None:
+        cmd.append(f"--inter-hunk-context={max(0, int(merge_threshold))}")
+
     result = subprocess.run(
-        ["git", "diff", "HEAD"],
+        cmd,
         capture_output=True, text=True, encoding="utf-8",
         cwd=repo_path,
     )
@@ -467,7 +473,14 @@ def analyze():
         return jsonify({"error": str(e)}), 400
 
     try:
-        diff_text = get_diff(str(repo))
+        if DIFF_MODE == "patch":
+            diff_text = get_diff(
+                str(repo),
+                context_lines=CONTEXT_LINES,
+                merge_threshold=MERGE_THRESHOLD,
+            )
+        else:
+            diff_text = get_diff(str(repo))
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 400
 

@@ -220,6 +220,31 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/config", methods=["GET", "POST"])
+def config():
+    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR
+    if request.method == "GET":
+        return jsonify({
+            "context_lines": CONTEXT_LINES,
+            "merge_threshold": MERGE_THRESHOLD,
+            "html_width": HTML_WIDTH,
+            "output_dir": str(OUTPUT_DIR),
+        })
+    data = request.json
+    try:
+        if "context_lines" in data:
+            CONTEXT_LINES = max(0, int(data["context_lines"]))
+        if "merge_threshold" in data:
+            MERGE_THRESHOLD = max(0, int(data["merge_threshold"]))
+        if "html_width" in data:
+            HTML_WIDTH = max(400, int(data["html_width"]))
+        if "output_dir" in data and data["output_dir"].strip():
+            OUTPUT_DIR = Path(data["output_dir"].strip())
+    except (ValueError, TypeError) as e:
+        return jsonify({"error": f"不正な値: {e}"}), 400
+    return jsonify({"ok": True})
+
+
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
     repo_path = request.json.get("repo_path", "").strip()
@@ -274,7 +299,7 @@ def export():
         hunk = hunks[i]
         hunk["changed_lines"] = hunk.get("changed_lines", [])
         safe = hunk["filepath"].replace("/", "_").replace("\\", "_")
-        out_path = OUTPUT_DIR / f"{timestamp_str}_{i+1:03d}_{safe}_L{hunk['start']}.png"
+        out_path = OUTPUT_DIR / f"{timestamp_str}_{i + 1 :03d}_{safe}_L{hunk['start']}.png"
         html = build_code_html(hunk, repo_path, i + 1, total, timestamp_disp)
         render_png(html, out_path)
         saved.append(str(out_path))

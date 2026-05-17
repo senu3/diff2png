@@ -1,451 +1,851 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
-<meta charset="UTF-8">
-<title>diff shot</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Noto+Sans+JP:wght@400;500;600&display=swap');
+  <meta charset="UTF-8">
+  <title>diff shot</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Noto+Sans+JP:wght@400;500;600&display=swap');
 
-  :root {
-    --bg: #0f1117;
-    --surface: #1a1d27;
-    --surface2: #21253a;
-    --border: #2a2f45;
-    --accent: #5b8af0;
-    --accent-dim: #3d5fad;
-    --green: #3ecf6e;
-    --yellow: #f5c842;
-    --text: #c8cfe8;
-    --text-dim: #5a6080;
-    --danger: #e05c5c;
-    --mono: 'JetBrains Mono', monospace;
-    --sans: 'Noto Sans JP', sans-serif;
-  }
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #21253a;
+      --border: #2a2f45;
+      --accent: #5b8af0;
+      --accent-dim: #3d5fad;
+      --green: #3ecf6e;
+      --yellow: #f5c842;
+      --text: #c8cfe8;
+      --text-dim: #5a6080;
+      --danger: #e05c5c;
+      --mono: 'JetBrains Mono', monospace;
+      --sans: 'Noto Sans JP', sans-serif;
+    }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 14px;
-    height: 100vh;
-    display: grid;
-    grid-template-rows: 52px 1fr;
-    grid-template-columns: 340px 1fr;
-    overflow: hidden;
-  }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 52px 1fr;
+      grid-template-columns: 340px 1fr;
+      overflow: hidden;
+    }
 
-  /* ---- Header ---- */
-  header {
-    grid-column: 1 / -1;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    padding: 0 20px;
-    gap: 16px;
-  }
-  header h1 {
-    font-family: var(--mono);
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--accent);
-    letter-spacing: 0.04em;
-  }
-  header .subtitle {
-    font-size: 12px;
-    color: var(--text-dim);
-  }
-  header .spacer { flex: 1; }
-  header .status {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-dim);
-  }
+    /* ---- Header ---- */
+    header {
+      grid-column: 1 / -1;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 16px;
+    }
 
-  /* ---- Sidebar ---- */
-  aside {
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+    header h1 {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+    }
 
-  .repo-section {
-    padding: 16px;
-    border-bottom: 1px solid var(--border);
-  }
-  .repo-section label {
-    display: block;
-    font-size: 11px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin-bottom: 8px;
-  }
-  .repo-row {
-    display: flex;
-    gap: 8px;
-  }
-  input[type="text"] {
-    flex: 1;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text);
-    font-family: var(--mono);
-    font-size: 12px;
-    padding: 7px 10px;
-    outline: none;
-    transition: border-color 0.15s;
-  }
-  input[type="text"]:focus { border-color: var(--accent); }
+    header .subtitle {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
 
-  /* ---- Buttons ---- */
-  .btn {
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-family: var(--sans);
-    font-size: 13px;
-    font-weight: 500;
-    padding: 7px 14px;
-    transition: opacity 0.15s, transform 0.1s;
-    white-space: nowrap;
-  }
-  .btn:hover { opacity: 0.85; }
-  .btn:active { transform: scale(0.97); }
-  .btn-primary { background: var(--accent); color: #fff; }
-  .btn-success { background: var(--green); color: #0a1a10; }
-  .btn-danger  { background: var(--danger); color: #fff; }
-  .btn-ghost   { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
-  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    header .spacer {
+      flex: 1;
+    }
 
-  /* ---- Hunk list ---- */
-  .hunk-header {
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-shrink: 0;
-  }
-  .hunk-header span {
-    font-size: 11px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
-  .select-all-row {
-    display: flex;
-    gap: 6px;
-  }
+    header .status {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+    }
 
-  .hunk-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px;
-  }
-  .hunk-list::-webkit-scrollbar { width: 4px; }
-  .hunk-list::-webkit-scrollbar-track { background: transparent; }
-  .hunk-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .gear-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 15px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.15s, border-color 0.15s, transform 0.3s;
+      flex-shrink: 0;
+    }
 
-  .hunk-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    border: 1px solid transparent;
-    transition: background 0.1s, border-color 0.1s;
-    margin-bottom: 4px;
-  }
-  .hunk-item:hover { background: var(--surface2); }
-  .hunk-item.active {
-    background: var(--surface2);
-    border-color: var(--accent-dim);
-  }
-  .hunk-item input[type="checkbox"] {
-    accent-color: var(--accent);
-    flex-shrink: 0;
-    width: 14px;
-    height: 14px;
-  }
-  .hunk-info { flex: 1; min-width: 0; }
-  .hunk-file {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .hunk-range {
-    font-size: 11px;
-    color: var(--text-dim);
-    margin-top: 2px;
-  }
-  .hunk-badge {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--green);
-    background: rgba(62,207,110,0.12);
-    padding: 2px 6px;
-    border-radius: 4px;
-    flex-shrink: 0;
-  }
+    .gear-btn:hover {
+      color: var(--text);
+      border-color: var(--accent);
+    }
 
-  .export-section {
-    padding: 12px 16px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .export-info {
-    font-size: 11px;
-    color: var(--text-dim);
-  }
-  .export-buttons {
-    display: flex;
-    gap: 8px;
-  }
-  .export-buttons .btn { flex: 1; font-size: 12px; padding: 8px; }
+    .gear-btn.open {
+      color: var(--accent);
+      border-color: var(--accent);
+      transform: rotate(60deg);
+    }
 
-  /* ---- Preview ---- */
-  main {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background: var(--bg);
-  }
+    /* ---- Settings Drawer ---- */
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+    }
 
-  .preview-toolbar {
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: var(--surface);
-    flex-shrink: 0;
-  }
-  .preview-toolbar .preview-label {
-    font-size: 11px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
-  .preview-toolbar .preview-file {
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--text);
-    flex: 1;
-  }
-  .preview-toolbar .nav-btns {
-    display: flex;
-    gap: 4px;
-  }
-  .nav-btns .btn {
-    padding: 4px 10px;
-    font-size: 12px;
-  }
+    .drawer-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
 
-  .preview-frame-wrap {
-    flex: 1;
-    overflow: auto;
-    padding: 20px;
-    display: flex;
-    justify-content: center;
-  }
-  .preview-frame-wrap::-webkit-scrollbar { width: 6px; height: 6px; }
-  .preview-frame-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 320px;
+      height: 100vh;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      z-index: 201;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4);
+    }
 
-  iframe {
-    border: none;
-    border-radius: 8px;
-    box-shadow: 0 4px 32px rgba(0,0,0,0.5);
-    background: #fff;
-    width: 100%;
-    max-width: 992px;
-    height: 600px;
-  }
+    .drawer.open {
+      transform: translateX(0);
+    }
 
-  /* ---- Empty / Loading states ---- */
-  .empty-state {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    color: var(--text-dim);
-  }
-  .empty-icon { font-size: 40px; opacity: 0.3; }
-  .empty-label { font-size: 13px; }
+    .drawer-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
 
-  .toast {
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 16px;
-    font-size: 13px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-    opacity: 0;
-    transform: translateY(8px);
-    transition: opacity 0.2s, transform 0.2s;
-    z-index: 100;
-    max-width: 320px;
-  }
-  .toast.show { opacity: 1; transform: translateY(0); }
-  .toast.success { border-color: var(--green); color: var(--green); }
-  .toast.error { border-color: var(--danger); color: var(--danger); }
+    .drawer-header h2 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.04em;
+    }
 
-  .spinner {
-    display: inline-block;
-    width: 14px; height: 14px;
-    border: 2px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-    vertical-align: middle;
-    margin-right: 6px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-</style>
+    .drawer-close {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+
+    .drawer-close:hover {
+      color: var(--text);
+    }
+
+    .drawer-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .drawer-body::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .drawer-body::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    .setting-group {}
+
+    .setting-group-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .setting-item {
+      margin-bottom: 16px;
+    }
+
+    .setting-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .setting-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+
+    .setting-label span {
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .setting-label code {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text-dim);
+      background: var(--bg);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    .setting-desc {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .range-val {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--accent);
+      min-width: 28px;
+      text-align: right;
+    }
+
+    input[type="number"] {
+      width: 80px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 6px 8px;
+      outline: none;
+      transition: border-color 0.15s;
+      text-align: right;
+    }
+
+    input[type="number"]:focus {
+      border-color: var(--accent);
+    }
+
+    .drawer-footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .drawer-footer .btn {
+      flex: 1;
+      font-size: 12px;
+      padding: 8px;
+    }
+
+    /* ---- Sidebar ---- */
+    aside {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .repo-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .repo-section label {
+      display: block;
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+
+    .repo-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 7px 10px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    /* ---- Buttons ---- */
+    .btn {
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: var(--sans);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 7px 14px;
+      transition: opacity 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      opacity: 0.85;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-success {
+      background: var(--green);
+      color: #0a1a10;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    .btn-ghost {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    /* ---- Hunk list ---- */
+    .hunk-header {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .hunk-header span {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .select-all-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .hunk-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .hunk-list::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .hunk-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .hunk-list::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
+    }
+
+    .hunk-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 0.1s, border-color 0.1s;
+      margin-bottom: 4px;
+    }
+
+    .hunk-item:hover {
+      background: var(--surface2);
+    }
+
+    .hunk-item.active {
+      background: var(--surface2);
+      border-color: var(--accent-dim);
+    }
+
+    .hunk-item input[type="checkbox"] {
+      accent-color: var(--accent);
+      flex-shrink: 0;
+      width: 14px;
+      height: 14px;
+    }
+
+    .hunk-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .hunk-file {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hunk-range {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    .hunk-badge {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--green);
+      background: rgba(62, 207, 110, 0.12);
+      padding: 2px 6px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .export-section {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .export-info {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .export-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .export-buttons .btn {
+      flex: 1;
+      font-size: 12px;
+      padding: 8px;
+    }
+
+    /* ---- Preview ---- */
+    main {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .preview-toolbar {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+
+    .preview-toolbar .preview-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .preview-toolbar .preview-file {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text);
+      flex: 1;
+    }
+
+    .preview-toolbar .nav-btns {
+      display: flex;
+      gap: 4px;
+    }
+
+    .nav-btns .btn {
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+
+    .preview-frame-wrap {
+      flex: 1;
+      overflow: auto;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .preview-frame-wrap::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    .preview-frame-wrap::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
+    }
+
+    iframe {
+      border: none;
+      border-radius: 8px;
+      box-shadow: 0 4px 32px rgba(0, 0, 0, 0.5);
+      background: #fff;
+      width: 100%;
+      max-width: 992px;
+      height: 600px;
+    }
+
+    /* ---- Empty / Loading states ---- */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--text-dim);
+    }
+
+    .empty-icon {
+      font-size: 40px;
+      opacity: 0.3;
+    }
+
+    .empty-label {
+      font-size: 13px;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 100;
+      max-width: 320px;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast.success {
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    .toast.error {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
 </head>
+
 <body>
 
-<header>
-  <h1>diff shot</h1>
-  <span class="subtitle">git diff HEAD → PNG</span>
-  <span class="spacer"></span>
-  <span class="status" id="statusBar">待機中</span>
-</header>
+  <header>
+    <h1>diff shot</h1>
+    <span class="subtitle">git diff HEAD → PNG</span>
+    <span class="spacer"></span>
+    <span class="status" id="statusBar">待機中</span>
+    <button class="gear-btn" id="gearBtn" onclick="toggleDrawer()" title="設定">⚙</button>
+  </header>
 
-<aside>
-  <div class="repo-section">
-    <label>リポジトリパス</label>
-    <div class="repo-row">
-      <input type="text" id="repoPath" placeholder="/path/to/your/repo" />
-      <button class="btn btn-primary" id="analyzeBtn" onclick="analyze()">解析</button>
+  <!-- Settings Drawer -->
+  <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
+  <div class="drawer" id="drawer">
+    <div class="drawer-header">
+      <h2>⚙ 設定</h2>
+      <button class="drawer-close" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="drawer-body">
+
+      <div class="setting-group">
+        <div class="setting-group-label">差分 / コンテキスト</div>
+
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>前後コンテキスト行数</span>
+            <code>CONTEXT_LINES</code>
+          </div>
+          <div class="setting-desc">変更hunkの前後に追加する行数。大きいほど周辺コードが多く見える。</div>
+          <div class="setting-row">
+            <input type="range" id="cfg-context" min="0" max="20" step="1" value="5"
+              oninput="document.getElementById('cfg-context-val').textContent=this.value">
+            <span class="range-val" id="cfg-context-val">5</span>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>近接hunk統合の閾値</span>
+            <code>MERGE_THRESHOLD</code>
+          </div>
+          <div class="setting-desc">この行数以内に隣接するhunkは1枚に統合される。</div>
+          <div class="setting-row">
+            <input type="range" id="cfg-merge" min="0" max="30" step="1" value="8"
+              oninput="document.getElementById('cfg-merge-val').textContent=this.value">
+            <span class="range-val" id="cfg-merge-val">8</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-group-label">出力 / PNG</div>
+
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>PNG横幅</span>
+            <code>HTML_WIDTH</code>
+          </div>
+          <div class="setting-desc">出力PNGの横幅(px)。Excelのシート幅に合わせて調整。</div>
+          <div class="setting-row">
+            <input type="range" id="cfg-width" min="600" max="1600" step="40" value="960"
+              oninput="document.getElementById('cfg-width-val').textContent=this.value">
+            <span class="range-val" id="cfg-width-val">960</span>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>出力ディレクトリ</span>
+            <code>OUTPUT_DIR</code>
+          </div>
+          <div class="setting-desc">PNGの保存先フォルダ名（app.py からの相対パス）。</div>
+          <input type="text" id="cfg-outdir" value="diff_screenshots" style="width:100%;margin-top:2px">
+        </div>
+      </div>
+
+    </div>
+    <div class="drawer-footer">
+      <button class="btn btn-ghost" onclick="resetConfig()">リセット</button>
+      <button class="btn btn-primary" onclick="applyConfig()">適用</button>
     </div>
   </div>
 
-  <div class="hunk-header">
-    <span>変更 hunk <span id="hunkCount"></span></span>
-    <div class="select-all-row">
-      <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="selectAll(true)">全選択</button>
-      <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="selectAll(false)">解除</button>
+  <aside>
+    <div class="repo-section">
+      <label>リポジトリパス</label>
+      <div class="repo-row">
+        <input type="text" id="repoPath" placeholder="/path/to/your/repo" />
+        <button class="btn btn-primary" id="analyzeBtn" onclick="analyze()">解析</button>
+      </div>
     </div>
-  </div>
 
-  <div class="hunk-list" id="hunkList">
-    <div class="empty-state" style="height:200px">
-      <div class="empty-icon">📂</div>
-      <div class="empty-label">リポジトリを解析してください</div>
+    <div class="hunk-header">
+      <span>変更 hunk <span id="hunkCount"></span></span>
+      <div class="select-all-row">
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="selectAll(true)">全選択</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="selectAll(false)">解除</button>
+      </div>
     </div>
-  </div>
 
-  <div class="export-section">
-    <div class="export-info" id="exportInfo">選択: 0 件</div>
-    <div class="export-buttons">
-      <button class="btn btn-success" id="exportSelectedBtn" onclick="exportSelected()" disabled>選択を出力</button>
-      <button class="btn btn-primary" id="exportAllBtn" onclick="exportAll()" disabled>全て出力</button>
+    <div class="hunk-list" id="hunkList">
+      <div class="empty-state" style="height:200px">
+        <div class="empty-icon">📂</div>
+        <div class="empty-label">リポジトリを解析してください</div>
+      </div>
     </div>
-  </div>
-</aside>
 
-<main>
-  <div class="preview-toolbar">
-    <span class="preview-label">Preview</span>
-    <span class="preview-file" id="previewFile">—</span>
-    <div class="nav-btns">
-      <button class="btn btn-ghost" id="prevBtn" onclick="navigate(-1)" disabled>◀</button>
-      <button class="btn btn-ghost" id="nextBtn" onclick="navigate(1)" disabled>▶</button>
+    <div class="export-section">
+      <div class="export-info" id="exportInfo">選択: 0 件</div>
+      <div class="export-buttons">
+        <button class="btn btn-success" id="exportSelectedBtn" onclick="exportSelected()" disabled>選択を出力</button>
+        <button class="btn btn-primary" id="exportAllBtn" onclick="exportAll()" disabled>全て出力</button>
+      </div>
     </div>
-  </div>
+  </aside>
 
-  <div class="preview-frame-wrap" id="previewWrap">
-    <div class="empty-state">
-      <div class="empty-icon">🔍</div>
-      <div class="empty-label">hunkを選択するとプレビューが表示されます</div>
+  <main>
+    <div class="preview-toolbar">
+      <span class="preview-label">Preview</span>
+      <span class="preview-file" id="previewFile">—</span>
+      <div class="nav-btns">
+        <button class="btn btn-ghost" id="prevBtn" onclick="navigate(-1)" disabled>◀</button>
+        <button class="btn btn-ghost" id="nextBtn" onclick="navigate(1)" disabled>▶</button>
+      </div>
     </div>
-  </div>
-</main>
 
-<div class="toast" id="toast"></div>
+    <div class="preview-frame-wrap" id="previewWrap">
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-label">hunkを選択するとプレビューが表示されます</div>
+      </div>
+    </div>
+  </main>
 
-<script>
-let state = {
-  repoPath: '',
-  hunks: [],
-  selected: new Set(),
-  activeIndex: -1,
-};
+  <div class="toast" id="toast"></div>
 
-// ---- 解析 ----
-async function analyze() {
-  const repoPath = document.getElementById('repoPath').value.trim();
-  if (!repoPath) { showToast('リポジトリパスを入力してください', 'error'); return; }
+  <script>
+    let state = {
+      repoPath: '',
+      hunks: [],
+      selected: new Set(),
+      activeIndex: -1,
+    };
 
-  setStatus('<span class="spinner"></span>解析中...');
-  document.getElementById('analyzeBtn').disabled = true;
+    // ---- 解析 ----
+    async function analyze() {
+      const repoPath = document.getElementById('repoPath').value.trim();
+      if (!repoPath) { showToast('リポジトリパスを入力してください', 'error'); return; }
 
-  try {
-    const res = await fetch('/api/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repo_path: repoPath }),
-    });
-    const data = await res.json();
-    if (!res.ok) { showToast(data.error, 'error'); return; }
+      setStatus('<span class="spinner"></span>解析中...');
+      document.getElementById('analyzeBtn').disabled = true;
 
-    state.repoPath = repoPath;
-    state.hunks = data.hunks;
-    state.selected = new Set();
-    state.activeIndex = -1;
+      try {
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repo_path: repoPath }),
+        });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error, 'error'); return; }
 
-    renderHunkList();
-    clearPreview();
+        state.repoPath = repoPath;
+        state.hunks = data.hunks;
+        state.selected = new Set();
+        state.activeIndex = -1;
 
-    if (data.hunks.length === 0) {
-      showToast(data.message || '差分がありません', '');
-      setStatus('差分なし');
-    } else {
-      showToast(`${data.hunks.length} 件のhunkを検出しました`, 'success');
-      setStatus(`${data.hunks.length} hunks`);
-      selectAll(true);
-      showPreview(0);
+        renderHunkList();
+        clearPreview();
+
+        if (data.hunks.length === 0) {
+          showToast(data.message || '差分がありません', '');
+          setStatus('差分なし');
+        } else {
+          showToast(`${data.hunks.length} 件のhunkを検出しました`, 'success');
+          setStatus(`${data.hunks.length} hunks`);
+          selectAll(true);
+          showPreview(0);
+        }
+      } catch (e) {
+        showToast('通信エラー: ' + e.message, 'error');
+      } finally {
+        document.getElementById('analyzeBtn').disabled = false;
+      }
     }
-  } catch (e) {
-    showToast('通信エラー: ' + e.message, 'error');
-  } finally {
-    document.getElementById('analyzeBtn').disabled = false;
-  }
-}
 
-// ---- hunk一覧描画 ----
-function renderHunkList() {
-  const list = document.getElementById('hunkList');
-  const count = state.hunks.length;
-  document.getElementById('hunkCount').textContent = count ? `(${count})` : '';
+    // ---- hunk一覧描画 ----
+    function renderHunkList() {
+      const list = document.getElementById('hunkList');
+      const count = state.hunks.length;
+      document.getElementById('hunkCount').textContent = count ? `(${count})` : '';
 
-  if (count === 0) {
-    list.innerHTML = '<div class="empty-state" style="height:200px"><div class="empty-icon">✅</div><div class="empty-label">差分がありません</div></div>';
-    updateExportButtons();
-    return;
-  }
+      if (count === 0) {
+        list.innerHTML = '<div class="empty-state" style="height:200px"><div class="empty-icon">✅</div><div class="empty-label">差分がありません</div></div>';
+        updateExportButtons();
+        return;
+      }
 
-  list.innerHTML = state.hunks.map((h, i) => {
-    const shortPath = h.filepath.split('/').slice(-2).join('/');
-    const changed = h.changed_lines.length;
-    return `
+      list.innerHTML = state.hunks.map((h, i) => {
+        const shortPath = h.filepath.split('/').slice(-2).join('/');
+        const changed = h.changed_lines.length;
+        return `
     <div class="hunk-item" id="hunk-item-${i}" onclick="onHunkClick(${i}, event)">
       <input type="checkbox" id="chk-${i}" onclick="onCheck(${i}, event)" ${state.selected.has(i) ? 'checked' : ''}>
       <div class="hunk-info">
@@ -454,146 +854,212 @@ function renderHunkList() {
       </div>
       <span class="hunk-badge">+${changed}</span>
     </div>`;
-  }).join('');
+      }).join('');
 
-  updateExportButtons();
-}
+      updateExportButtons();
+    }
 
-function onHunkClick(i, e) {
-  if (e.target.type === 'checkbox') return;
-  showPreview(i);
-}
+    function onHunkClick(i, e) {
+      if (e.target.type === 'checkbox') return;
+      showPreview(i);
+    }
 
-function onCheck(i, e) {
-  e.stopPropagation();
-  if (e.target.checked) state.selected.add(i);
-  else state.selected.delete(i);
-  updateExportButtons();
-}
+    function onCheck(i, e) {
+      e.stopPropagation();
+      if (e.target.checked) state.selected.add(i);
+      else state.selected.delete(i);
+      updateExportButtons();
+    }
 
-function selectAll(flag) {
-  state.hunks.forEach((_, i) => flag ? state.selected.add(i) : state.selected.delete(i));
-  state.hunks.forEach((_, i) => {
-    const chk = document.getElementById(`chk-${i}`);
-    if (chk) chk.checked = flag;
-  });
-  updateExportButtons();
-}
+    function selectAll(flag) {
+      state.hunks.forEach((_, i) => flag ? state.selected.add(i) : state.selected.delete(i));
+      state.hunks.forEach((_, i) => {
+        const chk = document.getElementById(`chk-${i}`);
+        if (chk) chk.checked = flag;
+      });
+      updateExportButtons();
+    }
 
-function updateExportButtons() {
-  const n = state.selected.size;
-  document.getElementById('exportInfo').textContent = `選択: ${n} 件`;
-  document.getElementById('exportSelectedBtn').disabled = n === 0;
-  document.getElementById('exportAllBtn').disabled = state.hunks.length === 0;
-}
+    function updateExportButtons() {
+      const n = state.selected.size;
+      document.getElementById('exportInfo').textContent = `選択: ${n} 件`;
+      document.getElementById('exportSelectedBtn').disabled = n === 0;
+      document.getElementById('exportAllBtn').disabled = state.hunks.length === 0;
+    }
 
-// ---- プレビュー ----
-async function showPreview(index) {
-  if (index < 0 || index >= state.hunks.length) return;
+    // ---- プレビュー ----
+    async function showPreview(index) {
+      if (index < 0 || index >= state.hunks.length) return;
 
-  state.activeIndex = index;
+      state.activeIndex = index;
 
-  // アクティブ表示
-  document.querySelectorAll('.hunk-item').forEach(el => el.classList.remove('active'));
-  const activeEl = document.getElementById(`hunk-item-${index}`);
-  if (activeEl) { activeEl.classList.add('active'); activeEl.scrollIntoView({ block: 'nearest' }); }
+      // アクティブ表示
+      document.querySelectorAll('.hunk-item').forEach(el => el.classList.remove('active'));
+      const activeEl = document.getElementById(`hunk-item-${index}`);
+      if (activeEl) { activeEl.classList.add('active'); activeEl.scrollIntoView({ block: 'nearest' }); }
 
-  const h = state.hunks[index];
-  document.getElementById('previewFile').textContent = `${h.filepath}  L${h.start}–${h.end}`;
-  document.getElementById('prevBtn').disabled = index === 0;
-  document.getElementById('nextBtn').disabled = index === state.hunks.length - 1;
+      const h = state.hunks[index];
+      document.getElementById('previewFile').textContent = `${h.filepath}  L${h.start}–${h.end}`;
+      document.getElementById('prevBtn').disabled = index === 0;
+      document.getElementById('nextBtn').disabled = index === state.hunks.length - 1;
 
-  const wrap = document.getElementById('previewWrap');
-  wrap.innerHTML = '<div class="empty-state"><span class="spinner"></span><div class="empty-label">読み込み中...</div></div>';
+      const wrap = document.getElementById('previewWrap');
+      wrap.innerHTML = '<div class="empty-state"><span class="spinner"></span><div class="empty-label">読み込み中...</div></div>';
 
-  try {
-    const res = await fetch(`/api/preview/${index}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repo_path: state.repoPath, hunks: state.hunks }),
+      try {
+        const res = await fetch(`/api/preview/${index}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repo_path: state.repoPath, hunks: state.hunks }),
+        });
+        const html = await res.text();
+
+        const iframe = document.createElement('iframe');
+        wrap.innerHTML = '';
+        wrap.appendChild(iframe);
+        iframe.contentDocument.open();
+        iframe.contentDocument.write(html);
+        iframe.contentDocument.close();
+
+        // iframeの高さをコンテンツに合わせる
+        iframe.onload = () => {
+          const h = iframe.contentDocument.body.scrollHeight;
+          iframe.style.height = Math.min(Math.max(h + 32, 200), 800) + 'px';
+        };
+      } catch (e) {
+        wrap.innerHTML = `<div class="empty-state"><div class="empty-label" style="color:var(--danger)">読み込みエラー</div></div>`;
+      }
+    }
+
+    function clearPreview() {
+      const wrap = document.getElementById('previewWrap');
+      wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-label">hunkを選択するとプレビューが表示されます</div></div>';
+      document.getElementById('previewFile').textContent = '—';
+      document.getElementById('prevBtn').disabled = true;
+      document.getElementById('nextBtn').disabled = true;
+    }
+
+    function navigate(dir) {
+      showPreview(state.activeIndex + dir);
+    }
+
+    // ---- エクスポート ----
+    async function exportSelected() {
+      await doExport([...state.selected].sort((a, b) => a - b));
+    }
+
+    async function exportAll() {
+      await doExport(state.hunks.map((_, i) => i));
+    }
+
+    async function doExport(indices) {
+      if (indices.length === 0) return;
+
+      setStatus('<span class="spinner"></span>PNG出力中...');
+      document.getElementById('exportSelectedBtn').disabled = true;
+      document.getElementById('exportAllBtn').disabled = true;
+
+      try {
+        const res = await fetch('/api/export', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repo_path: state.repoPath, hunks: state.hunks, indices }),
+        });
+        const data = await res.json();
+        showToast(`✅ ${data.count} 枚出力しました → diff_screenshots/`, 'success');
+        setStatus(`出力完了: ${data.count} 枚`);
+      } catch (e) {
+        showToast('出力エラー: ' + e.message, 'error');
+        setStatus('エラー');
+      } finally {
+        updateExportButtons();
+      }
+    }
+
+    // ---- UI utils ----
+    function setStatus(html) {
+      document.getElementById('statusBar').innerHTML = html;
+    }
+
+    let toastTimer;
+    function showToast(msg, type) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'toast show ' + (type || '');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+    }
+
+    // Enter キーで解析
+    document.getElementById('repoPath').addEventListener('keydown', e => {
+      if (e.key === 'Enter') analyze();
     });
-    const html = await res.text();
-
-    const iframe = document.createElement('iframe');
-    wrap.innerHTML = '';
-    wrap.appendChild(iframe);
-    iframe.contentDocument.open();
-    iframe.contentDocument.write(html);
-    iframe.contentDocument.close();
-
-    // iframeの高さをコンテンツに合わせる
-    iframe.onload = () => {
-      const h = iframe.contentDocument.body.scrollHeight;
-      iframe.style.height = Math.min(Math.max(h + 32, 200), 800) + 'px';
-    };
-  } catch (e) {
-    wrap.innerHTML = `<div class="empty-state"><div class="empty-label" style="color:var(--danger)">読み込みエラー</div></div>`;
-  }
-}
-
-function clearPreview() {
-  const wrap = document.getElementById('previewWrap');
-  wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-label">hunkを選択するとプレビューが表示されます</div></div>';
-  document.getElementById('previewFile').textContent = '—';
-  document.getElementById('prevBtn').disabled = true;
-  document.getElementById('nextBtn').disabled = true;
-}
-
-function navigate(dir) {
-  showPreview(state.activeIndex + dir);
-}
-
-// ---- エクスポート ----
-async function exportSelected() {
-  await doExport([...state.selected].sort((a, b) => a - b));
-}
-
-async function exportAll() {
-  await doExport(state.hunks.map((_, i) => i));
-}
-
-async function doExport(indices) {
-  if (indices.length === 0) return;
-
-  setStatus('<span class="spinner"></span>PNG出力中...');
-  document.getElementById('exportSelectedBtn').disabled = true;
-  document.getElementById('exportAllBtn').disabled = true;
-
-  try {
-    const res = await fetch('/api/export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repo_path: state.repoPath, hunks: state.hunks, indices }),
-    });
-    const data = await res.json();
-    showToast(`✅ ${data.count} 枚出力しました → diff_screenshots/`, 'success');
-    setStatus(`出力完了: ${data.count} 枚`);
-  } catch (e) {
-    showToast('出力エラー: ' + e.message, 'error');
-    setStatus('エラー');
-  } finally {
-    updateExportButtons();
-  }
-}
-
-// ---- UI utils ----
-function setStatus(html) {
-  document.getElementById('statusBar').innerHTML = html;
-}
-
-let toastTimer;
-function showToast(msg, type) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'toast show ' + (type || '');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
-}
-
-// Enter キーで解析
-document.getElementById('repoPath').addEventListener('keydown', e => {
-  if (e.key === 'Enter') analyze();
-});
-</script>
+  </script>
 </body>
+
 </html>
+<script>
+  // ---- 設定ドロワー ----
+  const DEFAULTS = { context: 5, merge: 8, width: 960, outdir: 'diff_screenshots' };
+
+  function toggleDrawer() {
+    const isOpen = document.getElementById('drawer').classList.contains('open');
+    isOpen ? closeDrawer() : openDrawer();
+  }
+  function openDrawer() {
+    document.getElementById('drawer').classList.add('open');
+    document.getElementById('drawerOverlay').classList.add('open');
+    document.getElementById('gearBtn').classList.add('open');
+  }
+  function closeDrawer() {
+    document.getElementById('drawer').classList.remove('open');
+    document.getElementById('drawerOverlay').classList.remove('open');
+    document.getElementById('gearBtn').classList.remove('open');
+  }
+
+  function resetConfig() {
+    setSlider('cfg-context', 'cfg-context-val', DEFAULTS.context);
+    setSlider('cfg-merge', 'cfg-merge-val', DEFAULTS.merge);
+    setSlider('cfg-width', 'cfg-width-val', DEFAULTS.width);
+    document.getElementById('cfg-outdir').value = DEFAULTS.outdir;
+  }
+
+  function setSlider(sliderId, valId, value) {
+    document.getElementById(sliderId).value = value;
+    document.getElementById(valId).textContent = value;
+  }
+
+  async function applyConfig() {
+    const payload = {
+      context_lines: parseInt(document.getElementById('cfg-context').value),
+      merge_threshold: parseInt(document.getElementById('cfg-merge').value),
+      html_width: parseInt(document.getElementById('cfg-width').value),
+      output_dir: document.getElementById('cfg-outdir').value.trim(),
+    };
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error, 'error'); return; }
+      showToast('設定を適用しました', 'success');
+      closeDrawer();
+    } catch (e) {
+      showToast('設定の適用に失敗しました: ' + e.message, 'error');
+    }
+  }
+
+  // 起動時にサーバーの現在値を取得してスライダーに反映
+  (async () => {
+    try {
+      const res = await fetch('/api/config');
+      const cfg = await res.json();
+      setSlider('cfg-context', 'cfg-context-val', cfg.context_lines);
+      setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);
+      setSlider('cfg-width', 'cfg-width-val', cfg.html_width);
+      document.getElementById('cfg-outdir').value = cfg.output_dir;
+    } catch (_) { }
+  })();
+</script>

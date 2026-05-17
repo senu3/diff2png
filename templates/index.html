@@ -966,7 +966,13 @@
           body: JSON.stringify({ repo_path: state.repoPath, hunks: state.hunks, indices }),
         });
         const data = await res.json();
-        showToast(`✅ ${data.count} 枚出力しました → diff_screenshots/`, 'success');
+        if (!res.ok) {
+          showToast(data.error || '出力エラー', 'error');
+          setStatus('エラー');
+          return;
+        }
+        const outDir = data.output_dir || 'diff_screenshots';
+        showToast(`✅ ${data.count} 枚出力しました → ${outDir}/`, 'success');
         setStatus(`出力完了: ${data.count} 枚`);
       } catch (e) {
         showToast('出力エラー: ' + e.message, 'error');
@@ -990,76 +996,77 @@
       toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
     }
 
+    // ---- 設定ドロワー ----
+    const DEFAULTS = { context: 5, merge: 8, width: 960, outdir: 'diff_screenshots' };
+
+    function toggleDrawer() {
+      const isOpen = document.getElementById('drawer').classList.contains('open');
+      isOpen ? closeDrawer() : openDrawer();
+    }
+
+    function openDrawer() {
+      document.getElementById('drawer').classList.add('open');
+      document.getElementById('drawerOverlay').classList.add('open');
+      document.getElementById('gearBtn').classList.add('open');
+    }
+
+    function closeDrawer() {
+      document.getElementById('drawer').classList.remove('open');
+      document.getElementById('drawerOverlay').classList.remove('open');
+      document.getElementById('gearBtn').classList.remove('open');
+    }
+
+    function resetConfig() {
+      setSlider('cfg-context', 'cfg-context-val', DEFAULTS.context);
+      setSlider('cfg-merge', 'cfg-merge-val', DEFAULTS.merge);
+      setSlider('cfg-width', 'cfg-width-val', DEFAULTS.width);
+      document.getElementById('cfg-outdir').value = DEFAULTS.outdir;
+    }
+
+    function setSlider(sliderId, valId, value) {
+      document.getElementById(sliderId).value = value;
+      document.getElementById(valId).textContent = value;
+    }
+
+    async function applyConfig() {
+      const payload = {
+        context_lines: parseInt(document.getElementById('cfg-context').value, 10),
+        merge_threshold: parseInt(document.getElementById('cfg-merge').value, 10),
+        html_width: parseInt(document.getElementById('cfg-width').value, 10),
+        output_dir: document.getElementById('cfg-outdir').value.trim(),
+      };
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error || '設定の適用に失敗しました', 'error'); return; }
+        showToast('設定を適用しました', 'success');
+        closeDrawer();
+      } catch (e) {
+        showToast('設定の適用に失敗しました: ' + e.message, 'error');
+      }
+    }
+
     // Enter キーで解析
     document.getElementById('repoPath').addEventListener('keydown', e => {
       if (e.key === 'Enter') analyze();
     });
+
+    // 起動時にサーバーの現在値を取得してスライダーに反映
+    (async () => {
+      try {
+        const res = await fetch('/api/config');
+        const cfg = await res.json();
+        setSlider('cfg-context', 'cfg-context-val', cfg.context_lines);
+        setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);
+        setSlider('cfg-width', 'cfg-width-val', cfg.html_width);
+        document.getElementById('cfg-outdir').value = cfg.output_dir;
+      } catch (_) { }
+    })();
   </script>
 </body>
 
 </html>
-<script>
-  // ---- 設定ドロワー ----
-  const DEFAULTS = { context: 5, merge: 8, width: 960, outdir: 'diff_screenshots' };
-
-  function toggleDrawer() {
-    const isOpen = document.getElementById('drawer').classList.contains('open');
-    isOpen ? closeDrawer() : openDrawer();
-  }
-  function openDrawer() {
-    document.getElementById('drawer').classList.add('open');
-    document.getElementById('drawerOverlay').classList.add('open');
-    document.getElementById('gearBtn').classList.add('open');
-  }
-  function closeDrawer() {
-    document.getElementById('drawer').classList.remove('open');
-    document.getElementById('drawerOverlay').classList.remove('open');
-    document.getElementById('gearBtn').classList.remove('open');
-  }
-
-  function resetConfig() {
-    setSlider('cfg-context', 'cfg-context-val', DEFAULTS.context);
-    setSlider('cfg-merge', 'cfg-merge-val', DEFAULTS.merge);
-    setSlider('cfg-width', 'cfg-width-val', DEFAULTS.width);
-    document.getElementById('cfg-outdir').value = DEFAULTS.outdir;
-  }
-
-  function setSlider(sliderId, valId, value) {
-    document.getElementById(sliderId).value = value;
-    document.getElementById(valId).textContent = value;
-  }
-
-  async function applyConfig() {
-    const payload = {
-      context_lines: parseInt(document.getElementById('cfg-context').value),
-      merge_threshold: parseInt(document.getElementById('cfg-merge').value),
-      html_width: parseInt(document.getElementById('cfg-width').value),
-      output_dir: document.getElementById('cfg-outdir').value.trim(),
-    };
-    try {
-      const res = await fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) { showToast(data.error, 'error'); return; }
-      showToast('設定を適用しました', 'success');
-      closeDrawer();
-    } catch (e) {
-      showToast('設定の適用に失敗しました: ' + e.message, 'error');
-    }
-  }
-
-  // 起動時にサーバーの現在値を取得してスライダーに反映
-  (async () => {
-    try {
-      const res = await fetch('/api/config');
-      const cfg = await res.json();
-      setSlider('cfg-context', 'cfg-context-val', cfg.context_lines);
-      setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);
-      setSlider('cfg-width', 'cfg-width-val', cfg.html_width);
-      document.getElementById('cfg-outdir').value = cfg.output_dir;
-    } catch (_) { }
-  })();
-</script>

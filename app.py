@@ -16,7 +16,9 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 # ---- 設定 ----
 CONTEXT_LINES = 5
 MERGE_THRESHOLD = 8
-OUTPUT_DIR = Path("diff_screenshots")
+APP_ROOT = Path(__file__).resolve().parent
+OUTPUT_DIR_NAME = "diff_screenshots"
+OUTPUT_DIR = APP_ROOT / OUTPUT_DIR_NAME
 HTML_WIDTH = 960
 
 app = Flask(__name__)
@@ -35,6 +37,57 @@ def get_diff(repo_path: str) -> str:
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip())
     return result.stdout
+
+
+def is_git_repo(repo_path: str) -> bool:
+    result = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=repo_path,
+    )
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def resolve_repo_path(repo_path: str) -> Path:
+    p = Path(repo_path).expanduser()
+    try:
+        rp = p.resolve(strict=True)
+    except Exception as e:
+        raise ValueError(f"リポジトリパスの解決に失敗しました: {e}")
+    if not rp.is_dir():
+        raise ValueError("リポジトリパスが無効です")
+    if not is_git_repo(str(rp)):
+        raise ValueError("指定パスはGitリポジトリではありません")
+    return rp
+
+
+def resolve_path_within(base_dir: Path, relative_path: str) -> Path:
+    target = (base_dir / relative_path).resolve()
+    try:
+        target.relative_to(base_dir)
+    except ValueError as e:
+        raise ValueError("パスがリポジトリ外を指しています") from e
+    return target
+
+
+def parse_output_dir(value: str) -> tuple[str, Path]:
+    raw = (value or "").strip()
+    if not raw:
+        raise ValueError("output_dir は空にできません")
+
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        raise ValueError("output_dir は相対パスで指定してください")
+
+    resolved = (APP_ROOT / candidate).resolve()
+    try:
+        resolved.relative_to(APP_ROOT)
+    except ValueError as e:
+        raise ValueError("output_dir はアプリ配下を指定してください") from e
+
+    return candidate.as_posix(), resolved
 
 
 def parse_hunks(diff_text: str) -> list[dict]:
@@ -87,7 +140,8 @@ def expand_and_merge(hunks: list[dict], repo_path: str, context: int, merge_thre
     result = []
     for filepath, fhunks in by_file.items():
         try:
-            total_lines = len((Path(repo_path) / filepath).read_text(encoding="utf-8").splitlines())
+            safe_path = resolve_path_within(Path(repo_path), filepath)
+            total_lines = len(safe_path.read_text(encoding="utf-8").splitlines())
         except Exception:
             total_lines = 10 ** 6
 
@@ -119,7 +173,8 @@ def expand_and_merge(hunks: list[dict], repo_path: str, context: int, merge_thre
 
 def read_lines(repo_path: str, filepath: str, start: int, end: int) -> list[tuple[int, str]]:
     try:
-        lines = (Path(repo_path) / filepath).read_text(encoding="utf-8").splitlines()
+        safe_path = resolve_path_within(Path(repo_path), filepath)
+        lines = safe_path.read_text(encoding="utf-8").splitlines()
     except Exception as e:
         return [(start, f"# 読み込みエラー: {e}")]
     return [(i + 1, lines[i]) for i in range(start - 1, min(end, len(lines)))]
@@ -199,15 +254,21 @@ td.code{{padding:2px 8px;white-space:pre}}
 # PNG 出力
 # ================================================================
 
-def render_png(html: str, out_path: Path):
+def render_png(page, html: str, out_path: Path):
+    page.set_content(html, wait_until="load")
+    height = page.evaluate("document.body.scrollHeight")
+    page.set_viewport_size({"width": HTML_WIDTH + 32, "height": height + 32})
+    page.screenshot(path=str(out_path), full_page=True)
+
+
+def render_png_batch(items: list[tuple[str, Path]]):
     from playwright.sync_api import sync_playwright
+
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page()
-        page.set_content(html, wait_until="load")
-        height = page.evaluate("document.body.scrollHeight")
-        page.set_viewport_size({"width": HTML_WIDTH + 32, "height": height + 32})
-        page.screenshot(path=str(out_path), full_page=True)
+        for html, out_path in items:
+            render_png(page, html, out_path)
         browser.close()
 
 
@@ -222,15 +283,15 @@ def index():
 
 @app.route("/api/config", methods=["GET", "POST"])
 def config():
-    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR
+    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME
     if request.method == "GET":
         return jsonify({
             "context_lines": CONTEXT_LINES,
             "merge_threshold": MERGE_THRESHOLD,
             "html_width": HTML_WIDTH,
-            "output_dir": str(OUTPUT_DIR),
+            "output_dir": OUTPUT_DIR_NAME,
         })
-    data = request.json
+    data = request.get_json(silent=True) or {}
     try:
         if "context_lines" in data:
             CONTEXT_LINES = max(0, int(data["context_lines"]))
@@ -238,8 +299,8 @@ def config():
             MERGE_THRESHOLD = max(0, int(data["merge_threshold"]))
         if "html_width" in data:
             HTML_WIDTH = max(400, int(data["html_width"]))
-        if "output_dir" in data and data["output_dir"].strip():
-            OUTPUT_DIR = Path(data["output_dir"].strip())
+        if "output_dir" in data:
+            OUTPUT_DIR_NAME, OUTPUT_DIR = parse_output_dir(str(data["output_dir"]))
     except (ValueError, TypeError) as e:
         return jsonify({"error": f"不正な値: {e}"}), 400
     return jsonify({"ok": True})
@@ -247,12 +308,18 @@ def config():
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
-    repo_path = request.json.get("repo_path", "").strip()
-    if not repo_path or not Path(repo_path).is_dir():
+    data = request.get_json(silent=True) or {}
+    repo_path = str(data.get("repo_path", "")).strip()
+    if not repo_path:
         return jsonify({"error": "リポジトリパスが無効です"}), 400
 
     try:
-        diff_text = get_diff(repo_path)
+        repo = resolve_repo_path(repo_path)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    try:
+        diff_text = get_diff(str(repo))
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -260,16 +327,26 @@ def analyze():
         return jsonify({"hunks": [], "message": "差分がありません"})
 
     hunks = parse_hunks(diff_text)
-    hunks = expand_and_merge(hunks, repo_path, CONTEXT_LINES, MERGE_THRESHOLD)
+    hunks = expand_and_merge(hunks, str(repo), CONTEXT_LINES, MERGE_THRESHOLD)
 
     return jsonify({"hunks": hunks, "total": len(hunks)})
 
 
 @app.route("/api/preview/<int:hunk_index>", methods=["POST"])
 def preview(hunk_index: int):
-    data = request.json
-    repo_path = data["repo_path"]
-    hunks = data["hunks"]
+    data = request.get_json(silent=True) or {}
+    repo_path = str(data.get("repo_path", "")).strip()
+    hunks = data.get("hunks")
+    if not repo_path:
+        return jsonify({"error": "リポジトリパスが無効です"}), 400
+    if not isinstance(hunks, list):
+        return jsonify({"error": "hunks が不正です"}), 400
+
+    try:
+        repo = resolve_repo_path(repo_path)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
     total = len(hunks)
 
     if hunk_index < 0 or hunk_index >= total:
@@ -278,33 +355,63 @@ def preview(hunk_index: int):
     hunk = hunks[hunk_index]
     hunk["changed_lines"] = hunk.get("changed_lines", [])
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    html = build_code_html(hunk, repo_path, hunk_index + 1, total, timestamp)
+    html = build_code_html(hunk, str(repo), hunk_index + 1, total, timestamp)
     return html
 
 
 @app.route("/api/export", methods=["POST"])
 def export():
-    data = request.json
-    repo_path = data["repo_path"]
-    hunks = data["hunks"]
-    indices = data.get("indices", list(range(len(hunks))))
+    data = request.get_json(silent=True) or {}
+    repo_path = str(data.get("repo_path", "")).strip()
+    hunks = data.get("hunks")
+    if not repo_path:
+        return jsonify({"error": "リポジトリパスが無効です"}), 400
+    if not isinstance(hunks, list):
+        return jsonify({"error": "hunks が不正です"}), 400
+
+    try:
+        repo = resolve_repo_path(repo_path)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    raw_indices = data.get("indices")
+    if raw_indices is None:
+        indices = list(range(len(hunks)))
+    elif isinstance(raw_indices, list):
+        indices = raw_indices
+    else:
+        return jsonify({"error": "indices は配列で指定してください"}), 400
+
+    normalized_indices: list[int] = []
+    for idx in indices:
+        if not isinstance(idx, int):
+            return jsonify({"error": "indices は整数配列で指定してください"}), 400
+        if idx < 0 or idx >= len(hunks):
+            return jsonify({"error": f"indices に範囲外の値があります: {idx}"}), 400
+        normalized_indices.append(idx)
+
+    if not normalized_indices:
+        return jsonify({"error": "出力対象がありません"}), 400
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     timestamp_disp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     total = len(hunks)
-    saved = []
+    render_items: list[tuple[str, Path]] = []
+    saved: list[str] = []
 
-    for i in indices:
+    for i in normalized_indices:
         hunk = hunks[i]
         hunk["changed_lines"] = hunk.get("changed_lines", [])
         safe = hunk["filepath"].replace("/", "_").replace("\\", "_")
         out_path = OUTPUT_DIR / f"{timestamp_str}_{i + 1 :03d}_{safe}_L{hunk['start']}.png"
-        html = build_code_html(hunk, repo_path, i + 1, total, timestamp_disp)
-        render_png(html, out_path)
+        html = build_code_html(hunk, str(repo), i + 1, total, timestamp_disp)
+        render_items.append((html, out_path))
         saved.append(str(out_path))
 
-    return jsonify({"saved": saved, "count": len(saved)})
+    render_png_batch(render_items)
+
+    return jsonify({"saved": saved, "count": len(saved), "output_dir": OUTPUT_DIR_NAME})
 
 
 @app.route("/screenshots/<path:filename>")

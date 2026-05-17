@@ -828,6 +828,31 @@
       activeIndex: -1,
     };
 
+    function findMatchingHunkIndex(hunks, baseHunk) {
+      if (!baseHunk || !Array.isArray(hunks) || hunks.length === 0) return -1;
+
+      const exactIndex = hunks.findIndex(h =>
+        h.filepath === baseHunk.filepath &&
+        h.start === baseHunk.start &&
+        h.end === baseHunk.end &&
+        (h.old_start ?? null) === (baseHunk.old_start ?? null)
+      );
+      if (exactIndex >= 0) return exactIndex;
+
+      let bestIndex = -1;
+      let bestScore = Number.MAX_SAFE_INTEGER;
+      for (let i = 0; i < hunks.length; i += 1) {
+        const h = hunks[i];
+        if (h.filepath !== baseHunk.filepath) continue;
+        const score = Math.abs((h.start || 0) - (baseHunk.start || 0));
+        if (score < bestScore) {
+          bestScore = score;
+          bestIndex = i;
+        }
+      }
+      return bestIndex;
+    }
+
     function updateAnalyzeButtonLabel() {
       const btn = document.getElementById('analyzeBtn');
       const path = document.getElementById('repoPath').value.trim();
@@ -875,9 +900,14 @@
     }
 
     // ---- 解析 ----
-    async function analyze() {
+    async function analyze(options = {}) {
+      const preserveActive = Boolean(options.preserveActive);
       const repoPath = document.getElementById('repoPath').value.trim();
       if (!repoPath) { showToast('リポジトリパスを入力してください', 'error'); return; }
+
+      const prevActiveHunk = preserveActive && state.activeIndex >= 0
+        ? state.hunks[state.activeIndex]
+        : null;
 
       setStatus('<span class="spinner"></span>解析中...');
       document.getElementById('analyzeBtn').disabled = true;
@@ -906,7 +936,10 @@
           showToast(`${data.hunks.length} 件のhunkを検出しました`, 'success');
           setStatus(`${data.hunks.length} hunks`);
           selectAll(true);
-          showPreview(0);
+          const targetIndex = preserveActive
+            ? Math.max(0, findMatchingHunkIndex(state.hunks, prevActiveHunk))
+            : 0;
+          showPreview(targetIndex);
         }
       } catch (e) {
         showToast('通信エラー: ' + e.message, 'error');
@@ -1096,7 +1129,7 @@
         if (!res.ok) { showToast(data.error || '差分モード変更に失敗しました', 'error'); return; }
         showToast('差分表示モードを切り替えました', 'success');
         if (document.getElementById('repoPath').value.trim()) {
-          await analyze();
+          await analyze({ preserveActive: true });
         }
       } catch (e) {
         showToast('差分モード変更に失敗しました: ' + e.message, 'error');

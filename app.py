@@ -29,8 +29,30 @@ app = Flask(__name__)
 # git / diff ユーティリティ
 # ================================================================
 
-def get_diff(repo_path: str, context_lines: int | None = None, merge_threshold: int | None = None) -> str:
-    cmd = ["git", "diff", "HEAD"]
+def get_diff(
+    repo_path: str,
+    context_lines: int | None = None,
+    merge_threshold: int | None = None,
+    source_mode: str = "worktree",
+    base_ref: str | None = None,
+    target_ref: str | None = None,
+) -> str:
+    if source_mode == "worktree":
+        cmd = ["git", "diff", "HEAD"]
+    elif source_mode == "commit":
+        commit = (target_ref or "").strip()
+        if not commit:
+            raise RuntimeError("コミットを選択してください")
+        cmd = ["git", "diff", f"{commit}^", commit]
+    elif source_mode == "range":
+        base = (base_ref or "").strip()
+        target = (target_ref or "").strip()
+        if not base or not target:
+            raise RuntimeError("比較元/比較先コミットを選択してください")
+        cmd = ["git", "diff", base, target]
+    else:
+        raise RuntimeError("不正な差分ソースです")
+
     if context_lines is not None:
         cmd.append(f"-U{max(0, int(context_lines))}")
     if merge_threshold is not None:
@@ -44,6 +66,31 @@ def get_diff(repo_path: str, context_lines: int | None = None, merge_threshold: 
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip())
     return result.stdout
+
+
+def list_commits(repo_path: str, limit: int = 80) -> list[dict]:
+    result = subprocess.run(
+        ["git", "log", f"-n{max(1, min(limit, 200))}", "--pretty=format:%H\t%h\t%s"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=repo_path,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip())
+
+    commits: list[dict] = []
+    for line in result.stdout.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) < 3:
+            continue
+        full_hash, short_hash, subject = parts
+        commits.append({
+            "hash": full_hash,
+            "short": short_hash,
+            "subject": subject,
+        })
+    return commits
 
 
 def is_git_repo(repo_path: str) -> bool:
@@ -460,10 +507,37 @@ def config():
     return jsonify({"ok": True})
 
 
+@app.route("/api/commits", methods=["POST"])
+def commits():
+    data = request.get_json(silent=True) or {}
+    repo_path = str(data.get("repo_path", "")).strip()
+    if not repo_path:
+        return jsonify({"error": "リポジトリパスが無効です"}), 400
+
+    try:
+        repo = resolve_repo_path(repo_path)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    try:
+        items = list_commits(str(repo))
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 400
+
+    return jsonify({"commits": items})
+
+
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
     data = request.get_json(silent=True) or {}
     repo_path = str(data.get("repo_path", "")).strip()
+    source_mode = str(data.get("source_mode", "worktree")).strip().lower() or "worktree"
+    base_ref = str(data.get("base_ref", "")).strip()
+    target_ref = str(data.get("target_ref", "")).strip()
+
+    if source_mode not in ("worktree", "commit", "range"):
+        return jsonify({"error": "不正な差分ソースです"}), 400
+
     if not repo_path:
         return jsonify({"error": "リポジトリパスが無効です"}), 400
 
@@ -478,9 +552,17 @@ def analyze():
                 str(repo),
                 context_lines=CONTEXT_LINES,
                 merge_threshold=MERGE_THRESHOLD,
+                source_mode=source_mode,
+                base_ref=base_ref,
+                target_ref=target_ref,
             )
         else:
-            diff_text = get_diff(str(repo))
+            diff_text = get_diff(
+                str(repo),
+                source_mode=source_mode,
+                base_ref=base_ref,
+                target_ref=target_ref,
+            )
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 400
 

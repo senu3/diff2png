@@ -228,7 +228,11 @@ def expand_and_merge(hunks: list[dict], repo_path: str, context: int, merge_thre
                 "filepath": filepath,
                 "start": max(1, h["start"] - context),
                 "end": min(total_lines, h["end"] + context),
+                "old_start": h.get("old_start", h["start"]),
                 "changed_lines": set(h["changed_lines"]),
+                "diff_lines": list(h.get("diff_lines", [])),
+                "added_count": int(h.get("added_count", 0)),
+                "deleted_count": int(h.get("deleted_count", 0)),
             })
 
         merged = [expanded[0]]
@@ -236,7 +240,11 @@ def expand_and_merge(hunks: list[dict], repo_path: str, context: int, merge_thre
             prev = merged[-1]
             if h["start"] - prev["end"] <= merge_thresh:
                 prev["end"] = max(prev["end"], h["end"])
+                prev["old_start"] = min(int(prev.get("old_start", prev["start"])), int(h.get("old_start", h["start"])))
                 prev["changed_lines"] |= h["changed_lines"]
+                prev["diff_lines"].extend(h.get("diff_lines", []))
+                prev["added_count"] = int(prev.get("added_count", 0)) + int(h.get("added_count", 0))
+                prev["deleted_count"] = int(prev.get("deleted_count", 0)) + int(h.get("deleted_count", 0))
             else:
                 merged.append(h)
 
@@ -276,6 +284,9 @@ def detect_language(filepath: str) -> str:
 
 def build_code_html(hunk: dict, repo_path: str, hunk_index: int, total: int, timestamp: str) -> str:
     if DIFF_MODE == "patch":
+        return build_patch_html(hunk, hunk_index, total, timestamp)
+
+    if len(hunk.get("changed_lines", [])) == 0 and int(hunk.get("deleted_count", 0)) > 0 and hunk.get("diff_lines"):
         return build_patch_html(hunk, hunk_index, total, timestamp)
 
     lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"])
@@ -574,7 +585,6 @@ def analyze():
         hunks = expand_and_merge(hunks, str(repo), CONTEXT_LINES, MERGE_THRESHOLD)
         for h in hunks:
             h["changed_count"] = len(h.get("changed_lines", []))
-        hunks = [h for h in hunks if h.get("changed_count", 0) > 0]
     else:
         for h in hunks:
             h["changed_count"] = int(h.get("added_count", 0)) + int(h.get("deleted_count", 0))

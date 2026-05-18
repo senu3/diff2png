@@ -39,6 +39,9 @@ def get_diff(
 ) -> str:
     if source_mode == "worktree":
         cmd = ["git", "diff", "HEAD"]
+    elif source_mode == "staged":
+        # インデックス（ステージング済み）のみを表示
+        cmd = ["git", "diff", "--staged"]
     elif source_mode == "commit":
         commit = (target_ref or "").strip()
         if not commit:
@@ -307,6 +310,7 @@ def build_code_html(hunk: dict, repo_path: str, hunk_index: int, total: int, tim
             f'</tr>'
         )
 
+    diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
     return f"""<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8">
 <style>
@@ -337,7 +341,7 @@ td.code{{padding:2px 8px;white-space:pre}}
 <div class="code-block"><table>
 {''.join(rows)}
 </table></div>
-<div class="footer">{timestamp} | git diff HEAD</div>
+<div class="footer">{timestamp} | {diff_cmd}</div>
 </body></html>"""
 
 
@@ -399,6 +403,7 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) ->
             old_ln += 1
             new_ln += 1
 
+    diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
     return f"""<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8">
 <style>
@@ -433,7 +438,7 @@ td.code{{padding:2px 8px;white-space:pre}}
 <div class="code-block"><table>
 {''.join(rows)}
 </table></div>
-<div class="footer">{timestamp} | git diff HEAD</div>
+<div class="footer">{timestamp} | {diff_cmd}</div>
 </body></html>"""
 
 
@@ -546,7 +551,7 @@ def analyze():
     base_ref = str(data.get("base_ref", "")).strip()
     target_ref = str(data.get("target_ref", "")).strip()
 
-    if source_mode not in ("worktree", "commit", "range"):
+    if source_mode not in ("worktree", "staged", "commit", "range"):
         return jsonify({"error": "不正な差分ソースです"}), 400
 
     if not repo_path:
@@ -558,6 +563,16 @@ def analyze():
         return jsonify({"error": str(e)}), 400
 
     try:
+        # 人間向けの差分コマンド文字列を作成
+        if source_mode == "worktree":
+            diff_cmd_label = "git diff HEAD"
+        elif source_mode == "staged":
+            diff_cmd_label = "git diff --staged"
+        elif source_mode == "commit":
+            diff_cmd_label = f"git diff {target_ref}^ {target_ref}"
+        else:
+            diff_cmd_label = f"git diff {base_ref} {target_ref}"
+
         if DIFF_MODE == "patch":
             diff_text = get_diff(
                 str(repo),
@@ -581,6 +596,10 @@ def analyze():
         return jsonify({"hunks": [], "message": "差分がありません"})
 
     hunks = parse_hunks(diff_text)
+    # 各hunkに差分コマンド表記を付与
+    for h in hunks:
+        h["diff_cmd"] = diff_cmd_label
+
     if DIFF_MODE == "file":
         hunks = expand_and_merge(hunks, str(repo), CONTEXT_LINES, MERGE_THRESHOLD)
         for h in hunks:

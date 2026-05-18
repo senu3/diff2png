@@ -925,6 +925,7 @@
         <div class="source-control-label">差分ソース</div>
         <select id="diffSourceMode" onchange="onDiffSourceModeChange()">
           <option value="worktree">作業ツリー (HEAD差分)</option>
+          <option value="staged">ステージング済み</option>
           <option value="commit">単一コミット</option>
           <option value="range">コミット比較</option>
         </select>
@@ -1091,6 +1092,11 @@
         return;
       }
 
+      if (mode === 'staged') {
+        summaryEl.textContent = `ステージング済み / ${diffLabel}`;
+        return;
+      }
+
       if (mode === 'commit') {
         const t = targetEl.selectedOptions[0]?.textContent || '未選択';
         summaryEl.textContent = `単一コミット: ${t} / ${diffLabel}`;
@@ -1110,7 +1116,8 @@
     async function openSourceModal() {
       document.getElementById('sourceModal').classList.add('open');
       document.getElementById('sourceOverlay').classList.add('open');
-      if (getSelectedSourceMode() !== 'worktree') {
+      const mode = getSelectedSourceMode();
+      if (mode === 'commit' || mode === 'range') {
         await loadCommits(false);
       }
       updateSourceSummary();
@@ -1146,15 +1153,17 @@
       const targetWrap = document.getElementById('sourceTargetWrap');
       const targetRangeWrap = document.getElementById('sourceTargetRangeWrap');
 
-      controls.classList.toggle('open', mode !== 'worktree');
+      controls.classList.toggle('open', mode === 'commit' || mode === 'range');
       baseWrap.classList.toggle('hidden', mode !== 'range');
       targetRangeWrap.classList.toggle('hidden', mode !== 'range');
-      targetWrap.classList.toggle('hidden', mode === 'range' || mode === 'worktree');
+      targetWrap.classList.toggle('hidden', mode === 'range' || mode === 'worktree' || mode === 'staged');
 
-      if (mode !== 'worktree') {
+      if (mode === 'commit' || mode === 'range') {
         loadCommits(false);
-      } else {
+      } else if (mode === 'worktree') {
         setSourceCommitStatus('作業ツリーの未コミット差分を解析します');
+      } else if (mode === 'staged') {
+        setSourceCommitStatus('ステージング済みの差分を解析します');
       }
       updateSourceSummary();
     }

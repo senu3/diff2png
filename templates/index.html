@@ -604,6 +604,22 @@
       padding: 2px 6px;
       border-radius: 4px;
       flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .hunk-badge.danger {
+      color: #dc2626;
+      background: rgba(220, 38, 38, 0.12);
+    }
+
+    .hunk-badge .minus {
+      color: var(--text-dim);
+    }
+
+    .hunk-badge .minus.danger {
+      color: #dc2626;
     }
 
     .export-section {
@@ -1378,6 +1394,14 @@
       list.innerHTML = state.hunks.map((h, i) => {
         const shortPath = h.filepath.split('/').slice(-2).join('/');
         const changed = h.changed_count ?? h.changed_lines.length;
+        const added = h.added_count ?? changed;
+        const deleted = h.deleted_count ?? 0;
+        const isPatch = currentDiffMode === 'patch';
+        const badgeClass = 'hunk-badge';
+        const minusClass = deleted > 0 ? 'minus danger' : 'minus';
+        const badge = isPatch
+          ? `<span>+${added}</span><span class="${minusClass}">-${deleted}</span>`
+          : `+${changed}`;
         return `
     <div class="hunk-item" id="hunk-item-${i}" onclick="onHunkClick(${i}, event)">
       <input type="checkbox" id="chk-${i}" onclick="onCheck(${i}, event)" ${state.selected.has(i) ? 'checked' : ''}>
@@ -1385,7 +1409,7 @@
         <div class="hunk-file" title="${h.filepath}">${shortPath}</div>
         <div class="hunk-range">L${h.start}–${h.end}</div>
       </div>
-      <span class="hunk-badge">+${changed}</span>
+      <span class="${badgeClass}">${badge}</span>
     </div>`;
       }).join('');
 

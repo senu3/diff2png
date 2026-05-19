@@ -212,6 +212,33 @@ def parse_hunks(diff_text: str) -> list[dict]:
     return hunks
 
 
+def _strip_common_indent_from_lines(lines: list[str]) -> tuple[list[str], int]:
+    """与えられたテキスト行リストから共通の先頭インデントを除去して返す。
+    改行が空白のみの行は無視して最小インデント幅を決定する。
+    戻り値は (新しい行リスト, 削除したインデント幅) 。
+    """
+    import re
+
+    min_indent = None
+    for t in lines:
+        if t is None:
+            continue
+        if t.strip() == "":
+            continue
+        m = re.match(r"^[ \t]*", t)
+        if not m:
+            continue
+        indent_len = len(m.group(0))
+        if min_indent is None or indent_len < min_indent:
+            min_indent = indent_len
+
+    if min_indent is None or min_indent == 0:
+        return lines, 0
+
+    new = [(s[min_indent:] if s is not None and len(s) >= min_indent else (s or "")) for s in lines]
+    return new, min_indent
+
+
 def expand_and_merge(hunks: list[dict], repo_path: str, context: int, merge_thresh: int) -> list[dict]:
     by_file: dict[str, list[dict]] = {}
     for h in hunks:
@@ -236,6 +263,7 @@ def expand_and_merge(hunks: list[dict], repo_path: str, context: int, merge_thre
                 "diff_lines": list(h.get("diff_lines", [])),
                 "added_count": int(h.get("added_count", 0)),
                 "deleted_count": int(h.get("deleted_count", 0)),
+                "diff_cmd": h.get("diff_cmd"),
             })
 
         merged = [expanded[0]]
@@ -293,11 +321,16 @@ def build_code_html(hunk: dict, repo_path: str, hunk_index: int, total: int, tim
         return build_patch_html(hunk, hunk_index, total, timestamp)
 
     lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"])
+    # 共通インデントを除去（Codesnap風）
+    raw_texts = [t for (_, t) in lines]
+    stripped_texts, _ = _strip_common_indent_from_lines(raw_texts)
     lang = detect_language(hunk["filepath"])
     changed_set = set(hunk["changed_lines"])
 
     rows = []
-    for lineno, text in lines:
+    for idx, (lineno, text) in enumerate(lines):
+        # text は共通インデントを削除したものを使う
+        text = stripped_texts[idx]
         is_changed = lineno in changed_set
         escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         row_class = ' class="changed"' if is_changed else ""
@@ -351,10 +384,33 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) ->
     new_ln = int(hunk.get("start", 1))
     rows = []
 
+    # diff_lines の各行から先頭の記号を除いたテキスト部分を収集し、共通インデントを削除する
+    texts_for_indent = []
     for raw in hunk.get("diff_lines", []):
+        if not raw or raw.startswith("\\"):
+            continue
+        part = raw[1:]
+        if part.strip() == "":
+            continue
+        texts_for_indent.append(part)
+
+    stripped_texts_by_index: dict[int, str] = {}
+    if texts_for_indent:
+        new_texts, _ = _strip_common_indent_from_lines(texts_for_indent)
+        # assign stripped texts back to corresponding indices in diff_lines
+        it = iter(new_texts)
+        for idx, raw in enumerate(hunk.get("diff_lines", [])):
+            if not raw or raw.startswith("\\"):
+                continue
+            part = raw[1:]
+            if part.strip() == "":
+                stripped_texts_by_index[idx] = part
+                continue
+            stripped_texts_by_index[idx] = next(it)
+
+    for idx, raw in enumerate(hunk.get("diff_lines", [])):
         if not raw:
             continue
-
         if raw.startswith("\\"):
             note = raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             rows.append(
@@ -368,7 +424,11 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) ->
             continue
 
         prefix = raw[0]
+        # 可能であれば共通インデントを削除したテキストを使う
         text = raw[1:]
+        stripped = stripped_texts_by_index.get(idx)
+        if stripped is not None:
+            text = stripped
         escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
         if prefix == "+":

@@ -930,6 +930,12 @@
           <option value="range">コミット比較</option>
         </select>
       </div>
+      <div class="source-control single">
+        <div class="source-control-label">ファイルフィルタ</div>
+        <select id="fileFilter" onchange="onFileFilterChange()">
+          <option value="">すべて</option>
+        </select>
+      </div>
       <div class="source-controls" id="sourceControls">
         <div class="source-control single hidden" id="sourceTargetWrap">
           <div class="source-control-label">対象コミット</div>
@@ -1366,6 +1372,9 @@
         state.selected = new Set();
         state.activeIndex = -1;
 
+        // ファイルフィルタを初期化して表示インデックスを計算
+        computeVisibleIndices();
+        populateFileFilter();
         renderHunkList();
         clearPreview();
 
@@ -1375,10 +1384,11 @@
         } else {
           showToast(`${data.hunks.length} 件のhunkを検出しました`, 'success');
           setStatus(`${data.hunks.length} hunks`);
+          // デフォルトでは表示中のhunkを全選択
           selectAll(true);
           const targetIndex = preserveActive
             ? Math.max(0, findMatchingHunkIndex(state.hunks, prevActiveHunk))
-            : 0;
+            : (state.visibleIndices && state.visibleIndices.length > 0 ? state.visibleIndices[0] : 0);
           showPreview(targetIndex);
         }
       } catch (e) {
@@ -1391,16 +1401,20 @@
     // ---- hunk一覧描画 ----
     function renderHunkList() {
       const list = document.getElementById('hunkList');
-      const count = state.hunks.length;
-      document.getElementById('hunkCount').textContent = count ? `(${count})` : '';
+      const total = state.hunks.length;
+      const visible = state.visibleIndices ? state.visibleIndices.length : total;
+      document.getElementById('hunkCount').textContent = visible ? `(${visible})` : '';
 
-      if (count === 0) {
+      if (total === 0) {
         list.innerHTML = '<div class="empty-state" style="height:200px"><div class="empty-icon">✅</div><div class="empty-label">差分がありません</div></div>';
         updateExportButtons();
         return;
       }
 
-      list.innerHTML = state.hunks.map((h, i) => {
+      // 表示対象のインデックス配列を使って一覧を作成（元のインデックスを保持）
+      const indices = state.visibleIndices && state.visibleIndices.length > 0 ? state.visibleIndices : Array.from(state.hunks.keys());
+      list.innerHTML = indices.map((i) => {
+        const h = state.hunks[i];
         const shortPath = h.filepath.split('/').slice(-2).join('/');
         const changed = h.changed_count ?? h.changed_lines.length;
         const added = h.added_count ?? changed;
@@ -1438,19 +1452,58 @@
     }
 
     function selectAll(flag) {
-      state.hunks.forEach((_, i) => flag ? state.selected.add(i) : state.selected.delete(i));
-      state.hunks.forEach((_, i) => {
+      // 表示中のhunkのみを全選択/全解除
+      const indices = state.visibleIndices && state.visibleIndices.length > 0 ? state.visibleIndices : Array.from(state.hunks.keys());
+      indices.forEach(i => flag ? state.selected.add(i) : state.selected.delete(i));
+      indices.forEach(i => {
         const chk = document.getElementById(`chk-${i}`);
         if (chk) chk.checked = flag;
       });
       updateExportButtons();
     }
 
+    function computeVisibleIndices() {
+      const file = document.getElementById('fileFilter')?.value || '';
+      if (!state.hunks || state.hunks.length === 0) {
+        state.visibleIndices = [];
+        return;
+      }
+      if (!file) {
+        state.visibleIndices = state.hunks.map((_, i) => i);
+      } else {
+        state.visibleIndices = state.hunks.map((h, i) => ({h, i})).filter(x => x.h.filepath === file).map(x => x.i);
+      }
+    }
+
+    function populateFileFilter() {
+      const sel = document.getElementById('fileFilter');
+      if (!sel) return;
+      const prev = sel.value || '';
+      // collect unique filepaths in order
+      const files = [];
+      (state.hunks || []).forEach(h => { if (!files.includes(h.filepath)) files.push(h.filepath); });
+      sel.innerHTML = '<option value="">すべて</option>' + files.map(f => `<option value="${f}">${f}</option>`).join('');
+      if (prev && Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
+      computeVisibleIndices();
+    }
+
+    function onFileFilterChange() {
+      computeVisibleIndices();
+      renderHunkList();
+      clearPreview();
+      if (state.visibleIndices && state.visibleIndices.length > 0) {
+        showPreview(state.visibleIndices[0]);
+      }
+    }
+
     function updateExportButtons() {
-      const n = state.selected.size;
-      document.getElementById('exportInfo').textContent = `選択: ${n} 件`;
-      document.getElementById('exportSelectedBtn').disabled = n === 0;
-      document.getElementById('exportAllBtn').disabled = state.hunks.length === 0;
+      // 表示中の選択数を優先表示
+      const visible = state.visibleIndices && state.visibleIndices.length > 0 ? new Set(state.visibleIndices) : null;
+      const visibleSelectedCount = [...state.selected].filter(i => (visible ? visible.has(i) : true)).length;
+      const visibleCount = visible ? state.visibleIndices.length : state.hunks.length;
+      document.getElementById('exportInfo').textContent = `選択: ${visibleSelectedCount} 件`;
+      document.getElementById('exportSelectedBtn').disabled = visibleSelectedCount === 0;
+      document.getElementById('exportAllBtn').disabled = visibleCount === 0;
     }
 
     // ---- プレビュー ----
@@ -1511,15 +1564,28 @@
 
     // ---- エクスポート ----
     async function exportSelected() {
-      await doExport([...state.selected].sort((a, b) => a - b));
+      // 選択済みのうち表示中のものだけを出力
+      const visible = state.visibleIndices && state.visibleIndices.length > 0 ? new Set(state.visibleIndices) : null;
+      const indices = [...state.selected].filter(i => (visible ? visible.has(i) : true)).sort((a, b) => a - b);
+      await doExport(indices);
     }
 
     async function exportAll() {
-      await doExport(state.hunks.map((_, i) => i));
+      // 表示中の hunk のみを出力（フィルタ適用時）
+      const indices = state.visibleIndices && state.visibleIndices.length > 0 ? state.visibleIndices.slice() : state.hunks.map((_, i) => i);
+      await doExport(indices);
     }
 
     async function doExport(indices) {
       if (indices.length === 0) return;
+
+      // 表示フィルタがある場合、出力対象を表示中のインデックスに制限する
+      if (state.visibleIndices && state.visibleIndices.length > 0) {
+        const visibleSet = new Set(state.visibleIndices);
+        indices = indices.filter(i => visibleSet.has(i));
+      }
+
+      if (indices.length === 0) { showToast('出力対象がありません', 'error'); return; }
 
       setStatus('<span class="spinner"></span>PNG出力中...');
       document.getElementById('exportSelectedBtn').disabled = true;

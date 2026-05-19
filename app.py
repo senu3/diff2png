@@ -364,7 +364,7 @@ td.lineno{{width:48px;text-align:right;color:#94a3b8;padding:2px 10px 2px 6px;
   border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
 tr.changed td.lineno{{background:#fef9c3;color:#78716c}}
 td.marker{{width:18px;text-align:center;color:#16a34a;font-weight:bold}}
-td.code{{padding:2px 8px;white-space:pre}}
+td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
 .footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
 </style></head><body>
 <div class="header">
@@ -488,7 +488,7 @@ td.lineno.new{{border-right:none}}
 td.marker{{width:18px;text-align:center;color:#64748b;font-weight:bold}}
 tr.added td.marker{{color:#16a34a}}
 tr.deleted td.marker{{color:#dc2626}}
-td.code{{padding:2px 8px;white-space:pre}}
+td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
 .footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
 </style></head><body>
 <div class="header">

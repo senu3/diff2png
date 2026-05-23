@@ -21,7 +21,8 @@ OUTPUT_DIR_NAME = "diff_screenshots"
 OUTPUT_DIR = APP_ROOT / OUTPUT_DIR_NAME
 HTML_WIDTH = 960
 DIFF_MODE = "file"
-TRANSPARENT_BACKGROUND = False
+# 背景モード: 'normal' | 'no_bg_footer' | 'transparent_no_footer'
+BACKGROUND_MODE = 'normal'
 
 app = Flask(__name__)
 
@@ -366,17 +367,18 @@ def build_code_html(hunk: dict, repo_path: str, hunk_index: int, total: int, tim
             f'</tr>'
         )
 
-    diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
-    bg_color = 'transparent' if TRANSPARENT_BACKGROUND else '#fff'
-    return f"""<!DOCTYPE html>
+        diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
+        bg_color = 'transparent' if BACKGROUND_MODE != 'normal' else '#fff'
+        show_footer = False if BACKGROUND_MODE == 'transparent_no_footer' else True
 
-<html lang="ja"><head><meta charset="UTF-8">
+        head_template = """<!DOCTYPE html>
+<html lang=\"ja\"><head><meta charset=\"UTF-8\">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{background:{bg_color};font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
-    color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
+        color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
 .header{{background:#1e1e2e;color:#cdd6f4;padding:10px 14px;border-radius:6px 6px 0 0;
-  display:flex;justify-content:space-between;align-items:center;font-size:12px}}
+    display:flex;justify-content:space-between;align-items:center;font-size:12px}}
 .filepath{{color:#89dceb;font-weight:bold;word-break:break-all}}
 .meta{{color:#6c7086;white-space:nowrap;margin-left:12px;flex-shrink:0}}
 .code-block{{background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden}}
@@ -386,21 +388,37 @@ tr:last-child{{border-bottom:none}}
 tr.changed{{background:#fefce8}}
 td{{vertical-align:top;padding:2px 0;line-height:1.6}}
 td.lineno{{width:48px;text-align:right;color:#94a3b8;padding:2px 10px 2px 6px;
-  border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
+    border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
 tr.changed td.lineno{{background:#fef9c3;color:#78716c}}
 td.marker{{width:18px;text-align:center;color:#16a34a;font-weight:bold}}
 td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
 .footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
 </style></head><body>
-<div class="header">
-  <span class="filepath">{hunk['filepath']}</span>
-  <span class="meta">L{hunk['start']}–{hunk['end']} | {hunk_index}/{total} | {lang}</span>
+<div class=\"header\">
+    <span class=\"filepath\">{filepath}</span>
+    <span class=\"meta\">L{start}–{end} | {hunk_index}/{total} | {lang}</span>
 </div>
-<div class="code-block"><table>
-{''.join(rows)}
+<div class=\"code-block\"><table>
+{rows}
 </table></div>
-<div class="footer">{timestamp} | {diff_cmd}</div>
-</body></html>"""
+"""
+
+    footer_template = "<div class=\"footer\">{timestamp} | {diff_cmd}</div>"
+    html = head_template.format(
+        bg_color=bg_color,
+        HTML_WIDTH=HTML_WIDTH,
+        filepath=hunk['filepath'],
+        start=hunk['start'],
+        end=hunk['end'],
+        hunk_index=hunk_index,
+        total=total,
+        lang=lang,
+        rows=''.join(rows),
+    )
+    if show_footer:
+        html += footer_template.format(timestamp=timestamp, diff_cmd=diff_cmd)
+    html += "</body></html>"
+    return html
 
 
 def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) -> str:
@@ -488,16 +506,18 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) ->
             old_ln += 1
             new_ln += 1
 
-    diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
-    bg_color = 'transparent' if TRANSPARENT_BACKGROUND else '#fff'
-    return f"""<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8">
+        diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
+        bg_color = 'transparent' if BACKGROUND_MODE != 'normal' else '#fff'
+        show_footer = False if BACKGROUND_MODE == 'transparent_no_footer' else True
+
+        head_template = """<!DOCTYPE html>
+<html lang=\"ja\"><head><meta charset=\"UTF-8\">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{background:{bg_color};font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
-    color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
+        color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
 .header{{background:#1e1e2e;color:#cdd6f4;padding:10px 14px;border-radius:6px 6px 0 0;
-  display:flex;justify-content:space-between;align-items:center;font-size:12px}}
+    display:flex;justify-content:space-between;align-items:center;font-size:12px}}
 .filepath{{color:#89dceb;font-weight:bold;word-break:break-all}}
 .meta{{color:#6c7086;white-space:nowrap;margin-left:12px;flex-shrink:0}}
 .code-block{{background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden}}
@@ -509,7 +529,7 @@ tr.deleted{{background:#fef2f2}}
 tr.note td{{color:#64748b;font-style:italic}}
 td{{vertical-align:top;padding:2px 0;line-height:1.6}}
 td.lineno{{width:52px;text-align:right;color:#94a3b8;padding:2px 10px 2px 6px;
-  border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
+    border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
 td.lineno.new{{border-right:none}}
 td.marker{{width:18px;text-align:center;color:#64748b;font-weight:bold}}
 tr.added td.marker{{color:#16a34a}}
@@ -517,15 +537,31 @@ tr.deleted td.marker{{color:#dc2626}}
 td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
 .footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
 </style></head><body>
-<div class="header">
-  <span class="filepath">{hunk['filepath']}</span>
-  <span class="meta">-{hunk.get('old_start', hunk['start'])} +{hunk['start']} | {hunk_index}/{total} | {lang} | patch</span>
+<div class=\"header\">
+    <span class=\"filepath\">{filepath}</span>
+    <span class=\"meta\">-{old_start} +{start} | {hunk_index}/{total} | {lang} | patch</span>
 </div>
-<div class="code-block"><table>
-{''.join(rows)}
+<div class=\"code-block\"><table>
+{rows}
 </table></div>
-<div class="footer">{timestamp} | {diff_cmd}</div>
-</body></html>"""
+"""
+
+    footer_template = "<div class=\"footer\">{timestamp} | {diff_cmd}</div>"
+    html = head_template.format(
+        bg_color=bg_color,
+        HTML_WIDTH=HTML_WIDTH,
+        filepath=hunk['filepath'],
+        old_start=hunk.get('old_start', hunk['start']),
+        start=hunk['start'],
+        hunk_index=hunk_index,
+        total=total,
+        lang=lang,
+        rows=''.join(rows),
+    )
+    if show_footer:
+        html += footer_template.format(timestamp=timestamp, diff_cmd=diff_cmd)
+    html += "</body></html>"
+    return html
 
 
 # ================================================================
@@ -537,7 +573,7 @@ def render_png(page, html: str, out_path: Path):
     height = page.evaluate("document.body.scrollHeight")
     page.set_viewport_size({"width": HTML_WIDTH + 32, "height": height + 32})
     # Playwright: omit background when transparent output requested
-    if TRANSPARENT_BACKGROUND:
+    if BACKGROUND_MODE != 'normal':
         page.screenshot(path=str(out_path), full_page=True, omit_background=True)
     else:
         page.screenshot(path=str(out_path), full_page=True)
@@ -584,7 +620,7 @@ def browse_repo():
 
 @app.route("/api/config", methods=["GET", "POST"])
 def config():
-    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME, DIFF_MODE, TRANSPARENT_BACKGROUND
+    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME, DIFF_MODE, BACKGROUND_MODE
     if request.method == "GET":
         return jsonify({
             "context_lines": CONTEXT_LINES,
@@ -592,7 +628,7 @@ def config():
             "html_width": HTML_WIDTH,
             "output_dir": OUTPUT_DIR_NAME,
             "diff_mode": DIFF_MODE,
-            "transparent_background": TRANSPARENT_BACKGROUND,
+            "background_mode": BACKGROUND_MODE,
         })
     data = request.get_json(silent=True) or {}
     try:
@@ -609,8 +645,16 @@ def config():
             if mode not in ("file", "patch"):
                 raise ValueError("diff_mode は file または patch を指定してください")
             DIFF_MODE = mode
+        # New setting: background_mode
+        if "background_mode" in data:
+            bm = str(data["background_mode"]).strip()
+            if bm not in ("normal", "no_bg_footer", "transparent_no_footer"):
+                raise ValueError("background_mode が不正です")
+            BACKGROUND_MODE = bm
+        # Backward compatibility: accept transparent_background boolean
         if "transparent_background" in data:
-            TRANSPARENT_BACKGROUND = bool(data["transparent_background"])
+            TRANSPARENT = bool(data["transparent_background"])
+            BACKGROUND_MODE = "transparent_no_footer" if TRANSPARENT else "normal"
     except (ValueError, TypeError) as e:
         return jsonify({"error": f"不正な値: {e}"}), 400
     return jsonify({"ok": True})

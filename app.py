@@ -337,6 +337,62 @@ def detect_language(filepath: str) -> str:
 # HTML 生成（PNG出力用・プレビュー共用）
 # ================================================================
 
+
+def _compose_html(rows_html: str, filepath: str, meta: str, lang: str, bg_color: str,
+                  html_width: int, show_footer: bool, timestamp: str, diff_cmd: str) -> str:
+    head_template = """<!DOCTYPE html>
+<html lang=\"ja\"><head><meta charset=\"UTF-8\">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+html,body{{background:{bg_color};font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
+        color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
+.header{{background:#1e1e2e;color:#cdd6f4;padding:10px 14px;border-radius:6px 6px 0 0;
+    display:flex;justify-content:space-between;align-items:center;font-size:12px}}
+.filepath{{color:#89dceb;font-weight:bold;word-break:break-all}}
+.meta{{color:#6c7086;white-space:nowrap;margin-left:12px;flex-shrink:0}}
+.code-block{{background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden}}
+table{{width:100%;border-collapse:collapse}}
+tr{{border-bottom:1px solid #f1f5f9}}
+tr:last-child{{border-bottom:none}}
+tr.changed{{background:#fefce8}}
+tr.added{{background:#ecfdf5}}
+tr.deleted{{background:#fef2f2}}
+tr.note td{{color:#64748b;font-style:italic}}
+td{{vertical-align:top;padding:2px 0;line-height:1.6}}
+td.lineno{{width:52px;text-align:right;color:#94a3b8;padding:2px 10px 2px 6px;
+    border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
+tr.changed td.lineno{{background:#fef9c3;color:#78716c}}
+td.lineno.new{{border-right:none}}
+td.marker{{width:18px;text-align:center;color:#64748b;font-weight:bold}}
+tr.added td.marker{{color:#16a34a}}
+tr.deleted td.marker{{color:#dc2626}}
+td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
+.footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
+</style></head><body>
+<div class=\"header\">
+    <span class=\"filepath\">{filepath}</span>
+    <span class=\"meta\">{meta}</span>
+</div>
+<div class=\"code-block\"><table>
+{rows}
+</table></div>
+"""
+
+    footer_template = "<div class=\"footer\">{timestamp} | {diff_cmd}</div>"
+
+    html = head_template.format(
+        bg_color=bg_color,
+        HTML_WIDTH=html_width,
+        filepath=filepath,
+        meta=meta,
+        rows=rows_html,
+    )
+    if show_footer:
+        html += footer_template.format(timestamp=timestamp, diff_cmd=diff_cmd)
+    html += "</body></html>"
+    return html
+
+
 def build_code_html(hunk: dict, repo_path: str, hunk_index: int, total: int, timestamp: str) -> str:
     if DIFF_MODE == "patch":
         return build_patch_html(hunk, hunk_index, total, timestamp)
@@ -367,57 +423,13 @@ def build_code_html(hunk: dict, repo_path: str, hunk_index: int, total: int, tim
             f'</tr>'
         )
 
-        diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
-        bg_color = 'transparent' if BACKGROUND_MODE != 'normal' else '#fff'
-        show_footer = False if BACKGROUND_MODE == 'transparent_no_footer' else True
+    diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
+    bg_color = 'transparent' if BACKGROUND_MODE != 'normal' else '#fff'
+    show_footer = False if BACKGROUND_MODE == 'transparent_no_footer' else True
 
-        head_template = """<!DOCTYPE html>
-<html lang=\"ja\"><head><meta charset=\"UTF-8\">
-<style>
-*{{box-sizing:border-box;margin:0;padding:0}}
-html,body{{background:{bg_color};font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
-        color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
-.header{{background:#1e1e2e;color:#cdd6f4;padding:10px 14px;border-radius:6px 6px 0 0;
-    display:flex;justify-content:space-between;align-items:center;font-size:12px}}
-.filepath{{color:#89dceb;font-weight:bold;word-break:break-all}}
-.meta{{color:#6c7086;white-space:nowrap;margin-left:12px;flex-shrink:0}}
-.code-block{{background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden}}
-table{{width:100%;border-collapse:collapse}}
-tr{{border-bottom:1px solid #f1f5f9}}
-tr:last-child{{border-bottom:none}}
-tr.changed{{background:#fefce8}}
-td{{vertical-align:top;padding:2px 0;line-height:1.6}}
-td.lineno{{width:48px;text-align:right;color:#94a3b8;padding:2px 10px 2px 6px;
-    border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
-tr.changed td.lineno{{background:#fef9c3;color:#78716c}}
-td.marker{{width:18px;text-align:center;color:#16a34a;font-weight:bold}}
-td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
-.footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
-</style></head><body>
-<div class=\"header\">
-    <span class=\"filepath\">{filepath}</span>
-    <span class=\"meta\">L{start}–{end} | {hunk_index}/{total} | {lang}</span>
-</div>
-<div class=\"code-block\"><table>
-{rows}
-</table></div>
-"""
-
-    footer_template = "<div class=\"footer\">{timestamp} | {diff_cmd}</div>"
-    html = head_template.format(
-        bg_color=bg_color,
-        HTML_WIDTH=HTML_WIDTH,
-        filepath=hunk['filepath'],
-        start=hunk['start'],
-        end=hunk['end'],
-        hunk_index=hunk_index,
-        total=total,
-        lang=lang,
-        rows=''.join(rows),
-    )
-    if show_footer:
-        html += footer_template.format(timestamp=timestamp, diff_cmd=diff_cmd)
-    html += "</body></html>"
+    meta = f"L{hunk['start']}–{hunk['end']} | {hunk_index}/{total} | {lang}"
+    html = _compose_html(''.join(rows), hunk['filepath'], meta, lang, bg_color,
+                         HTML_WIDTH, show_footer, timestamp, diff_cmd)
     return html
 
 
@@ -506,61 +518,13 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) ->
             old_ln += 1
             new_ln += 1
 
-        diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
-        bg_color = 'transparent' if BACKGROUND_MODE != 'normal' else '#fff'
-        show_footer = False if BACKGROUND_MODE == 'transparent_no_footer' else True
+    diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
+    bg_color = 'transparent' if BACKGROUND_MODE != 'normal' else '#fff'
+    show_footer = False if BACKGROUND_MODE == 'transparent_no_footer' else True
 
-        head_template = """<!DOCTYPE html>
-<html lang=\"ja\"><head><meta charset=\"UTF-8\">
-<style>
-*{{box-sizing:border-box;margin:0;padding:0}}
-html,body{{background:{bg_color};font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
-        color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
-.header{{background:#1e1e2e;color:#cdd6f4;padding:10px 14px;border-radius:6px 6px 0 0;
-    display:flex;justify-content:space-between;align-items:center;font-size:12px}}
-.filepath{{color:#89dceb;font-weight:bold;word-break:break-all}}
-.meta{{color:#6c7086;white-space:nowrap;margin-left:12px;flex-shrink:0}}
-.code-block{{background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden}}
-table{{width:100%;border-collapse:collapse}}
-tr{{border-bottom:1px solid #f1f5f9}}
-tr:last-child{{border-bottom:none}}
-tr.added{{background:#ecfdf5}}
-tr.deleted{{background:#fef2f2}}
-tr.note td{{color:#64748b;font-style:italic}}
-td{{vertical-align:top;padding:2px 0;line-height:1.6}}
-td.lineno{{width:52px;text-align:right;color:#94a3b8;padding:2px 10px 2px 6px;
-    border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
-td.lineno.new{{border-right:none}}
-td.marker{{width:18px;text-align:center;color:#64748b;font-weight:bold}}
-tr.added td.marker{{color:#16a34a}}
-tr.deleted td.marker{{color:#dc2626}}
-td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
-.footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
-</style></head><body>
-<div class=\"header\">
-    <span class=\"filepath\">{filepath}</span>
-    <span class=\"meta\">-{old_start} +{start} | {hunk_index}/{total} | {lang} | patch</span>
-</div>
-<div class=\"code-block\"><table>
-{rows}
-</table></div>
-"""
-
-    footer_template = "<div class=\"footer\">{timestamp} | {diff_cmd}</div>"
-    html = head_template.format(
-        bg_color=bg_color,
-        HTML_WIDTH=HTML_WIDTH,
-        filepath=hunk['filepath'],
-        old_start=hunk.get('old_start', hunk['start']),
-        start=hunk['start'],
-        hunk_index=hunk_index,
-        total=total,
-        lang=lang,
-        rows=''.join(rows),
-    )
-    if show_footer:
-        html += footer_template.format(timestamp=timestamp, diff_cmd=diff_cmd)
-    html += "</body></html>"
+    meta = f"-{hunk.get('old_start', hunk['start'])} +{hunk['start']} | {hunk_index}/{total} | {lang} | patch"
+    html = _compose_html(''.join(rows), hunk['filepath'], meta, lang, bg_color,
+                         HTML_WIDTH, show_footer, timestamp, diff_cmd)
     return html
 
 

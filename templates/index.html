@@ -1422,9 +1422,18 @@
         const isPatch = currentDiffMode === 'patch';
         const badgeClass = 'hunk-badge';
         const minusClass = deleted > 0 ? 'minus danger' : 'minus';
-        const badge = isPatch
-          ? `<span>+${added}</span><span class="${minusClass}">-${deleted}</span>`
-          : `+${changed}`;
+        let badge;
+        if (isPatch) {
+          badge = `<span>+${added}</span><span class="${minusClass}">-${deleted}</span>`;
+        } else {
+          // 通常表示: 変更数が0で削除のみの場合は削除数を表示する
+          if ((changed === 0 || changed === null) && deleted > 0) {
+            const delClass = deleted > 0 ? 'minus danger' : 'minus';
+            badge = `<span class="${delClass}">-${deleted}</span>`;
+          } else {
+            badge = `+${changed}`;
+          }
+        }
         return `
     <div class="hunk-item" id="hunk-item-${i}" onclick="onHunkClick(${i}, event)">
       <input type="checkbox" id="chk-${i}" onclick="onCheck(${i}, event)" ${state.selected.has(i) ? 'checked' : ''}>
@@ -1471,7 +1480,7 @@
       if (!file) {
         state.visibleIndices = state.hunks.map((_, i) => i);
       } else {
-        state.visibleIndices = state.hunks.map((h, i) => ({h, i})).filter(x => x.h.filepath === file).map(x => x.i);
+        state.visibleIndices = state.hunks.map((h, i) => ({ h, i })).filter(x => x.h.filepath === file).map(x => x.i);
       }
     }
 

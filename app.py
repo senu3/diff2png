@@ -263,10 +263,13 @@ def expand_and_merge(hunks: list[dict], repo_path: str, context: int, merge_thre
 
         expanded = []
         for h in fhunks:
+            # preserve original hunk bounds (orig_start/orig_end)
             expanded.append({
                 "filepath": filepath,
                 "start": max(1, h["start"] - context),
                 "end": min(total_lines, h["end"] + context),
+                "orig_start": int(h["start"]),
+                "orig_end": int(h["end"]),
                 "old_start": h.get("old_start", h["start"]),
                 "changed_lines": set(h["changed_lines"]),
                 "diff_lines": list(h.get("diff_lines", [])),
@@ -278,8 +281,12 @@ def expand_and_merge(hunks: list[dict], repo_path: str, context: int, merge_thre
         merged = [expanded[0]]
         for h in expanded[1:]:
             prev = merged[-1]
-            if h["start"] - prev["end"] <= merge_thresh:
+            # 判定は拡張前のオリジナル位置（orig_start/orig_end）で行う
+            gap = h["orig_start"] - prev.get("orig_end", prev["end"])
+            if gap <= merge_thresh:
                 prev["end"] = max(prev["end"], h["end"])
+                prev["orig_start"] = min(int(prev.get("orig_start", prev["start"])), int(h.get("orig_start", h["start"])))
+                prev["orig_end"] = max(int(prev.get("orig_end", prev["end"])), int(h.get("orig_end", h["end"])))
                 prev["old_start"] = min(int(prev.get("old_start", prev["start"])), int(h.get("old_start", h["start"])))
                 prev["changed_lines"] |= h["changed_lines"]
                 prev["diff_lines"].extend(h.get("diff_lines", []))

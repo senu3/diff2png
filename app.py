@@ -24,6 +24,13 @@ DIFF_MODE = "file"
 
 app = Flask(__name__)
 
+# --- パフォーマンス用キャッシュ / コンパイル済み正規表現 ---
+FILE_CONTENT_CACHE: dict[str, list[str]] = {}
+_OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
+_NEW_RE = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
+_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+_INDENT_RE = re.compile(r"^[ \t]*")
+
 
 # ================================================================
 # git / diff ユーティリティ
@@ -152,23 +159,19 @@ def parse_hunks(diff_text: str) -> list[dict]:
     current_file = None
     old_file = None
     new_file = None
-    old_re = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
-    new_re = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
-    hunk_re = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
-
     for line in diff_text.splitlines():
-        m = old_re.match(line)
+        m = _OLD_RE.match(line)
         if m:
             old_file = m.group(1)
             continue
 
-        m = new_re.match(line)
+        m = _NEW_RE.match(line)
         if m:
             new_file = m.group(1)
             current_file = new_file or old_file
             continue
 
-        m = hunk_re.match(line)
+        m = _HUNK_RE.match(line)
         if m and current_file:
             old_start = int(m.group(1))
             old_count = int(m.group(2)) if m.group(2) is not None else 1
@@ -217,15 +220,13 @@ def _strip_common_indent_from_lines(lines: list[str]) -> tuple[list[str], int]:
     改行が空白のみの行は無視して最小インデント幅を決定する。
     戻り値は (新しい行リスト, 削除したインデント幅) 。
     """
-    import re
-
     min_indent = None
     for t in lines:
         if t is None:
             continue
         if t.strip() == "":
             continue
-        m = re.match(r"^[ \t]*", t)
+        m = _INDENT_RE.match(t)
         if not m:
             continue
         indent_len = len(m.group(0))
@@ -247,8 +248,16 @@ def expand_and_merge(hunks: list[dict], repo_path: str, context: int, merge_thre
     result = []
     for filepath, fhunks in by_file.items():
         try:
+            # ファイル内容はキャッシュから取得して複数回の読み取りを避ける
             safe_path = resolve_path_within(Path(repo_path), filepath)
-            total_lines = len(safe_path.read_text(encoding="utf-8").splitlines())
+            key = str(safe_path)
+            if key in FILE_CONTENT_CACHE:
+                total_lines = len(FILE_CONTENT_CACHE[key])
+            else:
+                text = safe_path.read_text(encoding="utf-8")
+                lines = text.splitlines()
+                FILE_CONTENT_CACHE[key] = lines
+                total_lines = len(lines)
         except Exception:
             total_lines = 10 ** 6
 
@@ -290,7 +299,13 @@ def expand_and_merge(hunks: list[dict], repo_path: str, context: int, merge_thre
 def read_lines(repo_path: str, filepath: str, start: int, end: int) -> list[tuple[int, str]]:
     try:
         safe_path = resolve_path_within(Path(repo_path), filepath)
-        lines = safe_path.read_text(encoding="utf-8").splitlines()
+        key = str(safe_path)
+        if key in FILE_CONTENT_CACHE:
+            lines = FILE_CONTENT_CACHE[key]
+        else:
+            text = safe_path.read_text(encoding="utf-8")
+            lines = text.splitlines()
+            FILE_CONTENT_CACHE[key] = lines
     except Exception as e:
         return [(start, f"# 読み込みエラー: {e}")]
     return [(i + 1, lines[i]) for i in range(start - 1, min(end, len(lines)))]

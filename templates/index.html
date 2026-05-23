@@ -861,6 +861,17 @@
           <div class="setting-desc">PNGの保存先フォルダ名（app.py からの相対パス）。</div>
           <input type="text" id="cfg-outdir" value="diff_screenshots" style="width:100%;margin-top:2px">
         </div>
+
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>背景の透過</span>
+            <code>Background</code>
+          </div>
+          <div class="setting-desc">PNG出力およびプレビューで背景を透明にします（透過PNGを生成）。</div>
+          <div class="setting-row">
+            <input type="checkbox" id="cfg-transparent">
+          </div>
+        </div>
       </div>
 
     </div>
@@ -1053,6 +1064,9 @@
       if (typeof prefs.output_dir === 'string' && prefs.output_dir.trim()) {
         document.getElementById('cfg-outdir').value = prefs.output_dir;
       }
+      if (typeof prefs.transparent_background !== 'undefined') {
+        document.getElementById('cfg-transparent').checked = Boolean(prefs.transparent_background);
+      }
     }
 
     function getSelectedSourceMode() {
@@ -1081,6 +1095,7 @@
         merge_threshold: parseInt(document.getElementById('cfg-merge').value, 10),
         html_width: parseInt(document.getElementById('cfg-width').value, 10),
         output_dir: document.getElementById('cfg-outdir').value.trim(),
+        transparent_background: document.getElementById('cfg-transparent').checked,
       };
     }
 
@@ -1545,6 +1560,7 @@
         const iframe = document.createElement('iframe');
         wrap.innerHTML = '';
         wrap.appendChild(iframe);
+        iframe.style.background = 'transparent';
         iframe.contentDocument.open();
         iframe.contentDocument.write(html);
         iframe.contentDocument.close();
@@ -1712,6 +1728,7 @@
         setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);
         setSlider('cfg-width', 'cfg-width-val', cfg.html_width);
         document.getElementById('cfg-outdir').value = cfg.output_dir;
+        document.getElementById('cfg-transparent').checked = Boolean(cfg.transparent_background);
 
         const prefs = loadUiPrefs();
         applyUiPrefsToControls(prefs);

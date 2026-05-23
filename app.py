@@ -21,6 +21,7 @@ OUTPUT_DIR_NAME = "diff_screenshots"
 OUTPUT_DIR = APP_ROOT / OUTPUT_DIR_NAME
 HTML_WIDTH = 960
 DIFF_MODE = "file"
+TRANSPARENT_BACKGROUND = False
 
 app = Flask(__name__)
 
@@ -366,17 +367,19 @@ def build_code_html(hunk: dict, repo_path: str, hunk_index: int, total: int, tim
         )
 
     diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
+    bg_color = 'transparent' if TRANSPARENT_BACKGROUND else '#fff'
     return f"""<!DOCTYPE html>
+
 <html lang="ja"><head><meta charset="UTF-8">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-body{{background:#fff;font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
-  color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
+html,body{{background:{bg_color};font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
+    color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
 .header{{background:#1e1e2e;color:#cdd6f4;padding:10px 14px;border-radius:6px 6px 0 0;
   display:flex;justify-content:space-between;align-items:center;font-size:12px}}
 .filepath{{color:#89dceb;font-weight:bold;word-break:break-all}}
 .meta{{color:#6c7086;white-space:nowrap;margin-left:12px;flex-shrink:0}}
-.code-block{{border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden}}
+.code-block{{background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden}}
 table{{width:100%;border-collapse:collapse}}
 tr{{border-bottom:1px solid #f1f5f9}}
 tr:last-child{{border-bottom:none}}
@@ -486,17 +489,18 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) ->
             new_ln += 1
 
     diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
+    bg_color = 'transparent' if TRANSPARENT_BACKGROUND else '#fff'
     return f"""<!DOCTYPE html>
 <html lang="ja"><head><meta charset="UTF-8">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-body{{background:#fff;font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
-  color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
+html,body{{background:{bg_color};font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
+    color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
 .header{{background:#1e1e2e;color:#cdd6f4;padding:10px 14px;border-radius:6px 6px 0 0;
   display:flex;justify-content:space-between;align-items:center;font-size:12px}}
 .filepath{{color:#89dceb;font-weight:bold;word-break:break-all}}
 .meta{{color:#6c7086;white-space:nowrap;margin-left:12px;flex-shrink:0}}
-.code-block{{border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden}}
+.code-block{{background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden}}
 table{{width:100%;border-collapse:collapse}}
 tr{{border-bottom:1px solid #f1f5f9}}
 tr:last-child{{border-bottom:none}}
@@ -532,7 +536,11 @@ def render_png(page, html: str, out_path: Path):
     page.set_content(html, wait_until="load")
     height = page.evaluate("document.body.scrollHeight")
     page.set_viewport_size({"width": HTML_WIDTH + 32, "height": height + 32})
-    page.screenshot(path=str(out_path), full_page=True)
+    # Playwright: omit background when transparent output requested
+    if TRANSPARENT_BACKGROUND:
+        page.screenshot(path=str(out_path), full_page=True, omit_background=True)
+    else:
+        page.screenshot(path=str(out_path), full_page=True)
 
 
 def render_png_batch(items: list[tuple[str, Path]]):
@@ -576,7 +584,7 @@ def browse_repo():
 
 @app.route("/api/config", methods=["GET", "POST"])
 def config():
-    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME, DIFF_MODE
+    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME, DIFF_MODE, TRANSPARENT_BACKGROUND
     if request.method == "GET":
         return jsonify({
             "context_lines": CONTEXT_LINES,
@@ -584,6 +592,7 @@ def config():
             "html_width": HTML_WIDTH,
             "output_dir": OUTPUT_DIR_NAME,
             "diff_mode": DIFF_MODE,
+            "transparent_background": TRANSPARENT_BACKGROUND,
         })
     data = request.get_json(silent=True) or {}
     try:
@@ -600,6 +609,8 @@ def config():
             if mode not in ("file", "patch"):
                 raise ValueError("diff_mode は file または patch を指定してください")
             DIFF_MODE = mode
+        if "transparent_background" in data:
+            TRANSPARENT_BACKGROUND = bool(data["transparent_background"])
     except (ValueError, TypeError) as e:
         return jsonify({"error": f"不正な値: {e}"}), 400
     return jsonify({"ok": True})

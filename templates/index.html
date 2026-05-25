@@ -997,10 +997,21 @@
   <script>
     let state = {
       repoPath: '',
+      analysisId: '',
       hunks: [],
       selected: new Set(),
       activeIndex: -1,
     };
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      }[ch]));
+    }
 
     function findMatchingHunkIndex(hunks, baseHunk) {
       if (!baseHunk || !Array.isArray(hunks) || hunks.length === 0) return -1;
@@ -1389,6 +1400,7 @@
         if (!res.ok) { showToast(data.error, 'error'); return; }
 
         state.repoPath = repoPath;
+        state.analysisId = data.analysis_id || '';
         state.hunks = data.hunks;
         state.selected = new Set();
         state.activeIndex = -1;
@@ -1433,7 +1445,12 @@
       }
 
       // 表示対象のインデックス配列を使って一覧を作成（元のインデックスを保持）
-      const indices = state.visibleIndices && state.visibleIndices.length > 0 ? state.visibleIndices : Array.from(state.hunks.keys());
+      const indices = Array.isArray(state.visibleIndices) ? state.visibleIndices : Array.from(state.hunks.keys());
+      if (indices.length === 0) {
+        list.innerHTML = '<div class="empty-state" style="height:200px"><div class="empty-icon">🔎</div><div class="empty-label">この条件に一致するhunkはありません</div></div>';
+        updateExportButtons();
+        return;
+      }
       list.innerHTML = indices.map((i) => {
         const h = state.hunks[i];
         const shortPath = h.filepath.split('/').slice(-2).join('/');
@@ -1445,12 +1462,12 @@
         const minusClass = deleted > 0 ? 'minus danger' : 'minus';
         let badge;
         if (isPatch) {
-          badge = `<span>+${added}</span><span class="${minusClass}">-${deleted}</span>`;
+            badge = `<span>+${added}</span><span class="${escapeHtml(minusClass)}">-${deleted}</span>`;
         } else {
           // 通常表示: 変更数が0で削除のみの場合は削除数を表示する
           if ((changed === 0 || changed === null) && deleted > 0) {
-            const delClass = deleted > 0 ? 'minus danger' : 'minus';
-            badge = `<span class="${delClass}">-${deleted}</span>`;
+              const delClass = deleted > 0 ? 'minus danger' : 'minus';
+              badge = `<span class="${escapeHtml(delClass)}">-${deleted}</span>`;
           } else {
             badge = `+${changed}`;
           }
@@ -1459,8 +1476,8 @@
     <div class="hunk-item" id="hunk-item-${i}" onclick="onHunkClick(${i}, event)">
       <input type="checkbox" id="chk-${i}" onclick="onCheck(${i}, event)" ${state.selected.has(i) ? 'checked' : ''}>
       <div class="hunk-info">
-        <div class="hunk-file" title="${h.filepath}">${shortPath}</div>
-        <div class="hunk-range">L${h.start}–${h.end}</div>
+        <div class="hunk-file" title="${escapeHtml(h.filepath)}">${escapeHtml(shortPath)}</div>
+        <div class="hunk-range">L${escapeHtml(h.start)}–${escapeHtml(h.end)}</div>
       </div>
       <span class="${badgeClass}">${badge}</span>
     </div>`;
@@ -1483,7 +1500,7 @@
 
     function selectAll(flag) {
       // 表示中のhunkのみを全選択/全解除
-      const indices = state.visibleIndices && state.visibleIndices.length > 0 ? state.visibleIndices : Array.from(state.hunks.keys());
+      const indices = Array.isArray(state.visibleIndices) ? state.visibleIndices : Array.from(state.hunks.keys());
       indices.forEach(i => flag ? state.selected.add(i) : state.selected.delete(i));
       indices.forEach(i => {
         const chk = document.getElementById(`chk-${i}`);
@@ -1512,7 +1529,7 @@
       // collect unique filepaths in order
       const files = [];
       (state.hunks || []).forEach(h => { if (!files.includes(h.filepath)) files.push(h.filepath); });
-      sel.innerHTML = '<option value="">すべて</option>' + files.map(f => `<option value="${f}">${f}</option>`).join('');
+      sel.innerHTML = '<option value="">すべて</option>' + files.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
       if (prev && Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
       computeVisibleIndices();
     }
@@ -1528,7 +1545,7 @@
 
     function updateExportButtons() {
       // 表示中の選択数を優先表示
-      const visible = state.visibleIndices && state.visibleIndices.length > 0 ? new Set(state.visibleIndices) : null;
+      const visible = Array.isArray(state.visibleIndices) ? new Set(state.visibleIndices) : null;
       const visibleSelectedCount = [...state.selected].filter(i => (visible ? visible.has(i) : true)).length;
       const visibleCount = visible ? state.visibleIndices.length : state.hunks.length;
       document.getElementById('exportInfo').textContent = `選択: ${visibleSelectedCount} 件`;
@@ -1539,6 +1556,10 @@
     // ---- プレビュー ----
     async function showPreview(index) {
       if (index < 0 || index >= state.hunks.length) return;
+      if (!state.analysisId) {
+        showToast('解析結果がありません。再解析してください', 'error');
+        return;
+      }
 
       state.activeIndex = index;
 
@@ -1559,9 +1580,17 @@
         const res = await fetch(`/api/preview/${index}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ repo_path: state.repoPath, hunks: state.hunks }),
+          body: JSON.stringify({ repo_path: state.repoPath, analysis_id: state.analysisId }),
         });
         const html = await res.text();
+        if (!res.ok) {
+          let errorMessage = '読み込みエラー';
+          try {
+            errorMessage = JSON.parse(html).error || errorMessage;
+          } catch (_) { }
+          showToast(errorMessage, 'error');
+          return;
+        }
 
         const iframe = document.createElement('iframe');
         wrap.innerHTML = '';
@@ -1596,22 +1625,26 @@
     // ---- エクスポート ----
     async function exportSelected() {
       // 選択済みのうち表示中のものだけを出力
-      const visible = state.visibleIndices && state.visibleIndices.length > 0 ? new Set(state.visibleIndices) : null;
+      const visible = Array.isArray(state.visibleIndices) ? new Set(state.visibleIndices) : null;
       const indices = [...state.selected].filter(i => (visible ? visible.has(i) : true)).sort((a, b) => a - b);
       await doExport(indices);
     }
 
     async function exportAll() {
       // 表示中の hunk のみを出力（フィルタ適用時）
-      const indices = state.visibleIndices && state.visibleIndices.length > 0 ? state.visibleIndices.slice() : state.hunks.map((_, i) => i);
+      const indices = Array.isArray(state.visibleIndices) ? state.visibleIndices.slice() : state.hunks.map((_, i) => i);
       await doExport(indices);
     }
 
     async function doExport(indices) {
       if (indices.length === 0) return;
+      if (!state.analysisId) {
+        showToast('解析結果がありません。再解析してください', 'error');
+        return;
+      }
 
       // 表示フィルタがある場合、出力対象を表示中のインデックスに制限する
-      if (state.visibleIndices && state.visibleIndices.length > 0) {
+      if (Array.isArray(state.visibleIndices)) {
         const visibleSet = new Set(state.visibleIndices);
         indices = indices.filter(i => visibleSet.has(i));
       }
@@ -1626,7 +1659,7 @@
         const res = await fetch('/api/export', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ repo_path: state.repoPath, hunks: state.hunks, indices }),
+          body: JSON.stringify({ repo_path: state.repoPath, analysis_id: state.analysisId, indices }),
         });
         const data = await res.json();
         if (!res.ok) {

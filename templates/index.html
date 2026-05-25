@@ -1045,6 +1045,7 @@
     }
 
     let currentDiffMode = 'file';
+    let lastAppliedConfig = null;
     const UI_PREFS_KEY = 'diff2png.ui.v1';
 
     function loadUiPrefs() {
@@ -1114,6 +1115,22 @@
         output_dir: document.getElementById('cfg-outdir').value.trim(),
         background_mode: document.getElementById('cfg-background').value,
       };
+    }
+
+    function normalizeConfigPayload(payload) {
+      return {
+        diff_mode: payload.diff_mode,
+        context_lines: Number(payload.context_lines),
+        merge_threshold: Number(payload.merge_threshold),
+        html_width: Number(payload.html_width),
+        output_dir: String(payload.output_dir || ''),
+        background_mode: payload.background_mode,
+      };
+    }
+
+    function changedConfigKeys(prev, next) {
+      if (!prev) return Object.keys(next);
+      return Object.keys(next).filter(key => prev[key] !== next[key]);
     }
 
     function updateSourceSummary() {
@@ -1431,6 +1448,61 @@
       }
     }
 
+    async function reconfigureCurrentAnalysis() {
+      if (!state.analysisId || !state.repoPath) {
+        return false;
+      }
+
+      const prevActiveHunk = state.activeIndex >= 0 ? state.hunks[state.activeIndex] : null;
+      setStatus('<span class="spinner"></span>設定を反映中...');
+
+      try {
+        const res = await fetch('/api/reconfigure-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repo_path: state.repoPath, analysis_id: state.analysisId }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || '設定の反映に失敗しました', 'error');
+          setStatus('エラー');
+          return false;
+        }
+        if (data.requires_reanalyze) {
+          await analyze({ preserveActive: true });
+          return true;
+        }
+
+        state.hunks = data.hunks || [];
+        state.selected = new Set();
+        state.activeIndex = -1;
+        computeVisibleIndices();
+        populateFileFilter();
+        renderHunkList();
+
+        if (state.hunks.length === 0) {
+          clearPreview();
+          setStatus('差分なし');
+          return true;
+        }
+
+        selectAll(true);
+        const nextIndex = Math.max(0, findMatchingHunkIndex(state.hunks, prevActiveHunk));
+        showPreview(nextIndex);
+        setStatus(`${state.hunks.length} hunks`);
+        return true;
+      } catch (e) {
+        showToast('設定の反映に失敗しました: ' + e.message, 'error');
+        setStatus('エラー');
+        return false;
+      }
+    }
+
+    async function refreshActivePreview() {
+      if (!state.analysisId || state.activeIndex < 0) return;
+      await showPreview(state.activeIndex);
+    }
+
     // ---- hunk一覧描画 ----
     function renderHunkList() {
       const list = document.getElementById('hunkList');
@@ -1693,7 +1765,7 @@
     }
 
     // ---- 設定ドロワー ----
-    const DEFAULTS = { context: 5, merge: 8, width: 960, outdir: 'diff_screenshots' };
+    const DEFAULTS = { context: 5, merge: 8, width: 960, outdir: 'diff_screenshots', background: 'normal' };
 
     function toggleDrawer() {
       const isOpen = document.getElementById('drawer').classList.contains('open');
@@ -1717,6 +1789,7 @@
       setSlider('cfg-merge', 'cfg-merge-val', DEFAULTS.merge);
       setSlider('cfg-width', 'cfg-width-val', DEFAULTS.width);
       document.getElementById('cfg-outdir').value = DEFAULTS.outdir;
+      document.getElementById('cfg-background').value = DEFAULTS.background;
     }
 
     function setSlider(sliderId, valId, value) {
@@ -1725,7 +1798,8 @@
     }
 
     async function applyConfig() {
-      const payload = buildConfigPayload();
+      const payload = normalizeConfigPayload(buildConfigPayload());
+      const previousConfig = lastAppliedConfig;
       try {
         const res = await fetch('/api/config', {
           method: 'POST',
@@ -1735,11 +1809,30 @@
         const data = await res.json();
         if (!res.ok) { showToast(data.error || '設定の適用に失敗しました', 'error'); return; }
         currentDiffMode = payload.diff_mode;
+        lastAppliedConfig = payload;
         saveUiPrefsFromPayload(payload);
         showToast('設定を適用しました', 'success');
         closeDrawer();
-        if (document.getElementById('repoPath').value.trim()) {
+
+        if (!document.getElementById('repoPath').value.trim() || !state.analysisId) {
+          return;
+        }
+
+        const changedKeys = changedConfigKeys(previousConfig, payload);
+        const needsFullAnalyze = changedKeys.includes('diff_mode');
+        const needsHunkReconfigure =
+          changedKeys.includes('context_lines') ||
+          changedKeys.includes('merge_threshold');
+        const needsPreviewRefresh =
+          changedKeys.includes('html_width') ||
+          changedKeys.includes('background_mode');
+
+        if (needsFullAnalyze) {
           await analyze();
+        } else if (needsHunkReconfigure) {
+          await reconfigureCurrentAnalysis();
+        } else if (needsPreviewRefresh) {
+          await refreshActivePreview();
         }
       } catch (e) {
         showToast('設定の適用に失敗しました: ' + e.message, 'error');
@@ -1782,6 +1875,7 @@
         onDiffSourceModeChange();
         updateAnalyzeButtonLabel();
         updateSourceSummary();
+        lastAppliedConfig = normalizeConfigPayload(syncPayload);
       } catch (_) { }
     })();
 

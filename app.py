@@ -7,6 +7,7 @@ Flask + Playwright によるエビデンス用 git diff スクリーンショッ
 import re
 import subprocess
 import webbrowser
+from copy import deepcopy
 from html import escape
 from datetime import datetime
 from pathlib import Path
@@ -216,12 +217,26 @@ def make_hunk_summary(hunk: dict) -> dict:
     }
 
 
-def create_analysis_session(repo_path: str, hunks: list[dict], content_source: dict) -> str:
+def finalize_hunks(raw_hunks: list[dict], repo_path: str, content_source: dict) -> list[dict]:
+    hunks = deepcopy(raw_hunks)
+    if DIFF_MODE == "file":
+        hunks = expand_and_merge(hunks, repo_path, CONTEXT_LINES, MERGE_THRESHOLD, content_source)
+        for h in hunks:
+            h["changed_count"] = len(h.get("changed_lines", []))
+    else:
+        for h in hunks:
+            h["changed_count"] = int(h.get("added_count", 0)) + int(h.get("deleted_count", 0))
+    return hunks
+
+
+def create_analysis_session(repo_path: str, raw_hunks: list[dict], hunks: list[dict], content_source: dict) -> str:
     analysis_id = uuid4().hex
     ANALYSIS_SESSIONS[analysis_id] = {
         "repo_path": str(Path(repo_path).resolve()),
+        "raw_hunks": deepcopy(raw_hunks),
         "hunks": hunks,
         "content_source": content_source,
+        "diff_mode": DIFF_MODE,
     }
     while len(ANALYSIS_SESSIONS) > MAX_ANALYSIS_SESSIONS:
         oldest = next(iter(ANALYSIS_SESSIONS))
@@ -804,20 +819,46 @@ def analyze():
     if not diff_text.strip():
         return jsonify({"hunks": [], "message": "差分がありません"})
 
-    hunks = parse_hunks(diff_text)
+    raw_hunks = parse_hunks(diff_text)
     # 各hunkに差分コマンド表記を付与
-    for h in hunks:
+    for h in raw_hunks:
         h["diff_cmd"] = diff_cmd_label
 
-    if DIFF_MODE == "file":
-        hunks = expand_and_merge(hunks, str(repo), CONTEXT_LINES, MERGE_THRESHOLD, content_source)
-        for h in hunks:
-            h["changed_count"] = len(h.get("changed_lines", []))
-    else:
-        for h in hunks:
-            h["changed_count"] = int(h.get("added_count", 0)) + int(h.get("deleted_count", 0))
+    hunks = finalize_hunks(raw_hunks, str(repo), content_source)
 
-    analysis_id = create_analysis_session(str(repo), hunks, content_source)
+    analysis_id = create_analysis_session(str(repo), raw_hunks, hunks, content_source)
+    return jsonify({
+        "analysis_id": analysis_id,
+        "hunks": [make_hunk_summary(h) for h in hunks],
+        "total": len(hunks),
+    })
+
+
+@app.route("/api/reconfigure-analysis", methods=["POST"])
+def reconfigure_analysis():
+    data = request.get_json(silent=True) or {}
+    repo_path = str(data.get("repo_path", "")).strip()
+    analysis_id = str(data.get("analysis_id", "")).strip()
+    if not repo_path:
+        return jsonify({"error": "リポジトリパスが無効です"}), 400
+    if not analysis_id:
+        return jsonify({"error": "analysis_id が不正です"}), 400
+
+    try:
+        repo = resolve_repo_path(repo_path)
+        session = get_analysis_session(analysis_id, str(repo))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    if session.get("diff_mode") != DIFF_MODE or DIFF_MODE != "file":
+        return jsonify({"requires_reanalyze": True})
+
+    raw_hunks = session.get("raw_hunks")
+    if not isinstance(raw_hunks, list):
+        return jsonify({"requires_reanalyze": True})
+
+    hunks = finalize_hunks(raw_hunks, str(repo), session["content_source"])
+    session["hunks"] = hunks
     return jsonify({
         "analysis_id": analysis_id,
         "hunks": [make_hunk_summary(h) for h in hunks],

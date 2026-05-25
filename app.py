@@ -7,9 +7,11 @@ Flask + Playwright によるエビデンス用 git diff スクリーンショッ
 import re
 import subprocess
 import webbrowser
+from html import escape
 from datetime import datetime
 from pathlib import Path
 from threading import Timer
+from uuid import uuid4
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
@@ -28,6 +30,9 @@ app = Flask(__name__)
 
 # --- パフォーマンス用キャッシュ / コンパイル済み正規表現 ---
 FILE_CONTENT_CACHE: dict[str, list[str]] = {}
+ANALYSIS_SESSIONS: dict[str, dict] = {}
+MAX_ANALYSIS_SESSIONS = 20
+GIT_TIMEOUT_SECONDS = 30
 _OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
 _NEW_RE = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -37,6 +42,21 @@ _INDENT_RE = re.compile(r"^[ \t]*")
 # ================================================================
 # git / diff ユーティリティ
 # ================================================================
+
+def run_git(repo_path: str, args: list[str]) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=repo_path,
+            timeout=GIT_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"git コマンドがタイムアウトしました: git {' '.join(args)}") from e
+
 
 def get_diff(
     repo_path: str,
@@ -70,24 +90,14 @@ def get_diff(
     if merge_threshold is not None:
         cmd.append(f"--inter-hunk-context={max(0, int(merge_threshold))}")
 
-    result = subprocess.run(
-        cmd,
-        capture_output=True, text=True, encoding="utf-8",
-        cwd=repo_path,
-    )
+    result = run_git(repo_path, cmd[1:])
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip())
     return result.stdout
 
 
 def list_commits(repo_path: str, limit: int = 80) -> list[dict]:
-    result = subprocess.run(
-        ["git", "log", f"-n{max(1, min(limit, 200))}", "--pretty=format:%H\t%h\t%s"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        cwd=repo_path,
-    )
+    result = run_git(repo_path, ["log", f"-n{max(1, min(limit, 200))}", "--pretty=format:%H\t%h\t%s"])
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip())
 
@@ -106,13 +116,7 @@ def list_commits(repo_path: str, limit: int = 80) -> list[dict]:
 
 
 def is_git_repo(repo_path: str) -> bool:
-    result = subprocess.run(
-        ["git", "rev-parse", "--is-inside-work-tree"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        cwd=repo_path,
-    )
+    result = run_git(repo_path, ["rev-parse", "--is-inside-work-tree"])
     return result.returncode == 0 and result.stdout.strip() == "true"
 
 
@@ -136,6 +140,104 @@ def resolve_path_within(base_dir: Path, relative_path: str) -> Path:
     except ValueError as e:
         raise ValueError("パスがリポジトリ外を指しています") from e
     return target
+
+
+def clear_repo_file_cache(repo_path: str) -> None:
+    prefix = f"{Path(repo_path).resolve()}|"
+    for key in list(FILE_CONTENT_CACHE):
+        if key.startswith(prefix):
+            FILE_CONTENT_CACHE.pop(key, None)
+
+
+def cache_key_for_file(repo_path: str, filepath: str, content_source: dict) -> str:
+    source_type = content_source.get("type", "worktree")
+    if source_type == "worktree":
+        safe_path = resolve_path_within(Path(repo_path), filepath)
+        try:
+            stat = safe_path.stat()
+            version = f"{stat.st_mtime_ns}:{stat.st_size}"
+        except OSError:
+            version = "missing"
+    elif source_type == "index":
+        result = run_git(repo_path, ["ls-files", "-s", "--", filepath])
+        version = result.stdout.strip() if result.returncode == 0 else "index"
+    else:
+        version = str(content_source.get("ref", "HEAD"))
+    return f"{Path(repo_path).resolve()}|{source_type}|{version}|{filepath}"
+
+
+def read_source_lines(repo_path: str, filepath: str, content_source: dict) -> list[str]:
+    key = cache_key_for_file(repo_path, filepath, content_source)
+    if key in FILE_CONTENT_CACHE:
+        return FILE_CONTENT_CACHE[key]
+
+    source_type = content_source.get("type", "worktree")
+    if source_type == "worktree":
+        safe_path = resolve_path_within(Path(repo_path), filepath)
+        text = safe_path.read_text(encoding="utf-8", errors="replace")
+    elif source_type == "index":
+        result = run_git(repo_path, ["show", f":{filepath}"])
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip())
+        text = result.stdout
+    elif source_type == "ref":
+        ref = str(content_source.get("ref", "")).strip()
+        if not ref:
+            raise RuntimeError("参照先コミットが不正です")
+        result = run_git(repo_path, ["show", f"{ref}:{filepath}"])
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip())
+        text = result.stdout
+    else:
+        raise RuntimeError("不正なファイル内容ソースです")
+
+    lines = text.splitlines()
+    FILE_CONTENT_CACHE[key] = lines
+    return lines
+
+
+def content_source_for_diff(source_mode: str, target_ref: str | None) -> dict:
+    if source_mode == "staged":
+        return {"type": "index"}
+    if source_mode in ("commit", "range"):
+        return {"type": "ref", "ref": (target_ref or "").strip()}
+    return {"type": "worktree"}
+
+
+def make_hunk_summary(hunk: dict) -> dict:
+    return {
+        "filepath": hunk.get("filepath", ""),
+        "start": hunk.get("start", 1),
+        "end": hunk.get("end", 1),
+        "old_start": hunk.get("old_start"),
+        "changed_count": hunk.get("changed_count", len(hunk.get("changed_lines", []))),
+        "added_count": hunk.get("added_count", 0),
+        "deleted_count": hunk.get("deleted_count", 0),
+    }
+
+
+def create_analysis_session(repo_path: str, hunks: list[dict], content_source: dict) -> str:
+    analysis_id = uuid4().hex
+    ANALYSIS_SESSIONS[analysis_id] = {
+        "repo_path": str(Path(repo_path).resolve()),
+        "hunks": hunks,
+        "content_source": content_source,
+    }
+    while len(ANALYSIS_SESSIONS) > MAX_ANALYSIS_SESSIONS:
+        oldest = next(iter(ANALYSIS_SESSIONS))
+        ANALYSIS_SESSIONS.pop(oldest, None)
+    return analysis_id
+
+
+def get_analysis_session(analysis_id: str, repo_path: str | None = None) -> dict:
+    session = ANALYSIS_SESSIONS.get((analysis_id or "").strip())
+    if not session:
+        raise ValueError("解析結果が見つかりません。再解析してください")
+    if repo_path:
+        requested = str(Path(repo_path).expanduser().resolve())
+        if requested != session["repo_path"]:
+            raise ValueError("解析結果とリポジトリパスが一致しません")
+    return session
 
 
 def parse_output_dir(value: str) -> tuple[str, Path]:
@@ -242,24 +344,22 @@ def _strip_common_indent_from_lines(lines: list[str]) -> tuple[list[str], int]:
     return new, min_indent
 
 
-def expand_and_merge(hunks: list[dict], repo_path: str, context: int, merge_thresh: int) -> list[dict]:
+def expand_and_merge(
+    hunks: list[dict],
+    repo_path: str,
+    context: int,
+    merge_thresh: int,
+    content_source: dict | None = None,
+) -> list[dict]:
     by_file: dict[str, list[dict]] = {}
     for h in hunks:
         by_file.setdefault(h["filepath"], []).append(h)
 
     result = []
+    source = content_source or {"type": "worktree"}
     for filepath, fhunks in by_file.items():
         try:
-            # ファイル内容はキャッシュから取得して複数回の読み取りを避ける
-            safe_path = resolve_path_within(Path(repo_path), filepath)
-            key = str(safe_path)
-            if key in FILE_CONTENT_CACHE:
-                total_lines = len(FILE_CONTENT_CACHE[key])
-            else:
-                text = safe_path.read_text(encoding="utf-8")
-                lines = text.splitlines()
-                FILE_CONTENT_CACHE[key] = lines
-                total_lines = len(lines)
+            total_lines = len(read_source_lines(repo_path, filepath, source))
         except Exception:
             total_lines = 10 ** 6
 
@@ -305,16 +405,15 @@ def expand_and_merge(hunks: list[dict], repo_path: str, context: int, merge_thre
     return result
 
 
-def read_lines(repo_path: str, filepath: str, start: int, end: int) -> list[tuple[int, str]]:
+def read_lines(
+    repo_path: str,
+    filepath: str,
+    start: int,
+    end: int,
+    content_source: dict | None = None,
+) -> list[tuple[int, str]]:
     try:
-        safe_path = resolve_path_within(Path(repo_path), filepath)
-        key = str(safe_path)
-        if key in FILE_CONTENT_CACHE:
-            lines = FILE_CONTENT_CACHE[key]
-        else:
-            text = safe_path.read_text(encoding="utf-8")
-            lines = text.splitlines()
-            FILE_CONTENT_CACHE[key] = lines
+        lines = read_source_lines(repo_path, filepath, content_source or {"type": "worktree"})
     except Exception as e:
         return [(start, f"# 読み込みエラー: {e}")]
     return [(i + 1, lines[i]) for i in range(start - 1, min(end, len(lines)))]
@@ -383,24 +482,31 @@ td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:
     html = head_template.format(
         bg_color=bg_color,
         HTML_WIDTH=html_width,
-        filepath=filepath,
-        meta=meta,
+        filepath=escape(filepath),
+        meta=escape(meta),
         rows=rows_html,
     )
     if show_footer:
-        html += footer_template.format(timestamp=timestamp, diff_cmd=diff_cmd)
+        html += footer_template.format(timestamp=escape(timestamp), diff_cmd=escape(diff_cmd))
     html += "</body></html>"
     return html
 
 
-def build_code_html(hunk: dict, repo_path: str, hunk_index: int, total: int, timestamp: str) -> str:
+def build_code_html(
+    hunk: dict,
+    repo_path: str,
+    hunk_index: int,
+    total: int,
+    timestamp: str,
+    content_source: dict | None = None,
+) -> str:
     if DIFF_MODE == "patch":
         return build_patch_html(hunk, hunk_index, total, timestamp)
 
     if len(hunk.get("changed_lines", [])) == 0 and int(hunk.get("deleted_count", 0)) > 0 and hunk.get("diff_lines"):
         return build_patch_html(hunk, hunk_index, total, timestamp)
 
-    lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"])
+    lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source)
     # 共通インデントを除去（Codesnap風）
     raw_texts = [t for (_, t) in lines]
     stripped_texts, _ = _strip_common_indent_from_lines(raw_texts)
@@ -412,7 +518,7 @@ def build_code_html(hunk: dict, repo_path: str, hunk_index: int, total: int, tim
         # text は共通インデントを削除したものを使う
         text = stripped_texts[idx]
         is_changed = lineno in changed_set
-        escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        escaped = escape(text)
         row_class = ' class="changed"' if is_changed else ""
         marker = "+" if is_changed else " "
         rows.append(
@@ -467,7 +573,7 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) ->
         if not raw:
             continue
         if raw.startswith("\\"):
-            note = raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            note = escape(raw)
             rows.append(
                 '<tr class="note">'
                 '<td class="lineno old"></td>'
@@ -484,7 +590,7 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) ->
         stripped = stripped_texts_by_index.get(idx)
         if stripped is not None:
             text = stripped
-        escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        escaped = escape(text)
 
         if prefix == "+":
             rows.append(
@@ -664,6 +770,8 @@ def analyze():
         return jsonify({"error": str(e)}), 400
 
     try:
+        clear_repo_file_cache(str(repo))
+        content_source = content_source_for_diff(source_mode, target_ref)
         # 人間向けの差分コマンド文字列を作成
         if source_mode == "worktree":
             diff_cmd_label = "git diff HEAD"
@@ -702,31 +810,41 @@ def analyze():
         h["diff_cmd"] = diff_cmd_label
 
     if DIFF_MODE == "file":
-        hunks = expand_and_merge(hunks, str(repo), CONTEXT_LINES, MERGE_THRESHOLD)
+        hunks = expand_and_merge(hunks, str(repo), CONTEXT_LINES, MERGE_THRESHOLD, content_source)
         for h in hunks:
             h["changed_count"] = len(h.get("changed_lines", []))
     else:
         for h in hunks:
             h["changed_count"] = int(h.get("added_count", 0)) + int(h.get("deleted_count", 0))
 
-    return jsonify({"hunks": hunks, "total": len(hunks)})
+    analysis_id = create_analysis_session(str(repo), hunks, content_source)
+    return jsonify({
+        "analysis_id": analysis_id,
+        "hunks": [make_hunk_summary(h) for h in hunks],
+        "total": len(hunks),
+    })
 
 
 @app.route("/api/preview/<int:hunk_index>", methods=["POST"])
 def preview(hunk_index: int):
     data = request.get_json(silent=True) or {}
     repo_path = str(data.get("repo_path", "")).strip()
-    hunks = data.get("hunks")
+    analysis_id = str(data.get("analysis_id", "")).strip()
     if not repo_path:
         return jsonify({"error": "リポジトリパスが無効です"}), 400
-    if not isinstance(hunks, list):
-        return jsonify({"error": "hunks が不正です"}), 400
+    if not analysis_id:
+        return jsonify({"error": "analysis_id が不正です"}), 400
 
     try:
         repo = resolve_repo_path(repo_path)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    try:
+        session = get_analysis_session(analysis_id, str(repo))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
+    hunks = session["hunks"]
     total = len(hunks)
 
     if hunk_index < 0 or hunk_index >= total:
@@ -735,7 +853,7 @@ def preview(hunk_index: int):
     hunk = hunks[hunk_index]
     hunk["changed_lines"] = hunk.get("changed_lines", [])
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    html = build_code_html(hunk, str(repo), hunk_index + 1, total, timestamp)
+    html = build_code_html(hunk, str(repo), hunk_index + 1, total, timestamp, session["content_source"])
     return html
 
 
@@ -743,16 +861,21 @@ def preview(hunk_index: int):
 def export():
     data = request.get_json(silent=True) or {}
     repo_path = str(data.get("repo_path", "")).strip()
-    hunks = data.get("hunks")
+    analysis_id = str(data.get("analysis_id", "")).strip()
     if not repo_path:
         return jsonify({"error": "リポジトリパスが無効です"}), 400
-    if not isinstance(hunks, list):
-        return jsonify({"error": "hunks が不正です"}), 400
+    if not analysis_id:
+        return jsonify({"error": "analysis_id が不正です"}), 400
 
     try:
         repo = resolve_repo_path(repo_path)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    try:
+        session = get_analysis_session(analysis_id, str(repo))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    hunks = session["hunks"]
 
     raw_indices = data.get("indices")
     if raw_indices is None:
@@ -785,7 +908,7 @@ def export():
         hunk["changed_lines"] = hunk.get("changed_lines", [])
         safe = hunk["filepath"].replace("/", "_").replace("\\", "_")
         out_path = OUTPUT_DIR / f"{timestamp_str}_{i + 1 :03d}_{safe}_L{hunk['start']}.png"
-        html = build_code_html(hunk, str(repo), i + 1, total, timestamp_disp)
+        html = build_code_html(hunk, str(repo), i + 1, total, timestamp_disp, session["content_source"])
         render_items.append((html, out_path))
         saved.append(str(out_path))
 

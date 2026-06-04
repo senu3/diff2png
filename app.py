@@ -533,7 +533,8 @@ def _compose_html(rows_html: str, filepath: str, meta: str, lang: str, bg_color:
 <html lang=\"ja\"><head><meta charset=\"UTF-8\">
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-html,body{{background:{bg_color};font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
+html{{background:{bg_color};width:{HTML_WIDTH}px}}
+body{{background:{bg_color};font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
         color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
 .header{{background:#1e1e2e;color:#cdd6f4;padding:10px 14px;border-radius:6px 6px 0 0;
     display:flex;justify-content:space-between;align-items:center;font-size:12px}}
@@ -737,10 +738,12 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, co
 
 def render_png(page, html: str, out_path: Path, config: dict):
     page.set_content(html, wait_until="load")
-    height = page.evaluate("document.body.scrollHeight")
-    html_width = int(config.get("html_width", HTML_WIDTH))
+    page_size = page.evaluate("""() => ({
+        width: Math.ceil(document.body.scrollWidth),
+        height: Math.ceil(document.body.scrollHeight),
+    })""")
     background_mode = str(config.get("background_mode", BACKGROUND_MODE))
-    page.set_viewport_size({"width": html_width + 32, "height": height + 32})
+    page.set_viewport_size({"width": page_size["width"], "height": page_size["height"]})
     # Playwright: omit background when transparent output requested
     if background_mode != 'normal':
         page.screenshot(path=str(out_path), full_page=True, omit_background=True)

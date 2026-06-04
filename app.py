@@ -217,10 +217,37 @@ def make_hunk_summary(hunk: dict) -> dict:
     }
 
 
-def finalize_hunks(raw_hunks: list[dict], repo_path: str, content_source: dict) -> list[dict]:
+def current_config_snapshot() -> dict:
+    return {
+        "context_lines": CONTEXT_LINES,
+        "merge_threshold": MERGE_THRESHOLD,
+        "html_width": HTML_WIDTH,
+        "output_dir": OUTPUT_DIR_NAME,
+        "diff_mode": DIFF_MODE,
+        "background_mode": BACKGROUND_MODE,
+    }
+
+
+def session_config(session: dict) -> dict:
+    config = current_config_snapshot()
+    stored = session.get("config")
+    if isinstance(stored, dict):
+        config.update(stored)
+    elif "diff_mode" in session:
+        config["diff_mode"] = session["diff_mode"]
+    return config
+
+
+def finalize_hunks(raw_hunks: list[dict], repo_path: str, content_source: dict, config: dict) -> list[dict]:
     hunks = deepcopy(raw_hunks)
-    if DIFF_MODE == "file":
-        hunks = expand_and_merge(hunks, repo_path, CONTEXT_LINES, MERGE_THRESHOLD, content_source)
+    if config.get("diff_mode") == "file":
+        hunks = expand_and_merge(
+            hunks,
+            repo_path,
+            int(config.get("context_lines", CONTEXT_LINES)),
+            int(config.get("merge_threshold", MERGE_THRESHOLD)),
+            content_source,
+        )
         for h in hunks:
             h["changed_count"] = len(h.get("changed_lines", []))
     else:
@@ -229,14 +256,21 @@ def finalize_hunks(raw_hunks: list[dict], repo_path: str, content_source: dict) 
     return hunks
 
 
-def create_analysis_session(repo_path: str, raw_hunks: list[dict], hunks: list[dict], content_source: dict) -> str:
+def create_analysis_session(
+    repo_path: str,
+    raw_hunks: list[dict],
+    hunks: list[dict],
+    content_source: dict,
+    config: dict,
+) -> str:
     analysis_id = uuid4().hex
     ANALYSIS_SESSIONS[analysis_id] = {
         "repo_path": str(Path(repo_path).resolve()),
         "raw_hunks": deepcopy(raw_hunks),
         "hunks": hunks,
         "content_source": content_source,
-        "diff_mode": DIFF_MODE,
+        "config": deepcopy(config),
+        "diff_mode": config.get("diff_mode", DIFF_MODE),
     }
     while len(ANALYSIS_SESSIONS) > MAX_ANALYSIS_SESSIONS:
         oldest = next(iter(ANALYSIS_SESSIONS))
@@ -514,12 +548,14 @@ def build_code_html(
     total: int,
     timestamp: str,
     content_source: dict | None = None,
+    config: dict | None = None,
 ) -> str:
-    if DIFF_MODE == "patch":
-        return build_patch_html(hunk, hunk_index, total, timestamp)
+    render_config = config or current_config_snapshot()
+    if render_config.get("diff_mode") == "patch":
+        return build_patch_html(hunk, hunk_index, total, timestamp, render_config)
 
     if len(hunk.get("changed_lines", [])) == 0 and int(hunk.get("deleted_count", 0)) > 0 and hunk.get("diff_lines"):
-        return build_patch_html(hunk, hunk_index, total, timestamp)
+        return build_patch_html(hunk, hunk_index, total, timestamp, render_config)
 
     lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source)
     # 共通インデントを除去（Codesnap風）
@@ -545,16 +581,19 @@ def build_code_html(
         )
 
     diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
-    bg_color = 'transparent' if BACKGROUND_MODE != 'normal' else '#fff'
-    show_footer = False if BACKGROUND_MODE == 'transparent_no_footer' else True
+    background_mode = str(render_config.get("background_mode", BACKGROUND_MODE))
+    html_width = int(render_config.get("html_width", HTML_WIDTH))
+    bg_color = 'transparent' if background_mode != 'normal' else '#fff'
+    show_footer = False if background_mode == 'transparent_no_footer' else True
 
     meta = f"L{hunk['start']}–{hunk['end']} | {hunk_index}/{total} | {lang}"
     html = _compose_html(''.join(rows), hunk['filepath'], meta, lang, bg_color,
-                         HTML_WIDTH, show_footer, timestamp, diff_cmd)
+                         html_width, show_footer, timestamp, diff_cmd)
     return html
 
 
-def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) -> str:
+def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, config: dict | None = None) -> str:
+    render_config = config or current_config_snapshot()
     lang = detect_language(hunk["filepath"])
     old_ln = int(hunk.get("old_start", hunk["start"]))
     new_ln = int(hunk.get("start", 1))
@@ -640,12 +679,14 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) ->
             new_ln += 1
 
     diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
-    bg_color = 'transparent' if BACKGROUND_MODE != 'normal' else '#fff'
-    show_footer = False if BACKGROUND_MODE == 'transparent_no_footer' else True
+    background_mode = str(render_config.get("background_mode", BACKGROUND_MODE))
+    html_width = int(render_config.get("html_width", HTML_WIDTH))
+    bg_color = 'transparent' if background_mode != 'normal' else '#fff'
+    show_footer = False if background_mode == 'transparent_no_footer' else True
 
     meta = f"-{hunk.get('old_start', hunk['start'])} +{hunk['start']} | {hunk_index}/{total} | {lang} | patch"
     html = _compose_html(''.join(rows), hunk['filepath'], meta, lang, bg_color,
-                         HTML_WIDTH, show_footer, timestamp, diff_cmd)
+                         html_width, show_footer, timestamp, diff_cmd)
     return html
 
 
@@ -653,25 +694,27 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str) ->
 # PNG 出力
 # ================================================================
 
-def render_png(page, html: str, out_path: Path):
+def render_png(page, html: str, out_path: Path, config: dict):
     page.set_content(html, wait_until="load")
     height = page.evaluate("document.body.scrollHeight")
-    page.set_viewport_size({"width": HTML_WIDTH + 32, "height": height + 32})
+    html_width = int(config.get("html_width", HTML_WIDTH))
+    background_mode = str(config.get("background_mode", BACKGROUND_MODE))
+    page.set_viewport_size({"width": html_width + 32, "height": height + 32})
     # Playwright: omit background when transparent output requested
-    if BACKGROUND_MODE != 'normal':
+    if background_mode != 'normal':
         page.screenshot(path=str(out_path), full_page=True, omit_background=True)
     else:
         page.screenshot(path=str(out_path), full_page=True)
 
 
-def render_png_batch(items: list[tuple[str, Path]]):
+def render_png_batch(items: list[tuple[str, Path]], config: dict):
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page()
         for html, out_path in items:
-            render_png(page, html, out_path)
+            render_png(page, html, out_path, config)
         browser.close()
 
 
@@ -786,6 +829,7 @@ def analyze():
 
     try:
         clear_repo_file_cache(str(repo))
+        config_snapshot = current_config_snapshot()
         content_source = content_source_for_diff(source_mode, target_ref)
         # 人間向けの差分コマンド文字列を作成
         if source_mode == "worktree":
@@ -797,11 +841,11 @@ def analyze():
         else:
             diff_cmd_label = f"git diff {base_ref} {target_ref}"
 
-        if DIFF_MODE == "patch":
+        if config_snapshot.get("diff_mode") == "patch":
             diff_text = get_diff(
                 str(repo),
-                context_lines=CONTEXT_LINES,
-                merge_threshold=MERGE_THRESHOLD,
+                context_lines=int(config_snapshot.get("context_lines", CONTEXT_LINES)),
+                merge_threshold=int(config_snapshot.get("merge_threshold", MERGE_THRESHOLD)),
                 source_mode=source_mode,
                 base_ref=base_ref,
                 target_ref=target_ref,
@@ -824,9 +868,9 @@ def analyze():
     for h in raw_hunks:
         h["diff_cmd"] = diff_cmd_label
 
-    hunks = finalize_hunks(raw_hunks, str(repo), content_source)
+    hunks = finalize_hunks(raw_hunks, str(repo), content_source, config_snapshot)
 
-    analysis_id = create_analysis_session(str(repo), raw_hunks, hunks, content_source)
+    analysis_id = create_analysis_session(str(repo), raw_hunks, hunks, content_source, config_snapshot)
     return jsonify({
         "analysis_id": analysis_id,
         "hunks": [make_hunk_summary(h) for h in hunks],
@@ -850,15 +894,37 @@ def reconfigure_analysis():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    if session.get("diff_mode") != DIFF_MODE or DIFF_MODE != "file":
+    previous_config = session_config(session)
+    config_snapshot = current_config_snapshot()
+    if previous_config.get("diff_mode") != config_snapshot.get("diff_mode"):
         return jsonify({"requires_reanalyze": True})
 
     raw_hunks = session.get("raw_hunks")
     if not isinstance(raw_hunks, list):
         return jsonify({"requires_reanalyze": True})
 
-    hunks = finalize_hunks(raw_hunks, str(repo), session["content_source"])
+    if config_snapshot.get("diff_mode") == "patch":
+        context_changed = (
+            int(previous_config.get("context_lines", CONTEXT_LINES))
+            != int(config_snapshot.get("context_lines", CONTEXT_LINES))
+            or int(previous_config.get("merge_threshold", MERGE_THRESHOLD))
+            != int(config_snapshot.get("merge_threshold", MERGE_THRESHOLD))
+        )
+        if context_changed:
+            return jsonify({"requires_reanalyze": True})
+
+        session["config"] = deepcopy(config_snapshot)
+        session["diff_mode"] = config_snapshot.get("diff_mode", DIFF_MODE)
+        return jsonify({
+            "analysis_id": analysis_id,
+            "hunks": [make_hunk_summary(h) for h in session["hunks"]],
+            "total": len(session["hunks"]),
+        })
+
+    hunks = finalize_hunks(raw_hunks, str(repo), session["content_source"], config_snapshot)
     session["hunks"] = hunks
+    session["config"] = deepcopy(config_snapshot)
+    session["diff_mode"] = config_snapshot.get("diff_mode", DIFF_MODE)
     return jsonify({
         "analysis_id": analysis_id,
         "hunks": [make_hunk_summary(h) for h in hunks],
@@ -894,7 +960,15 @@ def preview(hunk_index: int):
     hunk = hunks[hunk_index]
     hunk["changed_lines"] = hunk.get("changed_lines", [])
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    html = build_code_html(hunk, str(repo), hunk_index + 1, total, timestamp, session["content_source"])
+    html = build_code_html(
+        hunk,
+        str(repo),
+        hunk_index + 1,
+        total,
+        timestamp,
+        session["content_source"],
+        session_config(session),
+    )
     return html
 
 
@@ -916,6 +990,7 @@ def export():
         session = get_analysis_session(analysis_id, str(repo))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+    config_snapshot = session_config(session)
     hunks = session["hunks"]
 
     raw_indices = data.get("indices")
@@ -937,7 +1012,8 @@ def export():
     if not normalized_indices:
         return jsonify({"error": "出力対象がありません"}), 400
 
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    output_dir_name, output_dir = parse_output_dir(str(config_snapshot.get("output_dir", OUTPUT_DIR_NAME)))
+    output_dir.mkdir(exist_ok=True)
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     timestamp_disp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     total = len(hunks)
@@ -948,14 +1024,22 @@ def export():
         hunk = hunks[i]
         hunk["changed_lines"] = hunk.get("changed_lines", [])
         safe = hunk["filepath"].replace("/", "_").replace("\\", "_")
-        out_path = OUTPUT_DIR / f"{timestamp_str}_{i + 1 :03d}_{safe}_L{hunk['start']}.png"
-        html = build_code_html(hunk, str(repo), i + 1, total, timestamp_disp, session["content_source"])
+        out_path = output_dir / f"{timestamp_str}_{i + 1 :03d}_{safe}_L{hunk['start']}.png"
+        html = build_code_html(
+            hunk,
+            str(repo),
+            i + 1,
+            total,
+            timestamp_disp,
+            session["content_source"],
+            config_snapshot,
+        )
         render_items.append((html, out_path))
         saved.append(str(out_path))
 
-    render_png_batch(render_items)
+    render_png_batch(render_items, config_snapshot)
 
-    return jsonify({"saved": saved, "count": len(saved), "output_dir": OUTPUT_DIR_NAME})
+    return jsonify({"saved": saved, "count": len(saved), "output_dir": output_dir_name})
 
 
 @app.route("/screenshots/<path:filename>")

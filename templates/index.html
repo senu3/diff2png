@@ -1823,16 +1823,16 @@
         const needsHunkReconfigure =
           changedKeys.includes('context_lines') ||
           changedKeys.includes('merge_threshold');
-        const needsPreviewRefresh =
+        const needsSessionConfigUpdate =
+          needsHunkReconfigure ||
           changedKeys.includes('html_width') ||
-          changedKeys.includes('background_mode');
+          changedKeys.includes('background_mode') ||
+          changedKeys.includes('output_dir');
 
         if (needsFullAnalyze) {
           await analyze();
-        } else if (needsHunkReconfigure) {
+        } else if (needsSessionConfigUpdate) {
           await reconfigureCurrentAnalysis();
-        } else if (needsPreviewRefresh) {
-          await refreshActivePreview();
         }
       } catch (e) {
         showToast('設定の適用に失敗しました: ' + e.message, 'error');

@@ -129,6 +129,21 @@ def is_git_repo(repo_path: str) -> bool:
     return result.returncode == 0 and result.stdout.strip() == "true"
 
 
+def get_git_top_level(repo_path: str) -> Path:
+    result = run_git(repo_path, ["rev-parse", "--show-toplevel"])
+    if result.returncode != 0:
+        raise ValueError(result.stderr.strip() or "Gitリポジトリルートの解決に失敗しました")
+
+    top_level = result.stdout.strip()
+    if not top_level:
+        raise ValueError("Gitリポジトリルートの解決に失敗しました")
+
+    try:
+        return Path(top_level).resolve(strict=True)
+    except Exception as e:
+        raise ValueError(f"Gitリポジトリルートの解決に失敗しました: {e}") from e
+
+
 def resolve_repo_path(repo_path: str) -> Path:
     p = Path(repo_path).expanduser()
     try:
@@ -139,7 +154,7 @@ def resolve_repo_path(repo_path: str) -> Path:
         raise ValueError("リポジトリパスが無効です")
     if not is_git_repo(str(rp)):
         raise ValueError("指定パスはGitリポジトリではありません")
-    return rp
+    return get_git_top_level(str(rp))
 
 
 def resolve_path_within(base_dir: Path, relative_path: str) -> Path:

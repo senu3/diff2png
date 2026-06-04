@@ -4,6 +4,7 @@ diff2png / app.py
 Flask + Playwright によるエビデンス用 git diff スクリーンショットツール
 """
 
+import hashlib
 import re
 import subprocess
 import webbrowser
@@ -38,6 +39,13 @@ _OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
 _NEW_RE = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _INDENT_RE = re.compile(r"^[ \t]*")
+_FILENAME_UNSAFE_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
+_FILENAME_REPEAT_UNDERSCORE_RE = re.compile(r"_+")
+_WINDOWS_RESERVED_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+}
 
 
 # ================================================================
@@ -305,6 +313,24 @@ def parse_output_dir(value: str) -> tuple[str, Path]:
         raise ValueError("output_dir はアプリ配下を指定してください") from e
 
     return candidate.as_posix(), resolved
+
+
+def sanitize_filename_component(value: str, max_length: int = 120) -> str:
+    raw = str(value or "").strip()
+    safe = _FILENAME_UNSAFE_RE.sub("_", raw)
+    safe = _FILENAME_REPEAT_UNDERSCORE_RE.sub("_", safe).strip(" ._")
+    if not safe:
+        safe = "file"
+
+    base_name = safe.split(".", 1)[0].upper()
+    if base_name in _WINDOWS_RESERVED_NAMES:
+        safe = f"_{safe}"
+
+    if len(safe) > max_length:
+        digest = hashlib.sha1(raw.encode("utf-8", errors="replace")).hexdigest()[:10]
+        safe = f"{safe[:max_length - len(digest) - 1].rstrip(' ._')}_{digest}"
+
+    return safe or "file"
 
 
 def parse_hunks(diff_text: str) -> list[dict]:
@@ -712,10 +738,12 @@ def render_png_batch(items: list[tuple[str, Path]], config: dict):
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page()
-        for html, out_path in items:
-            render_png(page, html, out_path, config)
-        browser.close()
+        try:
+            page = browser.new_page()
+            for html, out_path in items:
+                render_png(page, html, out_path, config)
+        finally:
+            browser.close()
 
 
 # ================================================================
@@ -1012,8 +1040,14 @@ def export():
     if not normalized_indices:
         return jsonify({"error": "出力対象がありません"}), 400
 
-    output_dir_name, output_dir = parse_output_dir(str(config_snapshot.get("output_dir", OUTPUT_DIR_NAME)))
-    output_dir.mkdir(exist_ok=True)
+    try:
+        output_dir_name, output_dir = parse_output_dir(str(config_snapshot.get("output_dir", OUTPUT_DIR_NAME)))
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except OSError as e:
+        return jsonify({"error": f"出力ディレクトリを作成できませんでした: {e}"}), 500
+
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     timestamp_disp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     total = len(hunks)
@@ -1023,7 +1057,7 @@ def export():
     for i in normalized_indices:
         hunk = hunks[i]
         hunk["changed_lines"] = hunk.get("changed_lines", [])
-        safe = hunk["filepath"].replace("/", "_").replace("\\", "_")
+        safe = sanitize_filename_component(hunk["filepath"])
         out_path = output_dir / f"{timestamp_str}_{i + 1 :03d}_{safe}_L{hunk['start']}.png"
         html = build_code_html(
             hunk,
@@ -1037,7 +1071,10 @@ def export():
         render_items.append((html, out_path))
         saved.append(str(out_path))
 
-    render_png_batch(render_items, config_snapshot)
+    try:
+        render_png_batch(render_items, config_snapshot)
+    except Exception as e:
+        return jsonify({"error": f"PNG出力に失敗しました: {e}"}), 500
 
     return jsonify({"saved": saved, "count": len(saved), "output_dir": output_dir_name})
 

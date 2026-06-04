@@ -5,8 +5,10 @@ Flask + Playwright によるエビデンス用 git diff スクリーンショッ
 """
 
 import hashlib
+import os
 import re
 import subprocess
+import sys
 import webbrowser
 from copy import deepcopy
 from html import escape
@@ -41,6 +43,7 @@ _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _INDENT_RE = re.compile(r"^[ \t]*")
 _FILENAME_UNSAFE_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 _FILENAME_REPEAT_UNDERSCORE_RE = re.compile(r"_+")
+_OUTPUT_PNG_RE = re.compile(r"^\d{8}_\d{6}_\d{3}_.+_L\d+\.png$", re.IGNORECASE)
 _WINDOWS_RESERVED_NAMES = {
     "CON", "PRN", "AUX", "NUL",
     "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
@@ -346,6 +349,20 @@ def sanitize_filename_component(value: str, max_length: int = 120) -> str:
         safe = f"{safe[:max_length - len(digest) - 1].rstrip(' ._')}_{digest}"
 
     return safe or "file"
+
+
+def output_dir_from_request(data: dict) -> tuple[str, Path]:
+    return parse_output_dir(str(data.get("output_dir", OUTPUT_DIR_NAME)))
+
+
+def open_directory(path: Path) -> None:
+    resolved = path.resolve()
+    if sys.platform.startswith("win"):
+        os.startfile(str(resolved))  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(resolved)])
+    else:
+        subprocess.Popen(["xdg-open", str(resolved)])
 
 
 def parse_hunks(diff_text: str) -> list[dict]:
@@ -1095,6 +1112,48 @@ def export():
         return jsonify({"error": f"PNG出力に失敗しました: {e}"}), 500
 
     return jsonify({"saved": saved, "count": len(saved), "output_dir": output_dir_name})
+
+
+@app.route("/api/open-output-dir", methods=["POST"])
+def open_output_dir():
+    data = request.get_json(silent=True) or {}
+    try:
+        output_dir_name, output_dir = output_dir_from_request(data)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        open_directory(output_dir)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except OSError as e:
+        return jsonify({"error": f"保存先を開けませんでした: {e}"}), 500
+
+    return jsonify({"ok": True, "output_dir": output_dir_name})
+
+
+@app.route("/api/clear-output-dir", methods=["POST"])
+def clear_output_dir():
+    data = request.get_json(silent=True) or {}
+    try:
+        output_dir_name, output_dir = output_dir_from_request(data)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    if output_dir == APP_ROOT:
+        return jsonify({"error": "アプリルートはクリア対象にできません"}), 400
+    if not output_dir.exists():
+        return jsonify({"deleted": 0, "output_dir": output_dir_name})
+    if not output_dir.is_dir():
+        return jsonify({"error": "出力先がディレクトリではありません"}), 400
+
+    deleted = 0
+    try:
+        for item in output_dir.iterdir():
+            if item.is_file() and _OUTPUT_PNG_RE.match(item.name):
+                item.unlink()
+                deleted += 1
+    except OSError as e:
+        return jsonify({"error": f"PNGのクリアに失敗しました: {e}"}), 500
+
+    return jsonify({"deleted": deleted, "output_dir": output_dir_name})
 
 
 @app.route("/screenshots/<path:filename>")

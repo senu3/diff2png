@@ -215,6 +215,18 @@
       gap: 10px;
     }
 
+    .setting-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .setting-actions .btn {
+      flex: 1;
+      font-size: 12px;
+      padding: 8px;
+    }
+
     input[type="range"] {
       flex: 1;
       accent-color: var(--accent);
@@ -860,6 +872,10 @@
           </div>
           <div class="setting-desc">PNGの保存先フォルダ名（app.py からの相対パス）。</div>
           <input type="text" id="cfg-outdir" value="diff_screenshots" style="width:100%;margin-top:2px">
+          <div class="setting-actions">
+            <button class="btn btn-ghost" id="openOutputBtn" onclick="openOutputDir()">保存先を開く</button>
+            <button class="btn btn-danger" id="clearOutputBtn" onclick="clearOutputDir()">PNGクリア</button>
+          </div>
         </div>
 
         <div class="setting-item">
@@ -1001,6 +1017,7 @@
       hunks: [],
       selected: new Set(),
       activeIndex: -1,
+      lastOutputDir: '',
     };
 
     function escapeHtml(value) {
@@ -1740,6 +1757,7 @@
           return;
         }
         const outDir = data.output_dir || 'diff_screenshots';
+        state.lastOutputDir = outDir;
         showToast(`✅ ${data.count} 枚出力しました → ${outDir}/`, 'success');
         setStatus(`出力完了: ${data.count} 枚`);
       } catch (e) {
@@ -1747,6 +1765,64 @@
         setStatus('エラー');
       } finally {
         updateExportButtons();
+      }
+    }
+
+    function getCurrentOutputDir() {
+      return state.lastOutputDir || document.getElementById('cfg-outdir').value.trim() || 'diff_screenshots';
+    }
+
+    async function openOutputDir() {
+      const btn = document.getElementById('openOutputBtn');
+      const outputDir = getCurrentOutputDir();
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/open-output-dir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ output_dir: outputDir }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || '保存先を開けませんでした', 'error');
+          return;
+        }
+        state.lastOutputDir = data.output_dir || outputDir;
+        showToast(`保存先を開きました → ${state.lastOutputDir}/`, 'success');
+      } catch (e) {
+        showToast('保存先を開けませんでした: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function clearOutputDir() {
+      const outputDir = getCurrentOutputDir();
+      if (!confirm(`${outputDir}/ の直下にある、このアプリが出力したPNGだけを削除します。実行しますか？`)) {
+        return;
+      }
+
+      const btn = document.getElementById('clearOutputBtn');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/clear-output-dir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ output_dir: outputDir }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || 'PNGクリアに失敗しました', 'error');
+          return;
+        }
+        state.lastOutputDir = data.output_dir || outputDir;
+        showToast(`${data.deleted || 0} 件のPNGを削除しました`, 'success');
+      } catch (e) {
+        showToast('PNGクリアに失敗しました: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
       }
     }
 

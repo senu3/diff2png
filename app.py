@@ -491,7 +491,7 @@ def expand_and_merge(
         for h in expanded[1:]:
             prev = merged[-1]
             # 判定は拡張前のオリジナル位置（orig_start/orig_end）で行う
-            gap = h["orig_start"] - prev.get("orig_end", prev["end"])
+            gap = h["orig_start"] - prev.get("orig_end", prev["end"]) - 1
             if gap <= merge_thresh:
                 prev["end"] = max(prev["end"], h["end"])
                 prev["orig_start"] = min(int(prev.get("orig_start", prev["start"])), int(h.get("orig_start", h["start"])))
@@ -916,6 +916,7 @@ def analyze():
         else:
             diff_text = get_diff(
                 str(repo),
+                context_lines=0,
                 source_mode=source_mode,
                 base_ref=base_ref,
                 target_ref=target_ref,

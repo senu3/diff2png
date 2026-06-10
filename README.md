@@ -22,7 +22,7 @@ uv run python app.py
 1. **リポジトリパス** に対象リポジトリの絶対パスを入力
 2. **解析** ボタンを押すと変更hunk一覧とプレビューが表示される
 3. チェックボックスで出力するhunkを選択
-4. **選択を出力** または **全て出力** でPNG生成
+4. **選択を出力** でPNG生成
 
 PNGは `diff_screenshots/` フォルダに出力されます。
 
@@ -41,6 +41,7 @@ diff_shot/
 解析時に次の差分ソースを選択できます。
 
 - 作業ツリー: `git diff HEAD`
+- ステージング済み: `git diff --staged`
 - 単一コミット: `git diff <commit>^ <commit>`
 - コミット比較: `git diff <base> <target>`
 

@@ -23,6 +23,26 @@ def _raw_hunk(start: int, end: int | None = None) -> dict:
 
 
 class HunkMergeTests(unittest.TestCase):
+    def test_browse_repo_uses_directory_picker(self):
+        with patch.object(diff2png, "choose_directory", return_value=r"C:\work\repo") as picker:
+            client = diff2png.app.test_client()
+            response = client.get("/api/browse")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {"repo_path": r"C:\work\repo"})
+        picker.assert_called_once()
+
+    def test_browse_output_dir_uses_directory_picker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            selected = str(Path(tmp).resolve())
+            with patch.object(diff2png, "choose_directory", return_value=selected) as picker:
+                client = diff2png.app.test_client()
+                response = client.get("/api/browse-output-dir")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {"output_dir": selected})
+        picker.assert_called_once()
+
     def test_merge_threshold_counts_unchanged_lines_between_hunks(self):
         source_lines = [f"line {i}" for i in range(1, 101)]
         with patch.object(diff2png, "read_source_lines", return_value=source_lines):

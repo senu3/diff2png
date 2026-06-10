@@ -215,18 +215,6 @@
       gap: 10px;
     }
 
-    .setting-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 8px;
-    }
-
-    .setting-actions .btn {
-      flex: 1;
-      font-size: 12px;
-      padding: 8px;
-    }
-
     input[type="range"] {
       flex: 1;
       accent-color: var(--accent);
@@ -441,6 +429,11 @@
     .source-controls.open {
       max-height: 240px;
       opacity: 1;
+    }
+
+    .source-controls-row {
+      display: flex;
+      gap: 8px;
     }
 
     .source-commit-status {
@@ -867,19 +860,6 @@
 
         <div class="setting-item">
           <div class="setting-label">
-            <span>出力ディレクトリ</span>
-            <code>OUTPUT_DIR</code>
-          </div>
-          <div class="setting-desc">PNGの保存先フォルダ名（app.py からの相対パス）。</div>
-          <input type="text" id="cfg-outdir" value="diff_screenshots" style="width:100%;margin-top:2px">
-          <div class="setting-actions">
-            <button class="btn btn-ghost" id="openOutputBtn" onclick="openOutputDir()">保存先を開く</button>
-            <button class="btn btn-danger" id="clearOutputBtn" onclick="clearOutputDir()">PNGクリア</button>
-          </div>
-        </div>
-
-        <div class="setting-item">
-          <div class="setting-label">
             <span>背景モード</span>
             <code>background_mode</code>
           </div>
@@ -932,8 +912,8 @@
     <div class="export-section">
       <div class="export-info" id="exportInfo">選択: 0 件</div>
       <div class="export-buttons">
+        <button class="btn btn-ghost" id="outputFolderBtn" onclick="openOutputModal()">保存先フォルダ</button>
         <button class="btn btn-success" id="exportSelectedBtn" onclick="exportSelected()" disabled>選択を出力</button>
-        <button class="btn btn-primary" id="exportAllBtn" onclick="exportAll()" disabled>全て出力</button>
       </div>
     </div>
   </aside>
@@ -987,6 +967,27 @@
     <div class="source-modal-actions">
       <button class="btn btn-primary" onclick="analyzeFromSourceModal()">この条件で解析</button>
       <button class="btn btn-ghost" onclick="closeSourceModal()">閉じる</button>
+    </div>
+  </div>
+
+  <div class="source-modal-overlay" id="outputOverlay" onclick="closeOutputModal()"></div>
+  <div class="source-modal" id="outputModal">
+    <div class="source-modal-header">
+      <div class="source-modal-title">保存先フォルダ</div>
+      <button class="drawer-close" onclick="closeOutputModal()">✕</button>
+    </div>
+    <div class="source-modal-body">
+      <div class="source-control single">
+        <div class="source-control-label">フォルダパス</div>
+        <div class="source-controls-row">
+          <input type="text" id="cfg-outdir" value="diff_screenshots" onchange="applyOutputDirConfig({ silent: true })">
+          <button class="btn btn-primary" id="browseOutputBtn" onclick="browseOutputDir()">参照</button>
+        </div>
+        <div class="source-hint">相対パスまたは絶対パス。PNG出力で使用します。</div>
+      </div>
+    </div>
+    <div class="source-modal-actions">
+      <button class="btn btn-danger" id="clearOutputBtn" onclick="clearOutputDir()">出力画像の全削除</button>
     </div>
   </div>
 
@@ -1220,6 +1221,17 @@
     async function analyzeFromSourceModal() {
       closeSourceModal();
       await onAnalyzeButtonClick();
+    }
+
+    function openOutputModal() {
+      document.getElementById('outputModal').classList.add('open');
+      document.getElementById('outputOverlay').classList.add('open');
+      document.getElementById('cfg-outdir').focus();
+    }
+
+    function closeOutputModal() {
+      document.getElementById('outputModal').classList.remove('open');
+      document.getElementById('outputOverlay').classList.remove('open');
     }
 
     function syncRangeTarget() {
@@ -1578,12 +1590,12 @@
         const minusClass = deleted > 0 ? 'minus danger' : 'minus';
         let badge;
         if (isPatch) {
-            badge = `<span>+${added}</span><span class="${escapeHtml(minusClass)}">-${deleted}</span>`;
+          badge = `<span>+${added}</span><span class="${escapeHtml(minusClass)}">-${deleted}</span>`;
         } else {
           // 通常表示: 変更数が0で削除のみの場合は削除数を表示する
           if ((changed === 0 || changed === null) && deleted > 0) {
-              const delClass = deleted > 0 ? 'minus danger' : 'minus';
-              badge = `<span class="${escapeHtml(delClass)}">-${deleted}</span>`;
+            const delClass = deleted > 0 ? 'minus danger' : 'minus';
+            badge = `<span class="${escapeHtml(delClass)}">-${deleted}</span>`;
           } else {
             badge = `+${changed}`;
           }
@@ -1663,10 +1675,8 @@
       // 表示中の選択数を優先表示
       const visible = Array.isArray(state.visibleIndices) ? new Set(state.visibleIndices) : null;
       const visibleSelectedCount = [...state.selected].filter(i => (visible ? visible.has(i) : true)).length;
-      const visibleCount = visible ? state.visibleIndices.length : state.hunks.length;
       document.getElementById('exportInfo').textContent = `選択: ${visibleSelectedCount} 件`;
       document.getElementById('exportSelectedBtn').disabled = visibleSelectedCount === 0;
-      document.getElementById('exportAllBtn').disabled = visibleCount === 0;
     }
 
     // ---- プレビュー ----
@@ -1746,12 +1756,6 @@
       await doExport(indices);
     }
 
-    async function exportAll() {
-      // 表示中の hunk のみを出力（フィルタ適用時）
-      const indices = Array.isArray(state.visibleIndices) ? state.visibleIndices.slice() : state.hunks.map((_, i) => i);
-      await doExport(indices);
-    }
-
     async function doExport(indices) {
       if (indices.length === 0) return;
       if (!state.analysisId) {
@@ -1769,7 +1773,6 @@
 
       setStatus('<span class="spinner"></span>PNG出力中...');
       document.getElementById('exportSelectedBtn').disabled = true;
-      document.getElementById('exportAllBtn').disabled = true;
 
       try {
         const res = await fetch('/api/export', {
@@ -1785,6 +1788,7 @@
         }
         const outDir = data.output_dir || 'diff_screenshots';
         state.lastOutputDir = outDir;
+        document.getElementById('cfg-outdir').value = outDir;
         showToast(`✅ ${data.count} 枚出力しました → ${outDir}/`, 'success');
         setStatus(`出力完了: ${data.count} 枚`);
       } catch (e) {
@@ -1796,29 +1800,69 @@
     }
 
     function getCurrentOutputDir() {
-      return state.lastOutputDir || document.getElementById('cfg-outdir').value.trim() || 'diff_screenshots';
+      return document.getElementById('cfg-outdir').value.trim() || state.lastOutputDir || 'diff_screenshots';
     }
 
-    async function openOutputDir() {
-      const btn = document.getElementById('openOutputBtn');
+    async function applyOutputDirConfig(options = {}) {
+      const silent = Boolean(options.silent);
       const outputDir = getCurrentOutputDir();
-      btn.disabled = true;
+      const previousConfig = lastAppliedConfig;
 
       try {
-        const res = await fetch('/api/open-output-dir', {
+        const res = await fetch('/api/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ output_dir: outputDir }),
         });
         const data = await res.json();
         if (!res.ok) {
-          showToast(data.error || '保存先を開けませんでした', 'error');
+          showToast(data.error || '出力フォルダの適用に失敗しました', 'error');
+          return false;
+        }
+
+        const nextConfig = normalizeConfigPayload({
+          ...(lastAppliedConfig || buildConfigPayload()),
+          output_dir: outputDir,
+        });
+        lastAppliedConfig = nextConfig;
+        saveUiPrefsFromPayload(nextConfig);
+        state.lastOutputDir = outputDir;
+        if (!silent) {
+          showToast(`出力フォルダを設定しました → ${outputDir}/`, 'success');
+        }
+
+        if (
+          previousConfig?.output_dir !== outputDir &&
+          document.getElementById('repoPath').value.trim() &&
+          state.analysisId
+        ) {
+          await reconfigureCurrentAnalysis();
+        }
+        return true;
+      } catch (e) {
+        showToast('出力フォルダの適用に失敗しました: ' + e.message, 'error');
+        return false;
+      }
+    }
+
+    async function browseOutputDir() {
+      const btn = document.getElementById('browseOutputBtn');
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/browse-output-dir');
+        const data = await res.json();
+        if (data.cancelled) {
           return;
         }
-        state.lastOutputDir = data.output_dir || outputDir;
-        showToast(`保存先を開きました → ${state.lastOutputDir}/`, 'success');
+        if (!res.ok) {
+          showToast(data.error || 'フォルダ選択に失敗しました', 'error');
+          return;
+        }
+        document.getElementById('cfg-outdir').value = data.output_dir || getCurrentOutputDir();
+        await applyOutputDirConfig();
       } catch (e) {
-        showToast('保存先を開けませんでした: ' + e.message, 'error');
+        showToast('フォルダ選択に失敗しました: ' + e.message, 'error');
       } finally {
         btn.disabled = false;
       }
@@ -1832,6 +1876,7 @@
 
       const btn = document.getElementById('clearOutputBtn');
       btn.disabled = true;
+      setStatus('<span class="spinner"></span>PNGクリア中...');
 
       try {
         const res = await fetch('/api/clear-output-dir', {
@@ -1845,9 +1890,12 @@
           return;
         }
         state.lastOutputDir = data.output_dir || outputDir;
-        showToast(`${data.deleted || 0} 件のPNGを削除しました`, 'success');
+        document.getElementById('cfg-outdir').value = state.lastOutputDir;
+        showToast(`PNGクリアが完了しました（${data.deleted || 0} 件削除）`, 'success');
+        setStatus(`PNGクリア完了: ${data.deleted || 0} 件削除`);
       } catch (e) {
         showToast('PNGクリアに失敗しました: ' + e.message, 'error');
+        setStatus('エラー');
       } finally {
         btn.disabled = false;
       }
@@ -1985,6 +2033,8 @@
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape' && document.getElementById('sourceModal').classList.contains('open')) {
         closeSourceModal();
+      } else if (e.key === 'Escape' && document.getElementById('outputModal').classList.contains('open')) {
+        closeOutputModal();
       }
     });
   </script>

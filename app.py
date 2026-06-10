@@ -320,17 +320,24 @@ def parse_output_dir(value: str) -> tuple[str, Path]:
     if not raw:
         raise ValueError("output_dir は空にできません")
 
-    candidate = Path(raw)
+    candidate = Path(raw).expanduser()
     if candidate.is_absolute():
-        raise ValueError("output_dir は相対パスで指定してください")
+        resolved = candidate.resolve()
+        output_dir_name = str(resolved)
+    else:
+        resolved = (APP_ROOT / candidate).resolve()
+        try:
+            resolved.relative_to(APP_ROOT)
+        except ValueError as e:
+            raise ValueError("相対パスの output_dir はアプリ配下を指定してください") from e
+        output_dir_name = candidate.as_posix()
 
-    resolved = (APP_ROOT / candidate).resolve()
-    try:
-        resolved.relative_to(APP_ROOT)
-    except ValueError as e:
-        raise ValueError("output_dir はアプリ配下を指定してください") from e
+    if resolved == APP_ROOT:
+        raise ValueError("アプリルートは出力フォルダにできません")
+    if resolved.parent == resolved:
+        raise ValueError("ドライブまたはファイルシステムのルートは出力フォルダにできません")
 
-    return candidate.as_posix(), resolved
+    return output_dir_name, resolved
 
 
 def sanitize_filename_component(value: str, max_length: int = 120) -> str:
@@ -363,6 +370,27 @@ def open_directory(path: Path) -> None:
         subprocess.Popen(["open", str(resolved)])
     else:
         subprocess.Popen(["xdg-open", str(resolved)])
+
+
+def choose_directory(title: str, initialdir: Path | None = None) -> str:
+    root = None
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected = filedialog.askdirectory(
+            title=title,
+            initialdir=str(initialdir or APP_ROOT),
+        )
+        return selected
+    except Exception as e:
+        raise RuntimeError(f"フォルダ選択に失敗しました: {e}") from e
+    finally:
+        if root is not None:
+            root.destroy()
 
 
 def parse_hunks(diff_text: str) -> list[dict]:
@@ -793,16 +821,9 @@ def index():
 @app.route("/api/browse", methods=["GET"])
 def browse_repo():
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        selected = filedialog.askdirectory(title="リポジトリフォルダを選択")
-        root.destroy()
+        selected = choose_directory("リポジトリフォルダを選択", APP_ROOT)
     except Exception as e:
-        return jsonify({"error": f"フォルダ選択に失敗しました: {e}"}), 500
+        return jsonify({"error": str(e)}), 500
 
     if not selected:
         return jsonify({"cancelled": True})
@@ -1128,6 +1149,31 @@ def open_output_dir():
         return jsonify({"error": f"保存先を開けませんでした: {e}"}), 500
 
     return jsonify({"ok": True, "output_dir": output_dir_name})
+
+
+@app.route("/api/browse-output-dir", methods=["GET"])
+def browse_output_dir():
+    try:
+        selected = choose_directory("出力フォルダを選択", OUTPUT_DIR if OUTPUT_DIR.exists() else APP_ROOT)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    if not selected:
+        return jsonify({"cancelled": True})
+
+    try:
+        selected_path = Path(selected).resolve(strict=True)
+        try:
+            output_dir_name = selected_path.relative_to(APP_ROOT).as_posix()
+        except ValueError:
+            output_dir_name = str(selected_path)
+        parse_output_dir(output_dir_name)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except OSError as e:
+        return jsonify({"error": f"フォルダ選択に失敗しました: {e}"}), 500
+
+    return jsonify({"output_dir": output_dir_name})
 
 
 @app.route("/api/clear-output-dir", methods=["POST"])

@@ -1679,6 +1679,17 @@
       document.getElementById('exportSelectedBtn').disabled = visibleSelectedCount === 0;
     }
 
+    function getNavigableIndices() {
+      return Array.isArray(state.visibleIndices) ? state.visibleIndices : state.hunks.map((_, i) => i);
+    }
+
+    function updatePreviewNavButtons(index) {
+      const indices = getNavigableIndices();
+      const position = indices.indexOf(index);
+      document.getElementById('prevBtn').disabled = position <= 0;
+      document.getElementById('nextBtn').disabled = position < 0 || position >= indices.length - 1;
+    }
+
     // ---- プレビュー ----
     async function showPreview(index) {
       if (index < 0 || index >= state.hunks.length) return;
@@ -1696,8 +1707,7 @@
 
       const h = state.hunks[index];
       document.getElementById('previewFile').textContent = `${h.filepath}  L${h.start}–${h.end}`;
-      document.getElementById('prevBtn').disabled = index === 0;
-      document.getElementById('nextBtn').disabled = index === state.hunks.length - 1;
+      updatePreviewNavButtons(index);
 
       const wrap = document.getElementById('previewWrap');
       wrap.innerHTML = '<div class="empty-state"><span class="spinner"></span><div class="empty-label">読み込み中...</div></div>';
@@ -1715,6 +1725,7 @@
             errorMessage = JSON.parse(html).error || errorMessage;
           } catch (_) { }
           showToast(errorMessage, 'error');
+          wrap.innerHTML = `<div class="empty-state"><div class="empty-label" style="color:var(--danger)">${escapeHtml(errorMessage)}</div></div>`;
           return;
         }
 
@@ -1745,7 +1756,16 @@
     }
 
     function navigate(dir) {
-      showPreview(state.activeIndex + dir);
+      const indices = getNavigableIndices();
+      const position = indices.indexOf(state.activeIndex);
+      if (position < 0) {
+        if (indices.length > 0) showPreview(indices[0]);
+        return;
+      }
+
+      const nextPosition = position + dir;
+      if (nextPosition < 0 || nextPosition >= indices.length) return;
+      showPreview(indices[nextPosition]);
     }
 
     // ---- エクスポート ----

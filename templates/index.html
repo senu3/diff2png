@@ -688,6 +688,17 @@
       gap: 4px;
     }
 
+    .preview-toolbar .range-btns {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .range-btns .btn {
+      padding: 4px 9px;
+      font-size: 12px;
+    }
+
     .nav-btns .btn {
       padding: 4px 10px;
       font-size: 12px;
@@ -995,6 +1006,12 @@
     <div class="preview-toolbar">
       <span class="preview-label">Preview</span>
       <span class="preview-file" id="previewFile">—</span>
+      <div class="range-btns">
+        <button class="btn btn-ghost" id="rangeUpBtn" onclick="adjustActiveRange('shift_up')" disabled title="表示範囲を1行上へ移動">上へ</button>
+        <button class="btn btn-ghost" id="rangeDownBtn" onclick="adjustActiveRange('shift_down')" disabled title="表示範囲を1行下へ移動">下へ</button>
+        <button class="btn btn-ghost" id="rangeExpandBtn" onclick="adjustActiveRange('expand')" disabled title="前後に1行ずつ広げる">広げる</button>
+        <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled title="解析直後の範囲に戻す">戻す</button>
+      </div>
       <div class="nav-btns">
         <button class="btn btn-ghost" id="prevBtn" onclick="navigate(-1)" disabled>◀</button>
         <button class="btn btn-ghost" id="nextBtn" onclick="navigate(1)" disabled>▶</button>
@@ -1690,6 +1707,55 @@
       document.getElementById('nextBtn').disabled = position < 0 || position >= indices.length - 1;
     }
 
+    function isRangeAdjustable(index) {
+      const h = state.hunks[index];
+      if (!h || currentDiffMode === 'patch') return false;
+      return !((h.changed_count === 0 || h.changed_count === null) && (h.deleted_count || 0) > 0);
+    }
+
+    function updateRangeButtons(index) {
+      const adjustable = isRangeAdjustable(index);
+      const h = state.hunks[index] || {};
+      document.getElementById('rangeUpBtn').disabled = !adjustable;
+      document.getElementById('rangeDownBtn').disabled = !adjustable;
+      document.getElementById('rangeExpandBtn').disabled = !adjustable;
+      document.getElementById('rangeResetBtn').disabled = !adjustable || !h.range_adjusted;
+    }
+
+    async function adjustActiveRange(action) {
+      const index = state.activeIndex;
+      if (index < 0 || !state.analysisId || !isRangeAdjustable(index)) return;
+
+      const buttons = ['rangeUpBtn', 'rangeDownBtn', 'rangeExpandBtn', 'rangeResetBtn']
+        .map(id => document.getElementById(id));
+      buttons.forEach(btn => { btn.disabled = true; });
+
+      try {
+        const res = await fetch(`/api/hunk-range/${index}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repo_path: state.repoPath,
+            analysis_id: state.analysisId,
+            action,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || '行範囲の調整に失敗しました', 'error');
+          updateRangeButtons(index);
+          return;
+        }
+
+        state.hunks[index] = data.hunk;
+        renderHunkList();
+        await showPreview(index);
+      } catch (e) {
+        showToast('行範囲の調整に失敗しました: ' + e.message, 'error');
+        updateRangeButtons(index);
+      }
+    }
+
     // ---- プレビュー ----
     async function showPreview(index) {
       if (index < 0 || index >= state.hunks.length) return;
@@ -1708,6 +1774,7 @@
       const h = state.hunks[index];
       document.getElementById('previewFile').textContent = `${h.filepath}  L${h.start}–${h.end}`;
       updatePreviewNavButtons(index);
+      updateRangeButtons(index);
 
       const wrap = document.getElementById('previewWrap');
       wrap.innerHTML = '<div class="empty-state"><span class="spinner"></span><div class="empty-label">読み込み中...</div></div>';
@@ -1753,6 +1820,7 @@
       document.getElementById('previewFile').textContent = '—';
       document.getElementById('prevBtn').disabled = true;
       document.getElementById('nextBtn').disabled = true;
+      updateRangeButtons(-1);
     }
 
     function navigate(dir) {

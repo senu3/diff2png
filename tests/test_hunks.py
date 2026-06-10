@@ -66,6 +66,40 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual(merged[0]["end"], 19)
         self.assertEqual(len(not_merged), 2)
 
+    def test_adjust_hunk_range_shifts_expands_and_resets(self):
+        hunk = {
+            **_raw_hunk(10, 14),
+            "default_start": 10,
+            "default_end": 14,
+        }
+        source_lines = [f"line {i}" for i in range(1, 31)]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            shifted = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "shift_down")
+            expanded = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "expand")
+            reset = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "reset")
+
+        self.assertEqual((shifted["start"], shifted["end"]), (11, 15))
+        self.assertTrue(shifted["range_adjusted"])
+        self.assertEqual((expanded["start"], expanded["end"]), (10, 16))
+        self.assertEqual((reset["start"], reset["end"]), (10, 14))
+        self.assertFalse(reset["range_adjusted"])
+
+    def test_adjust_hunk_range_clamps_to_file_bounds(self):
+        hunk = {
+            **_raw_hunk(28, 30),
+            "default_start": 28,
+            "default_end": 30,
+        }
+        source_lines = [f"line {i}" for i in range(1, 31)]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            shifted_down = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "shift_down")
+            expanded = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "expand")
+
+        self.assertEqual((shifted_down["start"], shifted_down["end"]), (28, 30))
+        self.assertEqual((expanded["start"], expanded["end"]), (27, 30))
+
     def test_normal_analysis_uses_zero_context_raw_diff(self):
         if shutil.which("git") is None:
             self.skipTest("git is not available")

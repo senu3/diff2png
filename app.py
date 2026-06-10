@@ -232,10 +232,17 @@ def content_source_for_diff(source_mode: str, target_ref: str | None) -> dict:
 
 
 def make_hunk_summary(hunk: dict) -> dict:
+    start = int(hunk.get("start", 1))
+    end = int(hunk.get("end", start))
+    default_start = int(hunk.get("default_start", start))
+    default_end = int(hunk.get("default_end", end))
     return {
         "filepath": hunk.get("filepath", ""),
-        "start": hunk.get("start", 1),
-        "end": hunk.get("end", 1),
+        "start": start,
+        "end": end,
+        "default_start": default_start,
+        "default_end": default_end,
+        "range_adjusted": start != default_start or end != default_end,
         "old_start": hunk.get("old_start"),
         "changed_count": hunk.get("changed_count", len(hunk.get("changed_lines", []))),
         "added_count": hunk.get("added_count", 0),
@@ -279,7 +286,65 @@ def finalize_hunks(raw_hunks: list[dict], repo_path: str, content_source: dict, 
     else:
         for h in hunks:
             h["changed_count"] = int(h.get("added_count", 0)) + int(h.get("deleted_count", 0))
+    for h in hunks:
+        h["default_start"] = int(h.get("start", 1))
+        h["default_end"] = int(h.get("end", h.get("start", 1)))
     return hunks
+
+
+def _clamp_hunk_range(start: int, end: int, total_lines: int) -> tuple[int, int]:
+    total = max(1, int(total_lines))
+    start = max(1, min(int(start), total))
+    end = max(start, min(int(end), total))
+    return start, end
+
+
+def adjust_hunk_range(
+    hunk: dict,
+    repo_path: str,
+    content_source: dict,
+    action: str,
+    step: int = 1,
+) -> dict:
+    try:
+        total_lines = len(read_source_lines(repo_path, hunk["filepath"], content_source))
+    except Exception:
+        total_lines = max(int(hunk.get("end", 1)), int(hunk.get("default_end", 1)), 1)
+
+    start, end = _clamp_hunk_range(
+        int(hunk.get("start", 1)),
+        int(hunk.get("end", hunk.get("start", 1))),
+        total_lines,
+    )
+    default_start, default_end = _clamp_hunk_range(
+        int(hunk.get("default_start", start)),
+        int(hunk.get("default_end", end)),
+        total_lines,
+    )
+    height = max(1, end - start + 1)
+    delta = max(1, int(step))
+
+    if action == "shift_up":
+        next_start = max(1, start - delta)
+        next_end = min(total_lines, next_start + height - 1)
+    elif action == "shift_down":
+        next_end = min(total_lines, end + delta)
+        next_start = max(1, next_end - height + 1)
+    elif action == "expand":
+        next_start = max(1, start - delta)
+        next_end = min(total_lines, end + delta)
+    elif action == "reset":
+        next_start = default_start
+        next_end = default_end
+    else:
+        raise ValueError("不正な調整操作です")
+
+    next_start, next_end = _clamp_hunk_range(next_start, next_end, total_lines)
+    hunk["start"] = next_start
+    hunk["end"] = next_end
+    hunk["default_start"] = default_start
+    hunk["default_end"] = default_end
+    return make_hunk_summary(hunk)
 
 
 def create_analysis_session(
@@ -1015,6 +1080,42 @@ def reconfigure_analysis():
         "hunks": [make_hunk_summary(h) for h in hunks],
         "total": len(hunks),
     })
+
+
+@app.route("/api/hunk-range/<int:hunk_index>", methods=["POST"])
+def update_hunk_range(hunk_index: int):
+    data = request.get_json(silent=True) or {}
+    repo_path = str(data.get("repo_path", "")).strip()
+    analysis_id = str(data.get("analysis_id", "")).strip()
+    action = str(data.get("action", "")).strip()
+    if not repo_path:
+        return jsonify({"error": "リポジトリパスが無効です"}), 400
+    if not analysis_id:
+        return jsonify({"error": "analysis_id が不正です"}), 400
+
+    try:
+        repo = resolve_repo_path(repo_path)
+        session = get_analysis_session(analysis_id, str(repo))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    if session_config(session).get("diff_mode") == "patch":
+        return jsonify({"error": "行範囲の調整は通常表示でのみ使用できます"}), 400
+
+    hunks = session["hunks"]
+    if hunk_index < 0 or hunk_index >= len(hunks):
+        return jsonify({"error": "無効なインデックス"}), 400
+
+    hunk = hunks[hunk_index]
+    if len(hunk.get("changed_lines", [])) == 0 and int(hunk.get("deleted_count", 0)) > 0:
+        return jsonify({"error": "削除のみのhunkは行範囲を調整できません"}), 400
+
+    try:
+        summary = adjust_hunk_range(hunk, str(repo), session["content_source"], action)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    return jsonify({"hunk": summary})
 
 
 @app.route("/api/preview/<int:hunk_index>", methods=["POST"])

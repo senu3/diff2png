@@ -1055,6 +1055,22 @@
       return bestIndex;
     }
 
+    function remapSelectedHunks(nextHunks, prevHunks, prevSelected) {
+      const remapped = new Set();
+      if (!Array.isArray(nextHunks) || !Array.isArray(prevHunks) || !(prevSelected instanceof Set)) {
+        return remapped;
+      }
+
+      prevSelected.forEach(prevIndex => {
+        const baseHunk = prevHunks[prevIndex];
+        const nextIndex = findMatchingHunkIndex(nextHunks, baseHunk);
+        if (nextIndex >= 0) {
+          remapped.add(nextIndex);
+        }
+      });
+      return remapped;
+    }
+
     function updateAnalyzeButtonLabel() {
       const btn = document.getElementById('analyzeBtn');
       const path = document.getElementById('repoPath').value.trim();
@@ -1408,12 +1424,15 @@
     // ---- 解析 ----
     async function analyze(options = {}) {
       const preserveActive = Boolean(options.preserveActive);
+      const preserveSelection = Boolean(options.preserveSelection);
       const repoPath = document.getElementById('repoPath').value.trim();
       if (!repoPath) { showToast('リポジトリパスを入力してください', 'error'); return; }
 
       const prevActiveHunk = preserveActive && state.activeIndex >= 0
         ? state.hunks[state.activeIndex]
         : null;
+      const prevHunks = preserveSelection ? state.hunks.slice() : [];
+      const prevSelected = preserveSelection ? new Set(state.selected) : new Set();
 
       setStatus('<span class="spinner"></span>解析中...');
       document.getElementById('analyzeBtn').disabled = true;
@@ -1436,7 +1455,9 @@
         state.repoPath = repoPath;
         state.analysisId = data.analysis_id || '';
         state.hunks = data.hunks;
-        state.selected = new Set();
+        state.selected = preserveSelection
+          ? remapSelectedHunks(state.hunks, prevHunks, prevSelected)
+          : new Set();
         state.activeIndex = -1;
 
         // ファイルフィルタを初期化して表示インデックスを計算
@@ -1451,8 +1472,12 @@
         } else {
           showToast(`${data.hunks.length} 件のhunkを検出しました`, 'success');
           setStatus(`${data.hunks.length} hunks`);
-          // デフォルトでは表示中のhunkを全選択
-          selectAll(true);
+          if (!preserveSelection) {
+            // デフォルトでは表示中のhunkを全選択
+            selectAll(true);
+          } else {
+            updateExportButtons();
+          }
           const targetIndex = preserveActive
             ? Math.max(0, findMatchingHunkIndex(state.hunks, prevActiveHunk))
             : (state.visibleIndices && state.visibleIndices.length > 0 ? state.visibleIndices[0] : 0);
@@ -1471,6 +1496,8 @@
       }
 
       const prevActiveHunk = state.activeIndex >= 0 ? state.hunks[state.activeIndex] : null;
+      const prevHunks = state.hunks.slice();
+      const prevSelected = new Set(state.selected);
       setStatus('<span class="spinner"></span>設定を反映中...');
 
       try {
@@ -1486,12 +1513,12 @@
           return false;
         }
         if (data.requires_reanalyze) {
-          await analyze({ preserveActive: true });
+          await analyze({ preserveActive: true, preserveSelection: true });
           return true;
         }
 
         state.hunks = data.hunks || [];
-        state.selected = new Set();
+        state.selected = remapSelectedHunks(state.hunks, prevHunks, prevSelected);
         state.activeIndex = -1;
         computeVisibleIndices();
         populateFileFilter();
@@ -1503,7 +1530,7 @@
           return true;
         }
 
-        selectAll(true);
+        updateExportButtons();
         const nextIndex = Math.max(0, findMatchingHunkIndex(state.hunks, prevActiveHunk));
         showPreview(nextIndex);
         setStatus(`${state.hunks.length} hunks`);
@@ -1906,7 +1933,7 @@
           changedKeys.includes('output_dir');
 
         if (needsFullAnalyze) {
-          await analyze();
+          await analyze({ preserveActive: true, preserveSelection: true });
         } else if (needsSessionConfigUpdate) {
           await reconfigureCurrentAnalysis();
         }

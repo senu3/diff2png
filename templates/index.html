@@ -834,20 +834,38 @@
     <span class="subtitle">git diff HEAD → PNG</span>
     <span class="spacer"></span>
     <span class="status" id="statusBar">待機中</span>
-    <button class="btn btn-ghost" id="gearBtn" onclick="toggleDrawer()" title="設定">⚙ 出力設定</button>
+    <button class="btn btn-ghost" id="gearBtn" onclick="toggleDrawer()" title="設定">⚙ 表示設定</button>
   </header>
 
   <!-- Settings Drawer -->
   <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
   <div class="drawer" id="drawer">
     <div class="drawer-header">
-      <h2>⚙ 出力設定</h2>
+      <h2>⚙ 表示設定</h2>
       <button class="drawer-close" onclick="closeDrawer()">✕</button>
     </div>
     <div class="drawer-body">
 
       <div class="setting-group">
-        <div class="setting-group-label">差分 / コンテキスト</div>
+        <div class="setting-group-label">表示 / 差分</div>
+
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>差分表示モード</span>
+            <code>diff_mode</code>
+          </div>
+          <div class="setting-desc">通常表示またはパッチ形式の表示を切り替えます。</div>
+          <div class="setting-row">
+            <select id="sourceDiffMode" onchange="onSourceDiffModeChange()">
+              <option value="file">通常表示</option>
+              <option value="patch">パッチ表示（+/-）</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-group-label">表示 / コンテキスト</div>
 
         <div class="setting-item">
           <div class="setting-label">
@@ -923,8 +941,8 @@
         <button class="btn btn-primary" id="analyzeBtn" onclick="onAnalyzeButtonClick()">参照</button>
       </div>
       <div class="source-summary">
-        <span class="source-summary-text" id="sourceSummary">作業ツリー (HEAD差分)</span>
-        <button class="btn btn-ghost" id="sourceDisplayBtn" onclick="openSourceModal()" disabled>差分表示</button>
+        <span class="source-summary-text" id="sourceSummary">変更があったファイル (HEAD差分)</span>
+        <button class="btn btn-ghost" id="sourceDisplayBtn" onclick="openSourceModal()" disabled>差分条件</button>
       </div>
     </div>
 
@@ -955,21 +973,14 @@
   <div class="source-modal-overlay" id="sourceOverlay" onclick="closeSourceModal()"></div>
   <div class="source-modal" id="sourceModal">
     <div class="source-modal-header">
-      <div class="source-modal-title">差分ソース / 表示変更</div>
+      <div class="source-modal-title">差分条件</div>
       <button class="drawer-close" onclick="closeSourceModal()">✕</button>
     </div>
     <div class="source-modal-body">
       <div class="source-control single">
-        <div class="source-control-label">差分表示モード</div>
-        <select id="sourceDiffMode" onchange="onSourceDiffModeChange()">
-          <option value="file">通常表示</option>
-          <option value="patch">パッチ表示（+/-）</option>
-        </select>
-      </div>
-      <div class="source-control single">
         <div class="source-control-label">差分ソース</div>
         <select id="diffSourceMode" onchange="onDiffSourceModeChange()">
-          <option value="worktree">作業ツリー (HEAD差分)</option>
+          <option value="worktree">変更があったファイル (HEAD差分)</option>
           <option value="staged">ステージング済み</option>
           <option value="commit">単一コミット</option>
           <option value="range">コミット比較</option>
@@ -1031,10 +1042,14 @@
       <span class="preview-label">Preview</span>
       <span class="preview-file" id="previewFile">—</span>
       <div class="range-btns">
-        <button class="btn btn-ghost" id="rangeUpBtn" onclick="adjustActiveRange('shift_up')" disabled title="表示範囲を1行上へ移動">上へ</button>
-        <button class="btn btn-ghost" id="rangeDownBtn" onclick="adjustActiveRange('shift_down')" disabled title="表示範囲を1行下へ移動">下へ</button>
-        <button class="btn btn-ghost" id="rangeExpandBtn" onclick="adjustActiveRange('expand')" disabled title="前後に1行ずつ広げる">広げる</button>
-        <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled title="解析直後の範囲に戻す">戻す</button>
+        <button class="btn btn-ghost" id="rangeUpBtn" onclick="adjustActiveRange('shift_up')" disabled
+          title="表示範囲を1行上へ移動">上へ</button>
+        <button class="btn btn-ghost" id="rangeDownBtn" onclick="adjustActiveRange('shift_down')" disabled
+          title="表示範囲を1行下へ移動">下へ</button>
+        <button class="btn btn-ghost" id="rangeExpandBtn" onclick="adjustActiveRange('expand')" disabled
+          title="前後に1行ずつ広げる">広げる</button>
+        <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
+          title="解析直後の範囲に戻す">戻す</button>
       </div>
       <div class="nav-btns">
         <button class="btn btn-ghost" id="prevBtn" onclick="navigate(-1)" disabled>◀</button>
@@ -1219,32 +1234,30 @@
 
     function updateSourceSummary() {
       const mode = getSelectedSourceMode();
-      const diffMode = getSelectedDiffMode();
       const baseEl = document.getElementById('sourceBase');
       const targetEl = document.getElementById('sourceTarget');
       const rangeTargetEl = document.getElementById('sourceTargetRange');
       const summaryEl = document.getElementById('sourceSummary');
-      const diffLabel = diffMode === 'patch' ? 'パッチ表示' : '通常表示';
 
       if (mode === 'worktree') {
-        summaryEl.textContent = `作業ツリー (HEAD差分) / ${diffLabel}`;
+        summaryEl.textContent = '変更があったファイル (HEAD差分)';
         return;
       }
 
       if (mode === 'staged') {
-        summaryEl.textContent = `ステージング済み / ${diffLabel}`;
+        summaryEl.textContent = 'ステージング済み';
         return;
       }
 
       if (mode === 'commit') {
         const t = targetEl.selectedOptions[0]?.textContent || '未選択';
-        summaryEl.textContent = `単一コミット: ${t} / ${diffLabel}`;
+        summaryEl.textContent = `単一コミット: ${t}`;
         return;
       }
 
       const b = baseEl.selectedOptions[0]?.textContent || '未選択';
       const t = rangeTargetEl.selectedOptions[0]?.textContent || '未選択';
-      summaryEl.textContent = `コミット比較: ${b} .. ${t} / ${diffLabel}`;
+      summaryEl.textContent = `コミット比較: ${b} .. ${t}`;
     }
 
     function onSourceDiffModeChange() {
@@ -2094,7 +2107,7 @@
     }
 
     // ---- 設定ドロワー ----
-    const DEFAULTS = { context: 5, merge: 8, width: 960, outdir: 'diff_screenshots', background: 'normal' };
+    const DEFAULTS = { diffMode: 'file', context: 5, merge: 8, width: 960, outdir: 'diff_screenshots', background: 'normal' };
 
     function toggleDrawer() {
       const isOpen = document.getElementById('drawer').classList.contains('open');
@@ -2114,6 +2127,7 @@
     }
 
     function resetConfig() {
+      document.getElementById('sourceDiffMode').value = DEFAULTS.diffMode;
       setSlider('cfg-context', 'cfg-context-val', DEFAULTS.context);
       setSlider('cfg-merge', 'cfg-merge-val', DEFAULTS.merge);
       setSlider('cfg-width', 'cfg-width-val', DEFAULTS.width);

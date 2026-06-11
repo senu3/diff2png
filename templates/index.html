@@ -601,6 +601,10 @@
       margin-top: 2px;
     }
 
+    .hunk-range.adjusted {
+      color: var(--accent);
+    }
+
     .hunk-badge {
       font-family: var(--mono);
       font-size: 10px;
@@ -692,6 +696,25 @@
       display: flex;
       gap: 4px;
       flex-shrink: 0;
+    }
+
+    .preview-toolbar .range-btns.hidden {
+      display: none;
+    }
+
+    .range-disabled-note {
+      display: none;
+      flex-shrink: 0;
+      font-size: 11px;
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+      background: var(--bg);
+    }
+
+    .range-disabled-note.show {
+      display: inline-flex;
     }
 
     .range-btns .btn {
@@ -1036,6 +1059,7 @@
       selected: new Set(),
       activeIndex: -1,
       lastOutputDir: '',
+      rangeAdjusting: false,
     };
 
     function escapeHtml(value) {
@@ -1622,7 +1646,7 @@
       <input type="checkbox" id="chk-${i}" onclick="onCheck(${i}, event)" ${state.selected.has(i) ? 'checked' : ''}>
       <div class="hunk-info">
         <div class="hunk-file" title="${escapeHtml(h.filepath)}">${escapeHtml(shortPath)}</div>
-        <div class="hunk-range">L${escapeHtml(h.start)}–${escapeHtml(h.end)}</div>
+        <div class="hunk-range ${h.range_adjusted ? 'adjusted' : ''}" id="hunk-range-${i}">L${escapeHtml(h.start)}–${escapeHtml(h.end)}</div>
       </div>
       <span class="${badgeClass}">${badge}</span>
     </div>`;
@@ -1716,19 +1740,51 @@
     function updateRangeButtons(index) {
       const adjustable = isRangeAdjustable(index);
       const h = state.hunks[index] || {};
+      const isPatch = currentDiffMode === 'patch';
+      document.querySelector('.range-btns')?.classList.toggle('hidden', isPatch);
       document.getElementById('rangeUpBtn').disabled = !adjustable;
       document.getElementById('rangeDownBtn').disabled = !adjustable;
       document.getElementById('rangeExpandBtn').disabled = !adjustable;
       document.getElementById('rangeResetBtn').disabled = !adjustable || !h.range_adjusted;
     }
 
+    function updateHunkRangeLabel(index) {
+      const h = state.hunks[index];
+      const el = document.getElementById(`hunk-range-${index}`);
+      if (!h || !el) return;
+      el.textContent = `L${h.start}–${h.end}`;
+      el.classList.toggle('adjusted', Boolean(h.range_adjusted));
+    }
+
+    function writePreviewHtml(html, options = {}) {
+      const keepExisting = Boolean(options.keepExisting);
+      const wrap = document.getElementById('previewWrap');
+      let iframe = keepExisting ? wrap.querySelector('iframe') : null;
+      if (!iframe) {
+        iframe = document.createElement('iframe');
+        wrap.innerHTML = '';
+        wrap.appendChild(iframe);
+      }
+      iframe.style.background = 'transparent';
+      iframe.contentDocument.open();
+      iframe.contentDocument.write(html);
+      iframe.contentDocument.close();
+
+      const fitHeight = () => {
+        if (!iframe.contentDocument?.body) return;
+        const h = iframe.contentDocument.body.scrollHeight;
+        iframe.style.height = Math.min(Math.max(h + 32, 200), 800) + 'px';
+      };
+      iframe.onload = fitHeight;
+      requestAnimationFrame(fitHeight);
+    }
+
     async function adjustActiveRange(action) {
       const index = state.activeIndex;
+      if (state.rangeAdjusting) return;
       if (index < 0 || !state.analysisId || !isRangeAdjustable(index)) return;
 
-      const buttons = ['rangeUpBtn', 'rangeDownBtn', 'rangeExpandBtn', 'rangeResetBtn']
-        .map(id => document.getElementById(id));
-      buttons.forEach(btn => { btn.disabled = true; });
+      state.rangeAdjusting = true;
 
       try {
         const res = await fetch(`/api/hunk-range/${index}`, {
@@ -1743,33 +1799,40 @@
         const data = await res.json();
         if (!res.ok) {
           showToast(data.error || '行範囲の調整に失敗しました', 'error');
-          updateRangeButtons(index);
           return;
         }
 
         state.hunks[index] = data.hunk;
-        renderHunkList();
-        await showPreview(index);
+        updateHunkRangeLabel(index);
+        await showPreview(index, { showLoading: false, keepIframe: true, scrollIntoView: false });
       } catch (e) {
         showToast('行範囲の調整に失敗しました: ' + e.message, 'error');
+      } finally {
+        state.rangeAdjusting = false;
         updateRangeButtons(index);
       }
     }
 
     // ---- プレビュー ----
-    async function showPreview(index) {
+    async function showPreview(index, options = {}) {
       if (index < 0 || index >= state.hunks.length) return;
       if (!state.analysisId) {
         showToast('解析結果がありません。再解析してください', 'error');
         return;
       }
+      const showLoading = options.showLoading !== false;
+      const keepIframe = Boolean(options.keepIframe);
+      const shouldScroll = options.scrollIntoView !== false;
 
       state.activeIndex = index;
 
       // アクティブ表示
       document.querySelectorAll('.hunk-item').forEach(el => el.classList.remove('active'));
       const activeEl = document.getElementById(`hunk-item-${index}`);
-      if (activeEl) { activeEl.classList.add('active'); activeEl.scrollIntoView({ block: 'nearest' }); }
+      if (activeEl) {
+        activeEl.classList.add('active');
+        if (shouldScroll) activeEl.scrollIntoView({ block: 'nearest' });
+      }
 
       const h = state.hunks[index];
       document.getElementById('previewFile').textContent = `${h.filepath}  L${h.start}–${h.end}`;
@@ -1777,7 +1840,9 @@
       updateRangeButtons(index);
 
       const wrap = document.getElementById('previewWrap');
-      wrap.innerHTML = '<div class="empty-state"><span class="spinner"></span><div class="empty-label">読み込み中...</div></div>';
+      if (showLoading) {
+        wrap.innerHTML = '<div class="empty-state"><span class="spinner"></span><div class="empty-label">読み込み中...</div></div>';
+      }
 
       try {
         const res = await fetch(`/api/preview/${index}`, {
@@ -1796,19 +1861,7 @@
           return;
         }
 
-        const iframe = document.createElement('iframe');
-        wrap.innerHTML = '';
-        wrap.appendChild(iframe);
-        iframe.style.background = 'transparent';
-        iframe.contentDocument.open();
-        iframe.contentDocument.write(html);
-        iframe.contentDocument.close();
-
-        // iframeの高さをコンテンツに合わせる
-        iframe.onload = () => {
-          const h = iframe.contentDocument.body.scrollHeight;
-          iframe.style.height = Math.min(Math.max(h + 32, 200), 800) + 'px';
-        };
+        writePreviewHtml(html, { keepExisting: keepIframe });
       } catch (e) {
         wrap.innerHTML = `<div class="empty-state"><div class="empty-label" style="color:var(--danger)">読み込みエラー</div></div>`;
       }

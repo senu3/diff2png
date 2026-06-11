@@ -924,7 +924,7 @@
       </div>
       <div class="source-summary">
         <span class="source-summary-text" id="sourceSummary">作業ツリー (HEAD差分)</span>
-        <button class="btn btn-ghost" onclick="openSourceModal()">変更...</button>
+        <button class="btn btn-ghost" id="sourceDisplayBtn" onclick="openSourceModal()" disabled>差分表示</button>
       </div>
     </div>
 
@@ -1021,6 +1021,7 @@
       </div>
     </div>
     <div class="source-modal-actions">
+      <button class="btn btn-ghost" id="openOutputBtn" onclick="openOutputDir()">フォルダを開く</button>
       <button class="btn btn-danger" id="clearOutputBtn" onclick="clearOutputDir()">出力画像の全削除</button>
     </div>
   </div>
@@ -1117,6 +1118,14 @@
       const btn = document.getElementById('analyzeBtn');
       const path = document.getElementById('repoPath').value.trim();
       btn.textContent = path ? '解析' : '参照';
+      updateSourceDisplayButton();
+    }
+
+    function updateSourceDisplayButton() {
+      const btn = document.getElementById('sourceDisplayBtn');
+      if (!btn) return;
+      const currentPath = document.getElementById('repoPath').value.trim();
+      btn.disabled = !state.repoPath || currentPath !== state.repoPath;
     }
 
     let currentDiffMode = 'file';
@@ -1244,6 +1253,7 @@
     }
 
     async function openSourceModal() {
+      if (document.getElementById('sourceDisplayBtn')?.disabled) return;
       document.getElementById('sourceModal').classList.add('open');
       document.getElementById('sourceOverlay').classList.add('open');
       const mode = getSelectedSourceMode();
@@ -1508,6 +1518,7 @@
         state.repoPath = repoPath;
         state.analysisId = data.analysis_id || '';
         state.hunks = data.hunks;
+        updateSourceDisplayButton();
         state.selected = preserveSelection
           ? remapSelectedHunks(state.hunks, prevHunks, prevSelected)
           : new Set();
@@ -2004,6 +2015,32 @@
         await applyOutputDirConfig();
       } catch (e) {
         showToast('フォルダ選択に失敗しました: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function openOutputDir() {
+      const btn = document.getElementById('openOutputBtn');
+      const outputDir = getCurrentOutputDir();
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/open-output-dir', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ output_dir: outputDir }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || '保存先を開けませんでした', 'error');
+          return;
+        }
+        state.lastOutputDir = data.output_dir || outputDir;
+        document.getElementById('cfg-outdir').value = state.lastOutputDir;
+        showToast(`保存先を開きました → ${state.lastOutputDir}/`, 'success');
+      } catch (e) {
+        showToast('保存先を開けませんでした: ' + e.message, 'error');
       } finally {
         btn.disabled = false;
       }

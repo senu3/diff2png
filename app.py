@@ -707,7 +707,15 @@ def build_code_html(
         return build_patch_html(hunk, hunk_index, total, timestamp, render_config)
 
     if len(hunk.get("changed_lines", [])) == 0 and int(hunk.get("deleted_count", 0)) > 0 and hunk.get("diff_lines"):
-        return build_patch_html(hunk, hunk_index, total, timestamp, render_config)
+        return build_deleted_context_html(
+            hunk,
+            repo_path,
+            hunk_index,
+            total,
+            timestamp,
+            content_source,
+            render_config,
+        )
 
     lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source)
     # 共通インデントを除去（Codesnap風）
@@ -731,6 +739,79 @@ def build_code_html(
             f'<td class="code">{escaped}</td>'
             f'</tr>'
         )
+
+    diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
+    background_mode = str(render_config.get("background_mode", BACKGROUND_MODE))
+    html_width = int(render_config.get("html_width", HTML_WIDTH))
+    bg_color = 'transparent' if background_mode != 'normal' else '#fff'
+    show_footer = False if background_mode == 'transparent_no_footer' else True
+
+    meta = f"L{hunk['start']}–{hunk['end']} | {hunk_index}/{total} | {lang}"
+    html = _compose_html(''.join(rows), hunk['filepath'], meta, lang, bg_color,
+                         html_width, show_footer, timestamp, diff_cmd)
+    return html
+
+
+def build_deleted_context_html(
+    hunk: dict,
+    repo_path: str,
+    hunk_index: int,
+    total: int,
+    timestamp: str,
+    content_source: dict | None = None,
+    config: dict | None = None,
+) -> str:
+    render_config = config or current_config_snapshot()
+    lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source)
+    deleted_texts = [
+        raw[1:]
+        for raw in hunk.get("diff_lines", [])
+        if raw.startswith("-") and not raw.startswith("---")
+    ]
+    combined_texts = [t for (_, t) in lines] + deleted_texts
+    stripped_combined, _ = _strip_common_indent_from_lines(combined_texts)
+    stripped_lines = stripped_combined[:len(lines)]
+    stripped_deleted = stripped_combined[len(lines):]
+
+    lang = detect_language(hunk["filepath"])
+    deletion_anchor = int(hunk.get("orig_start", hunk.get("start", 1)))
+    rows = []
+    deleted_inserted = False
+
+    def append_deleted_rows() -> None:
+        nonlocal deleted_inserted
+        if deleted_inserted:
+            return
+        old_ln = int(hunk.get("old_start", deletion_anchor))
+        for text in stripped_deleted:
+            rows.append(
+                '<tr class="deleted">'
+                f'<td class="lineno">{old_ln}</td>'
+                '<td class="marker">-</td>'
+                f'<td class="code">{escape(text)}</td>'
+                '</tr>'
+            )
+            old_ln += 1
+        deleted_inserted = True
+
+    if deletion_anchor < int(hunk["start"]):
+        append_deleted_rows()
+
+    for idx, (lineno, text) in enumerate(lines):
+        if not deleted_inserted and lineno > deletion_anchor:
+            append_deleted_rows()
+
+        escaped = escape(stripped_lines[idx])
+        rows.append(
+            '<tr>'
+            f'<td class="lineno">{lineno}</td>'
+            '<td class="marker"> </td>'
+            f'<td class="code">{escaped}</td>'
+            '</tr>'
+        )
+
+    if not deleted_inserted:
+        append_deleted_rows()
 
     diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
     background_mode = str(render_config.get("background_mode", BACKGROUND_MODE))
@@ -1107,9 +1188,6 @@ def update_hunk_range(hunk_index: int):
         return jsonify({"error": "無効なインデックス"}), 400
 
     hunk = hunks[hunk_index]
-    if len(hunk.get("changed_lines", [])) == 0 and int(hunk.get("deleted_count", 0)) > 0:
-        return jsonify({"error": "削除のみのhunkは行範囲を調整できません"}), 400
-
     try:
         summary = adjust_hunk_range(hunk, str(repo), session["content_source"], action)
     except ValueError as e:

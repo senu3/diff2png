@@ -100,6 +100,40 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual((shifted_down["start"], shifted_down["end"]), (28, 30))
         self.assertEqual((expanded["start"], expanded["end"]), (27, 30))
 
+    def test_deleted_only_hunk_normal_view_keeps_deleted_row_with_context(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 4,
+            "end": 6,
+            "default_start": 4,
+            "default_end": 6,
+            "orig_start": 5,
+            "old_start": 6,
+            "changed_lines": [],
+            "diff_lines": ["-removed line"],
+            "added_count": 0,
+            "deleted_count": 1,
+            "changed_count": 1,
+        }
+        source_lines = [f"line {i}" for i in range(1, 11)]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "shift_down")
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn("L5–7", html)
+        self.assertIn("line 5", html)
+        self.assertIn('class="deleted"', html)
+        self.assertIn("removed line", html)
+
     def test_normal_analysis_uses_zero_context_raw_diff(self):
         if shutil.which("git") is None:
             self.skipTest("git is not available")

@@ -1710,7 +1710,7 @@
     function isRangeAdjustable(index) {
       const h = state.hunks[index];
       if (!h || currentDiffMode === 'patch') return false;
-      return !((h.changed_count === 0 || h.changed_count === null) && (h.deleted_count || 0) > 0);
+      return true;
     }
 
     function updateRangeButtons(index) {

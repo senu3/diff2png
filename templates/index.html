@@ -702,29 +702,42 @@
       display: none;
     }
 
+    .range-btns .btn {
+      width: 30px;
+      height: 28px;
+      padding: 0;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .nav-count {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      min-width: 48px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .nav-btns .btn {
+      min-width: 52px;
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+
     .range-disabled-note {
       display: none;
       flex-shrink: 0;
-      font-size: 11px;
       color: var(--text-dim);
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 4px 8px;
       background: var(--bg);
+      font-size: 11px;
     }
 
     .range-disabled-note.show {
       display: inline-flex;
-    }
-
-    .range-btns .btn {
-      padding: 4px 9px;
-      font-size: 12px;
-    }
-
-    .nav-btns .btn {
-      padding: 4px 10px;
-      font-size: 12px;
     }
 
     .preview-frame-wrap {
@@ -1043,17 +1056,19 @@
       <span class="preview-file" id="previewFile">—</span>
       <div class="range-btns">
         <button class="btn btn-ghost" id="rangeUpBtn" onclick="adjustActiveRange('shift_up')" disabled
-          title="表示範囲を1行上へ移動">上へ</button>
+          title="表示範囲を1行上へ移動">↑</button>
         <button class="btn btn-ghost" id="rangeDownBtn" onclick="adjustActiveRange('shift_down')" disabled
-          title="表示範囲を1行下へ移動">下へ</button>
+          title="表示範囲を1行下へ移動">↓</button>
         <button class="btn btn-ghost" id="rangeExpandBtn" onclick="adjustActiveRange('expand')" disabled
-          title="前後に1行ずつ広げる">広げる</button>
+          title="前後に1行ずつ広げる">⤢</button>
         <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
-          title="解析直後の範囲に戻す">戻す</button>
+          title="解析直後の範囲に戻す">↺</button>
       </div>
+      <span class="range-disabled-note" id="rangeDisabledNote">パッチ表示では範囲調整なし</span>
+      <span class="nav-count" id="previewNavCount">— / —</span>
       <div class="nav-btns">
-        <button class="btn btn-ghost" id="prevBtn" onclick="navigate(-1)" disabled>◀</button>
-        <button class="btn btn-ghost" id="nextBtn" onclick="navigate(1)" disabled>▶</button>
+        <button class="btn btn-ghost" id="prevBtn" onclick="navigate(-1)" disabled>前へ</button>
+        <button class="btn btn-ghost" id="nextBtn" onclick="navigate(1)" disabled>次へ</button>
       </div>
     </div>
 
@@ -1753,6 +1768,9 @@
       const position = indices.indexOf(index);
       document.getElementById('prevBtn').disabled = position <= 0;
       document.getElementById('nextBtn').disabled = position < 0 || position >= indices.length - 1;
+      document.getElementById('previewNavCount').textContent = position >= 0
+        ? `${position + 1} / ${indices.length}`
+        : '— / —';
     }
 
     function isRangeAdjustable(index) {
@@ -1766,6 +1784,7 @@
       const h = state.hunks[index] || {};
       const isPatch = currentDiffMode === 'patch';
       document.querySelector('.range-btns')?.classList.toggle('hidden', isPatch);
+      document.getElementById('rangeDisabledNote')?.classList.toggle('show', isPatch && index >= 0);
       document.getElementById('rangeUpBtn').disabled = !adjustable;
       document.getElementById('rangeDownBtn').disabled = !adjustable;
       document.getElementById('rangeExpandBtn').disabled = !adjustable;
@@ -1897,6 +1916,7 @@
       document.getElementById('previewFile').textContent = '—';
       document.getElementById('prevBtn').disabled = true;
       document.getElementById('nextBtn').disabled = true;
+      document.getElementById('previewNavCount').textContent = '— / —';
       updateRangeButtons(-1);
     }
 

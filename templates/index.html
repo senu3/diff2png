@@ -696,6 +696,7 @@
       display: flex;
       gap: 4px;
       flex-shrink: 0;
+      align-items: center;
     }
 
     .preview-toolbar .range-btns.hidden {
@@ -708,6 +709,19 @@
       padding: 0;
       font-size: 12px;
       line-height: 1;
+    }
+
+    .range-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .range-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin: 0 2px 0 6px;
+      white-space: nowrap;
     }
 
     .nav-count {
@@ -1055,12 +1069,20 @@
       <span class="preview-label">Preview</span>
       <span class="preview-file" id="previewFile">—</span>
       <div class="range-btns">
-        <button class="btn btn-ghost" id="rangeUpBtn" onclick="adjustActiveRange('shift_up')" disabled
-          title="表示範囲を1行上へ移動">↑</button>
-        <button class="btn btn-ghost" id="rangeDownBtn" onclick="adjustActiveRange('shift_down')" disabled
-          title="表示範囲を1行下へ移動">↓</button>
-        <button class="btn btn-ghost" id="rangeExpandBtn" onclick="adjustActiveRange('expand')" disabled
-          title="前後に1行ずつ広げる">⤢</button>
+        <span class="range-group">
+          <span class="range-label">上端</span>
+          <button class="btn btn-ghost" id="rangeShrinkUpBtn" onclick="adjustActiveRange('shrink_up')" disabled
+            title="上端を1行下げて狭める">−</button>
+          <button class="btn btn-ghost" id="rangeExpandUpBtn" onclick="adjustActiveRange('expand_up')" disabled
+            title="上端を1行上げて広げる">+</button>
+        </span>
+        <span class="range-group">
+          <span class="range-label">下端</span>
+          <button class="btn btn-ghost" id="rangeShrinkDownBtn" onclick="adjustActiveRange('shrink_down')" disabled
+            title="下端を1行上げて狭める">−</button>
+          <button class="btn btn-ghost" id="rangeExpandDownBtn" onclick="adjustActiveRange('expand_down')" disabled
+            title="下端を1行下げて広げる">+</button>
+        </span>
         <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
           title="解析直後の範囲に戻す">↺</button>
       </div>
@@ -1785,9 +1807,10 @@
       const isPatch = currentDiffMode === 'patch';
       document.querySelector('.range-btns')?.classList.toggle('hidden', isPatch);
       document.getElementById('rangeDisabledNote')?.classList.toggle('show', isPatch && index >= 0);
-      document.getElementById('rangeUpBtn').disabled = !adjustable;
-      document.getElementById('rangeDownBtn').disabled = !adjustable;
-      document.getElementById('rangeExpandBtn').disabled = !adjustable;
+      document.getElementById('rangeShrinkUpBtn').disabled = !adjustable;
+      document.getElementById('rangeExpandUpBtn').disabled = !adjustable;
+      document.getElementById('rangeShrinkDownBtn').disabled = !adjustable;
+      document.getElementById('rangeExpandDownBtn').disabled = !adjustable;
       document.getElementById('rangeResetBtn').disabled = !adjustable || !h.range_adjusted;
     }
 

@@ -66,23 +66,30 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual(merged[0]["end"], 19)
         self.assertEqual(len(not_merged), 2)
 
-    def test_adjust_hunk_range_shifts_expands_and_resets(self):
+    def test_adjust_hunk_range_expands_shrinks_and_resets(self):
         hunk = {
-            **_raw_hunk(10, 14),
-            "default_start": 10,
+            **_raw_hunk(8, 14),
+            "default_start": 8,
             "default_end": 14,
+            "orig_start": 10,
+            "orig_end": 12,
+            "changed_lines": [10, 12],
         }
         source_lines = [f"line {i}" for i in range(1, 31)]
 
         with patch.object(diff2png, "read_source_lines", return_value=source_lines):
-            shifted = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "shift_down")
-            expanded = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "expand")
+            shrink_up = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "shrink_up")
+            shrink_down = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "shrink_down")
+            expand_up = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "expand_up")
+            expand_down = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "expand_down")
             reset = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "reset")
 
-        self.assertEqual((shifted["start"], shifted["end"]), (11, 15))
-        self.assertTrue(shifted["range_adjusted"])
-        self.assertEqual((expanded["start"], expanded["end"]), (10, 16))
-        self.assertEqual((reset["start"], reset["end"]), (10, 14))
+        self.assertEqual((shrink_up["start"], shrink_up["end"]), (9, 14))
+        self.assertTrue(shrink_up["range_adjusted"])
+        self.assertEqual((shrink_down["start"], shrink_down["end"]), (9, 13))
+        self.assertEqual((expand_up["start"], expand_up["end"]), (8, 13))
+        self.assertEqual((expand_down["start"], expand_down["end"]), (8, 14))
+        self.assertEqual((reset["start"], reset["end"]), (8, 14))
         self.assertFalse(reset["range_adjusted"])
 
     def test_adjust_hunk_range_clamps_to_file_bounds(self):
@@ -94,11 +101,11 @@ class HunkMergeTests(unittest.TestCase):
         source_lines = [f"line {i}" for i in range(1, 31)]
 
         with patch.object(diff2png, "read_source_lines", return_value=source_lines):
-            shifted_down = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "shift_down")
-            expanded = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "expand")
+            expanded_up = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "expand_up")
+            expanded_down = diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "expand_down")
 
-        self.assertEqual((shifted_down["start"], shifted_down["end"]), (28, 30))
-        self.assertEqual((expanded["start"], expanded["end"]), (27, 30))
+        self.assertEqual((expanded_up["start"], expanded_up["end"]), (27, 30))
+        self.assertEqual((expanded_down["start"], expanded_down["end"]), (27, 30))
 
     def test_deleted_only_hunk_normal_view_keeps_deleted_row_with_context(self):
         hunk = {
@@ -118,7 +125,7 @@ class HunkMergeTests(unittest.TestCase):
         source_lines = [f"line {i}" for i in range(1, 11)]
 
         with patch.object(diff2png, "read_source_lines", return_value=source_lines):
-            diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "shift_down")
+            diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "expand_down")
             html = diff2png.build_code_html(
                 hunk,
                 ".",
@@ -129,7 +136,7 @@ class HunkMergeTests(unittest.TestCase):
                 {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
             )
 
-        self.assertIn("L5–7", html)
+        self.assertIn("L4–7", html)
         self.assertIn("line 5", html)
         self.assertIn('class="deleted"', html)
         self.assertIn("removed line", html)

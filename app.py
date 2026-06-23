@@ -299,6 +299,31 @@ def _clamp_hunk_range(start: int, end: int, total_lines: int) -> tuple[int, int]
     return start, end
 
 
+def _required_hunk_range(hunk: dict, total_lines: int) -> tuple[int, int]:
+    anchors: list[int] = []
+    for lineno in hunk.get("changed_lines", []):
+        try:
+            anchors.append(int(lineno))
+        except (TypeError, ValueError):
+            continue
+
+    for key in ("orig_start", "orig_end"):
+        if key not in hunk:
+            continue
+        try:
+            anchors.append(int(hunk[key]))
+        except (TypeError, ValueError):
+            continue
+
+    if not anchors:
+        try:
+            anchors.append(int(hunk.get("default_start", hunk.get("start", 1))))
+        except (TypeError, ValueError):
+            anchors.append(1)
+
+    return _clamp_hunk_range(min(anchors), max(anchors), total_lines)
+
+
 def adjust_hunk_range(
     hunk: dict,
     repo_path: str,
@@ -321,18 +346,21 @@ def adjust_hunk_range(
         int(hunk.get("default_end", end)),
         total_lines,
     )
-    height = max(1, end - start + 1)
+    required_start, required_end = _required_hunk_range(hunk, total_lines)
     delta = max(1, int(step))
 
-    if action == "shift_up":
+    if action == "expand_up":
         next_start = max(1, start - delta)
-        next_end = min(total_lines, next_start + height - 1)
-    elif action == "shift_down":
+        next_end = end
+    elif action == "shrink_up":
+        next_start = min(start + delta, required_start) if start < required_start else start
+        next_end = end
+    elif action == "expand_down":
+        next_start = start
         next_end = min(total_lines, end + delta)
-        next_start = max(1, next_end - height + 1)
-    elif action == "expand":
-        next_start = max(1, start - delta)
-        next_end = min(total_lines, end + delta)
+    elif action == "shrink_down":
+        next_start = start
+        next_end = max(end - delta, required_end) if end > required_end else end
     elif action == "reset":
         next_start = default_start
         next_end = default_end

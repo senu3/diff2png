@@ -5,6 +5,7 @@ Flask + Playwright によるエビデンス用 git diff スクリーンショッ
 """
 
 import hashlib
+import difflib
 import os
 import re
 import subprocess
@@ -44,6 +45,7 @@ _INDENT_RE = re.compile(r"^[ \t]*")
 _FILENAME_UNSAFE_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 _FILENAME_REPEAT_UNDERSCORE_RE = re.compile(r"_+")
 _OUTPUT_PNG_RE = re.compile(r"^\d{8}_\d{6}_\d{3}_.+_L\d+\.png$", re.IGNORECASE)
+_INLINE_DIFF_TOKEN_RE = re.compile(r"\w+|\s+|[^\w\s]+", re.UNICODE)
 _WINDOWS_RESERVED_NAMES = {
     "CON", "PRN", "AUX", "NUL",
     "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
@@ -685,20 +687,17 @@ tr:last-child{{border-bottom:none}}
 tr.changed{{background:#fefce8}}
 tr.added{{background:#ecfdf5}}
 tr.deleted{{background:#fef2f2}}
-tr.inline-deleted{{background:#fff7f7}}
 tr.note td{{color:#64748b;font-style:italic}}
 td{{vertical-align:top;padding:2px 0;line-height:1.6}}
 td.lineno{{width:52px;text-align:right;color:#94a3b8;padding:2px 10px 2px 6px;
     border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
 tr.changed td.lineno{{background:#fef9c3;color:#78716c}}
-tr.inline-deleted td.lineno{{background:#fff1f2;color:#b91c1c}}
 td.lineno.new{{border-right:none}}
 td.marker{{width:18px;text-align:center;color:#64748b;font-weight:bold}}
 tr.added td.marker{{color:#16a34a}}
 tr.deleted td.marker{{color:#dc2626}}
-tr.inline-deleted td.marker{{color:#dc2626}}
 td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
-tr.inline-deleted td.code{{color:#991b1b}}
+span.inline-added{{background:#bbf7d0;color:#14532d;border-radius:3px;padding:0 2px}}
 .footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
 </style></head><body>
 <div class=\"header\">
@@ -751,6 +750,24 @@ def _single_line_replacement(hunk: dict) -> dict[int, tuple[int | None, str]]:
     return {new_lineno: (old_lineno, deleted[0])}
 
 
+def _inline_diff_html(old_text: str, new_text: str) -> str:
+    parts = []
+    old_tokens = _INLINE_DIFF_TOKEN_RE.findall(old_text)
+    new_tokens = _INLINE_DIFF_TOKEN_RE.findall(new_text)
+    matcher = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        new_part = "".join(new_tokens[j1:j2])
+        if tag == "equal":
+            parts.append(escape(new_part))
+        elif tag == "insert":
+            parts.append(f'<span class="inline-added">{escape(new_part)}</span>')
+        elif tag == "delete":
+            continue
+        elif tag == "replace":
+            parts.append(f'<span class="inline-added">{escape(new_part)}</span>')
+    return "".join(parts)
+
+
 def build_code_html(
     hunk: dict,
     repo_path: str,
@@ -795,26 +812,20 @@ def build_code_html(
         # text は共通インデントを削除したものを使う
         text = stripped_texts[idx]
         is_changed = lineno in changed_set
-        escaped = escape(text)
+        if is_changed and lineno in replacement_by_lineno:
+            _, old_text = replacement_by_lineno[lineno]
+            code_html = _inline_diff_html(old_text, text)
+        else:
+            code_html = escape(text)
         row_class = ' class="changed"' if is_changed else ""
         marker = "+" if is_changed else " "
         rows.append(
             f'<tr{row_class}>'
             f'<td class="lineno">{lineno}</td>'
             f'<td class="marker">{marker}</td>'
-            f'<td class="code">{escaped}</td>'
+            f'<td class="code">{code_html}</td>'
             f'</tr>'
         )
-        if lineno in replacement_by_lineno:
-            old_lineno, old_text = replacement_by_lineno[lineno]
-            old_lineno_html = "" if old_lineno is None else str(old_lineno)
-            rows.append(
-                '<tr class="inline-deleted">'
-                f'<td class="lineno">{old_lineno_html}</td>'
-                '<td class="marker">-</td>'
-                f'<td class="code">{escape(old_text)}</td>'
-                '</tr>'
-            )
 
     diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
     background_mode = str(render_config.get("background_mode", BACKGROUND_MODE))

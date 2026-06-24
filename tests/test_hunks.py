@@ -141,7 +141,7 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('class="deleted"', html)
         self.assertIn("removed line", html)
 
-    def test_normal_view_shows_inline_deleted_row_for_single_line_replacement(self):
+    def test_normal_view_shows_inline_added_span_for_single_line_replacement(self):
         hunk = {
             "filepath": "sample.html",
             "start": 3,
@@ -169,11 +169,44 @@ class HunkMergeTests(unittest.TestCase):
             )
 
         self.assertIn('class="changed"', html)
-        self.assertIn('class="inline-deleted"', html)
-        self.assertIn('&lt;div class=&quot;card active&quot;&gt;', html)
-        self.assertIn('&lt;div class=&quot;card&quot;&gt;', html)
+        self.assertIn('class="inline-added"', html)
+        self.assertIn('&lt;div class=&quot;card', html)
+        self.assertIn(' active', html)
+        self.assertNotIn('class="inline-deleted"', html)
 
-    def test_normal_view_skips_inline_deleted_row_for_multi_line_replacement(self):
+    def test_normal_view_highlights_new_text_for_single_line_replacement(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": ['-status = "draft"', '+status = "published"'],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+        source_lines = ['status = "published"']
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('class="inline-added"', html)
+        self.assertNotIn('class="inline-deleted"', html)
+        self.assertNotIn('draft', html)
+        self.assertIn('published', html)
+
+    def test_normal_view_skips_inline_spans_for_multi_line_replacement(self):
         hunk = {
             "filepath": "sample.html",
             "start": 3,
@@ -211,6 +244,7 @@ class HunkMergeTests(unittest.TestCase):
             )
 
         self.assertNotIn('class="inline-deleted"', html)
+        self.assertNotIn('class="inline-added"', html)
 
     def test_normal_analysis_uses_zero_context_raw_diff(self):
         if shutil.which("git") is None:

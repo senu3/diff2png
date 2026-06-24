@@ -141,6 +141,77 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('class="deleted"', html)
         self.assertIn("removed line", html)
 
+    def test_normal_view_shows_inline_deleted_row_for_single_line_replacement(self):
+        hunk = {
+            "filepath": "sample.html",
+            "start": 3,
+            "end": 3,
+            "default_start": 3,
+            "default_end": 3,
+            "old_start": 3,
+            "changed_lines": [3],
+            "diff_lines": ['-<div class="card">', '+<div class="card active">'],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+        source_lines = ["<main>", "  <section>", '<div class="card active">', "  </section>"]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('class="changed"', html)
+        self.assertIn('class="inline-deleted"', html)
+        self.assertIn('&lt;div class=&quot;card active&quot;&gt;', html)
+        self.assertIn('&lt;div class=&quot;card&quot;&gt;', html)
+
+    def test_normal_view_skips_inline_deleted_row_for_multi_line_replacement(self):
+        hunk = {
+            "filepath": "sample.html",
+            "start": 3,
+            "end": 4,
+            "default_start": 3,
+            "default_end": 4,
+            "old_start": 3,
+            "changed_lines": [3, 4],
+            "diff_lines": [
+                '-<div class="card">',
+                '-<span>old</span>',
+                '+<div class="card active">',
+                '+<span>new</span>',
+            ],
+            "added_count": 2,
+            "deleted_count": 2,
+            "changed_count": 4,
+        }
+        source_lines = [
+            "<main>",
+            "  <section>",
+            '<div class="card active">',
+            "<span>new</span>",
+        ]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertNotIn('class="inline-deleted"', html)
+
     def test_normal_analysis_uses_zero_context_raw_diff(self):
         if shutil.which("git") is None:
             self.skipTest("git is not available")

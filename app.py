@@ -685,16 +685,20 @@ tr:last-child{{border-bottom:none}}
 tr.changed{{background:#fefce8}}
 tr.added{{background:#ecfdf5}}
 tr.deleted{{background:#fef2f2}}
+tr.inline-deleted{{background:#fff7f7}}
 tr.note td{{color:#64748b;font-style:italic}}
 td{{vertical-align:top;padding:2px 0;line-height:1.6}}
 td.lineno{{width:52px;text-align:right;color:#94a3b8;padding:2px 10px 2px 6px;
     border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
 tr.changed td.lineno{{background:#fef9c3;color:#78716c}}
+tr.inline-deleted td.lineno{{background:#fff1f2;color:#b91c1c}}
 td.lineno.new{{border-right:none}}
 td.marker{{width:18px;text-align:center;color:#64748b;font-weight:bold}}
 tr.added td.marker{{color:#16a34a}}
 tr.deleted td.marker{{color:#dc2626}}
+tr.inline-deleted td.marker{{color:#dc2626}}
 td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
+tr.inline-deleted td.code{{color:#991b1b}}
 .footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
 </style></head><body>
 <div class=\"header\">
@@ -719,6 +723,32 @@ td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:
         html += footer_template.format(timestamp=escape(timestamp), diff_cmd=escape(diff_cmd))
     html += "</body></html>"
     return html
+
+
+def _single_line_replacement(hunk: dict) -> dict[int, tuple[int | None, str]]:
+    diff_lines = [
+        raw for raw in hunk.get("diff_lines", [])
+        if raw and not raw.startswith("\\")
+    ]
+    deleted = [raw[1:] for raw in diff_lines if raw.startswith("-") and not raw.startswith("---")]
+    added = [raw[1:] for raw in diff_lines if raw.startswith("+") and not raw.startswith("+++")]
+    changed_lines = list(hunk.get("changed_lines", []))
+
+    if len(deleted) != 1 or len(added) != 1 or len(changed_lines) != 1:
+        return {}
+
+    try:
+        new_lineno = int(changed_lines[0])
+    except (TypeError, ValueError):
+        return {}
+
+    old_lineno = None
+    try:
+        old_lineno = int(hunk.get("old_start"))
+    except (TypeError, ValueError):
+        pass
+
+    return {new_lineno: (old_lineno, deleted[0])}
 
 
 def build_code_html(
@@ -748,7 +778,15 @@ def build_code_html(
     lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source)
     # 共通インデントを除去（Codesnap風）
     raw_texts = [t for (_, t) in lines]
-    stripped_texts, _ = _strip_common_indent_from_lines(raw_texts)
+    replacements = _single_line_replacement(hunk)
+    replacement_texts = [text for _, text in replacements.values()]
+    stripped_combined, _ = _strip_common_indent_from_lines(raw_texts + replacement_texts)
+    stripped_texts = stripped_combined[:len(raw_texts)]
+    stripped_replacements = stripped_combined[len(raw_texts):]
+    replacement_by_lineno = {
+        lineno: (old_lineno, stripped_replacements[idx])
+        for idx, (lineno, (old_lineno, _)) in enumerate(replacements.items())
+    }
     lang = detect_language(hunk["filepath"])
     changed_set = set(hunk["changed_lines"])
 
@@ -767,6 +805,16 @@ def build_code_html(
             f'<td class="code">{escaped}</td>'
             f'</tr>'
         )
+        if lineno in replacement_by_lineno:
+            old_lineno, old_text = replacement_by_lineno[lineno]
+            old_lineno_html = "" if old_lineno is None else str(old_lineno)
+            rows.append(
+                '<tr class="inline-deleted">'
+                f'<td class="lineno">{old_lineno_html}</td>'
+                '<td class="marker">-</td>'
+                f'<td class="code">{escape(old_text)}</td>'
+                '</tr>'
+            )
 
     diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
     background_mode = str(render_config.get("background_mode", BACKGROUND_MODE))

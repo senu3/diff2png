@@ -174,7 +174,7 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn(' active', html)
         self.assertNotIn('class="inline-deleted"', html)
 
-    def test_normal_view_highlights_new_text_for_single_line_replacement(self):
+    def test_normal_view_shows_inline_old_and_new_text_for_short_replacement(self):
         hunk = {
             "filepath": "sample.py",
             "start": 1,
@@ -202,9 +202,42 @@ class HunkMergeTests(unittest.TestCase):
             )
 
         self.assertIn('class="inline-added"', html)
-        self.assertNotIn('class="inline-deleted"', html)
-        self.assertNotIn('draft', html)
+        self.assertIn('class="inline-deleted"', html)
+        self.assertIn('draft', html)
         self.assertIn('published', html)
+
+    def test_normal_view_skips_inline_spans_when_replacement_is_too_large(self):
+        old_text = 'message = "' + ('old-' * 20) + '"'
+        new_text = 'message = "' + ('new-' * 20) + '"'
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": [f"-{old_text}", f"+{new_text}"],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+        source_lines = [new_text]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertNotIn('class="inline-deleted"', html)
+        self.assertNotIn('class="inline-added"', html)
+        self.assertIn('new-new-new', html)
 
     def test_normal_view_skips_inline_spans_for_multi_line_replacement(self):
         hunk = {

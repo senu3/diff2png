@@ -38,6 +38,7 @@ FILE_CONTENT_CACHE: dict[str, list[str]] = {}
 ANALYSIS_SESSIONS: dict[str, dict] = {}
 MAX_ANALYSIS_SESSIONS = 20
 GIT_TIMEOUT_SECONDS = 30
+INLINE_DIFF_MAX_CHANGED_CHARS = 40
 _OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
 _NEW_RE = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -698,6 +699,7 @@ tr.added td.marker{{color:#16a34a}}
 tr.deleted td.marker{{color:#dc2626}}
 td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
 span.inline-added{{background:#bbf7d0;color:#14532d;border-radius:3px;padding:0 2px}}
+span.inline-deleted{{background:#fecaca;color:#991b1b;border-radius:3px;padding:0 2px;text-decoration:line-through}}
 .footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
 </style></head><body>
 <div class=\"header\">
@@ -750,20 +752,31 @@ def _single_line_replacement(hunk: dict) -> dict[int, tuple[int | None, str]]:
     return {new_lineno: (old_lineno, deleted[0])}
 
 
-def _inline_diff_html(old_text: str, new_text: str) -> str:
+def _inline_diff_html(old_text: str, new_text: str) -> str | None:
     parts = []
     old_tokens = _INLINE_DIFF_TOKEN_RE.findall(old_text)
     new_tokens = _INLINE_DIFF_TOKEN_RE.findall(new_text)
     matcher = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False)
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+    changed_chars = 0
+    opcodes = matcher.get_opcodes()
+    for tag, i1, i2, j1, j2 in opcodes:
+        if tag == "equal":
+            continue
+        changed_chars += len("".join(old_tokens[i1:i2])) + len("".join(new_tokens[j1:j2]))
+    if changed_chars > INLINE_DIFF_MAX_CHANGED_CHARS:
+        return None
+
+    for tag, i1, i2, j1, j2 in opcodes:
+        old_part = "".join(old_tokens[i1:i2])
         new_part = "".join(new_tokens[j1:j2])
         if tag == "equal":
             parts.append(escape(new_part))
         elif tag == "insert":
             parts.append(f'<span class="inline-added">{escape(new_part)}</span>')
         elif tag == "delete":
-            continue
+            parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
         elif tag == "replace":
+            parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
             parts.append(f'<span class="inline-added">{escape(new_part)}</span>')
     return "".join(parts)
 
@@ -814,7 +827,7 @@ def build_code_html(
         is_changed = lineno in changed_set
         if is_changed and lineno in replacement_by_lineno:
             _, old_text = replacement_by_lineno[lineno]
-            code_html = _inline_diff_html(old_text, text)
+            code_html = _inline_diff_html(old_text, text) or escape(text)
         else:
             code_html = escape(text)
         row_class = ' class="changed"' if is_changed else ""
@@ -1134,7 +1147,7 @@ def analyze():
     target_ref = str(data.get("target_ref", "")).strip()
 
     if source_mode not in ("worktree", "staged", "commit", "range"):
-        return jsonify({"error": "不正な差分ソースです"}), 400
+        return jsonify({"error": "不正なです"}), 400
 
     if not repo_path:
         return jsonify({"error": "リポジトリパスが無効です"}), 400

@@ -796,6 +796,32 @@
       font-size: 12px;
       color: var(--text);
       flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .preview-range {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 92px;
+      height: 28px;
+      padding: 0 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    .preview-range.adjusted {
+      color: var(--accent);
+      border-color: var(--accent-dim);
+      background: var(--surface2);
     }
 
     .preview-toolbar .nav-btns {
@@ -867,8 +893,56 @@
       flex: 1;
       overflow: auto;
       padding: 20px;
+      position: relative;
+      display: block;
+    }
+
+    .preview-content {
+      min-height: 100%;
       display: flex;
       justify-content: center;
+    }
+
+    .range-overlay {
+      position: absolute;
+      left: 50%;
+      z-index: 5;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(26, 29, 39, 0.96);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.32);
+      transform: translateX(-50%);
+    }
+
+    .range-overlay.hidden {
+      display: none;
+    }
+
+    .range-overlay-top {
+      top: 12px;
+    }
+
+    .range-overlay-bottom {
+      bottom: 12px;
+    }
+
+    .range-overlay-label {
+      color: var(--text-dim);
+      font-size: 11px;
+      white-space: nowrap;
+      padding: 0 4px;
+    }
+
+    .range-overlay .btn {
+      width: auto;
+      min-width: 34px;
+      height: 28px;
+      padding: 0 8px;
+      font-size: 12px;
     }
 
     .preview-frame-wrap::-webkit-scrollbar {
@@ -1040,6 +1114,26 @@
     <symbol id="icon-arrow-down" viewBox="0 0 24 24">
       <path d="M12 5v14" />
       <path d="m19 12-7 7-7-7" />
+    </symbol>
+    <symbol id="icon-arrow-down-to-line" viewBox="0 0 24 24">
+      <path d="M5 20h14" />
+      <path d="M12 4v12" />
+      <path d="m7 11 5 5 5-5" />
+    </symbol>
+    <symbol id="icon-arrow-up-from-line" viewBox="0 0 24 24">
+      <path d="M5 20h14" />
+      <path d="M12 16V4" />
+      <path d="m7 9 5-5 5 5" />
+    </symbol>
+    <symbol id="icon-arrow-up-to-line" viewBox="0 0 24 24">
+      <path d="M5 4h14" />
+      <path d="M12 20V8" />
+      <path d="m7 13 5-5 5 5" />
+    </symbol>
+    <symbol id="icon-arrow-down-from-line" viewBox="0 0 24 24">
+      <path d="M5 4h14" />
+      <path d="M12 8v12" />
+      <path d="m7 15 5 5 5-5" />
     </symbol>
     <symbol id="icon-undo" viewBox="0 0 24 24">
       <path d="M9 14 4 9l5-5" />
@@ -1302,29 +1396,8 @@
     <div class="preview-toolbar">
       <span class="preview-label"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-search"></use></svg>Preview</span>
       <span class="preview-file" id="previewFile">—</span>
+      <span class="preview-range" id="previewRange" title="現在の行範囲">—</span>
       <div class="range-btns">
-        <span class="range-group">
-          <span class="range-label">上端</span>
-          <button class="btn btn-ghost" id="rangeShrinkUpBtn" onclick="adjustActiveRange('shrink_up')" disabled
-            title="上端を1行下げて狭める" aria-label="上端を1行下げて狭める">
-            <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-down"></use></svg>
-          </button>
-          <button class="btn btn-ghost" id="rangeExpandUpBtn" onclick="adjustActiveRange('expand_up')" disabled
-            title="上端を1行上げて広げる" aria-label="上端を1行上げて広げる">
-            <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-up"></use></svg>
-          </button>
-        </span>
-        <span class="range-group">
-          <span class="range-label">下端</span>
-          <button class="btn btn-ghost" id="rangeShrinkDownBtn" onclick="adjustActiveRange('shrink_down')" disabled
-            title="下端を1行上げて狭める" aria-label="下端を1行上げて狭める">
-            <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-up"></use></svg>
-          </button>
-          <button class="btn btn-ghost" id="rangeExpandDownBtn" onclick="adjustActiveRange('expand_down')" disabled
-            title="下端を1行下げて広げる" aria-label="下端を1行下げて広げる">
-            <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-down"></use></svg>
-          </button>
-        </span>
         <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
           title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
           <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-undo"></use></svg>
@@ -1343,9 +1416,37 @@
     </div>
 
     <div class="preview-frame-wrap" id="previewWrap">
-      <div class="empty-state">
-        <div class="empty-icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-search"></use></svg></div>
-        <div class="empty-label">hunkを選択すると右側にプレビューを表示します</div>
+      <div class="range-overlay range-overlay-top hidden" id="rangeOverlayTop">
+        <span class="range-overlay-label">上端</span>
+        <button class="btn btn-ghost" id="rangeExpandUpBtn" onclick="adjustActiveRange('expand_up')" disabled
+          title="上に広げる" aria-label="上に広げる">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-up-from-line"></use></svg>
+          <span>広げる</span>
+        </button>
+        <button class="btn btn-ghost" id="rangeShrinkUpBtn" onclick="adjustActiveRange('shrink_up')" disabled
+          title="上を狭める" aria-label="上を狭める">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-down-to-line"></use></svg>
+          <span>狭める</span>
+        </button>
+      </div>
+      <div class="preview-content" id="previewContent">
+        <div class="empty-state">
+          <div class="empty-icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-search"></use></svg></div>
+          <div class="empty-label">hunkを選択すると右側にプレビューを表示します</div>
+        </div>
+      </div>
+      <div class="range-overlay range-overlay-bottom hidden" id="rangeOverlayBottom">
+        <span class="range-overlay-label">下端</span>
+        <button class="btn btn-ghost" id="rangeExpandDownBtn" onclick="adjustActiveRange('expand_down')" disabled
+          title="下に広げる" aria-label="下に広げる">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-down-from-line"></use></svg>
+          <span>広げる</span>
+        </button>
+        <button class="btn btn-ghost" id="rangeShrinkDownBtn" onclick="adjustActiveRange('shrink_down')" disabled
+          title="下を狭める" aria-label="下を狭める">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-up-to-line"></use></svg>
+          <span>狭める</span>
+        </button>
       </div>
     </div>
   </main>
@@ -2067,6 +2168,9 @@
       const h = state.hunks[index] || {};
       const isPatch = currentDiffMode === 'patch';
       document.querySelector('.range-btns')?.classList.toggle('hidden', isPatch);
+      document.querySelectorAll('.range-overlay').forEach(el => {
+        el.classList.toggle('hidden', !adjustable || isPatch);
+      });
       document.getElementById('rangeDisabledNote')?.classList.toggle('show', isPatch && index >= 0);
       document.getElementById('rangeShrinkUpBtn').disabled = !adjustable;
       document.getElementById('rangeExpandUpBtn').disabled = !adjustable;
@@ -2081,16 +2185,34 @@
       if (!h || !el) return;
       el.textContent = `L${h.start}–${h.end}`;
       el.classList.toggle('adjusted', Boolean(h.range_adjusted));
+      if (index === state.activeIndex) {
+        updatePreviewRange(h);
+      }
+    }
+
+    function updatePreviewRange(hunk) {
+      const el = document.getElementById('previewRange');
+      if (!el) return;
+      if (!hunk) {
+        el.textContent = '—';
+        el.title = '現在の行範囲';
+        el.classList.remove('adjusted');
+        return;
+      }
+      const text = `L${hunk.start}–${hunk.end}`;
+      el.textContent = text;
+      el.title = hunk.range_adjusted ? `${text}（調整済み）` : text;
+      el.classList.toggle('adjusted', Boolean(hunk.range_adjusted));
     }
 
     function writePreviewHtml(html, options = {}) {
       const keepExisting = Boolean(options.keepExisting);
-      const wrap = document.getElementById('previewWrap');
-      let iframe = keepExisting ? wrap.querySelector('iframe') : null;
+      const content = document.getElementById('previewContent');
+      let iframe = keepExisting ? content.querySelector('iframe') : null;
       if (!iframe) {
         iframe = document.createElement('iframe');
-        wrap.innerHTML = '';
-        wrap.appendChild(iframe);
+        content.innerHTML = '';
+        content.appendChild(iframe);
       }
       iframe.style.background = 'transparent';
       iframe.contentDocument.open();
@@ -2162,13 +2284,15 @@
       }
 
       const h = state.hunks[index];
-      document.getElementById('previewFile').textContent = `${h.filepath}  L${h.start}–${h.end}`;
+      document.getElementById('previewFile').textContent = h.filepath;
+      document.getElementById('previewFile').title = h.filepath;
+      updatePreviewRange(h);
       updatePreviewNavButtons(index);
       updateRangeButtons(index);
 
-      const wrap = document.getElementById('previewWrap');
+      const content = document.getElementById('previewContent');
       if (showLoading) {
-        wrap.innerHTML = '<div class="empty-state"><span class="spinner"></span><div class="empty-label">読み込み中...</div></div>';
+        content.innerHTML = '<div class="empty-state"><span class="spinner"></span><div class="empty-label">読み込み中...</div></div>';
       }
 
       try {
@@ -2184,20 +2308,22 @@
             errorMessage = JSON.parse(html).error || errorMessage;
           } catch (_) { }
           showToast(errorMessage, 'error');
-          wrap.innerHTML = `<div class="empty-state"><div class="empty-label" style="color:var(--danger)">${escapeHtml(errorMessage)}</div></div>`;
+          content.innerHTML = `<div class="empty-state"><div class="empty-label" style="color:var(--danger)">${escapeHtml(errorMessage)}</div></div>`;
           return;
         }
 
         writePreviewHtml(html, { keepExisting: keepIframe });
       } catch (e) {
-        wrap.innerHTML = `<div class="empty-state"><div class="empty-label" style="color:var(--danger)">読み込みエラー</div></div>`;
+        content.innerHTML = `<div class="empty-state"><div class="empty-label" style="color:var(--danger)">読み込みエラー</div></div>`;
       }
     }
 
     function clearPreview() {
-      const wrap = document.getElementById('previewWrap');
-      wrap.innerHTML = emptyStateHtml('search', 'hunkを選択すると右側にプレビューを表示します');
+      const content = document.getElementById('previewContent');
+      content.innerHTML = emptyStateHtml('search', 'hunkを選択すると右側にプレビューを表示します');
       document.getElementById('previewFile').textContent = '—';
+      document.getElementById('previewFile').title = '';
+      updatePreviewRange(null);
       document.getElementById('prevBtn').disabled = true;
       document.getElementById('nextBtn').disabled = true;
       document.getElementById('previewNavCount').textContent = '— / —';

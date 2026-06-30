@@ -41,6 +41,48 @@
       overflow: hidden;
     }
 
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .icon-sprite {
+      position: absolute;
+      width: 0;
+      height: 0;
+      overflow: hidden;
+    }
+
+    .icon {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 16px;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+
+    .icon-sm {
+      width: 14px;
+      height: 14px;
+      flex-basis: 14px;
+    }
+
+    .icon-lg {
+      width: 32px;
+      height: 32px;
+      flex-basis: 32px;
+    }
+
     /* ---- Header ---- */
     header {
       grid-column: 1 / -1;
@@ -126,6 +168,9 @@
       font-weight: 600;
       color: var(--text);
       letter-spacing: 0.04em;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .drawer-close {
@@ -133,15 +178,19 @@
       border: none;
       color: var(--text-dim);
       cursor: pointer;
-      font-size: 18px;
-      line-height: 1;
-      padding: 2px 6px;
+      width: 30px;
+      height: 30px;
+      padding: 0;
       border-radius: 4px;
-      transition: color 0.15s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.15s, background 0.15s;
     }
 
     .drawer-close:hover {
       color: var(--text);
+      background: var(--surface2);
     }
 
     .drawer-body {
@@ -288,8 +337,26 @@
     }
 
     .repo-section {
-      padding: 16px;
+      padding: 14px 16px 16px;
       border-bottom: 1px solid var(--border);
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .panel-title span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
 
     .repo-section label {
@@ -307,7 +374,7 @@
     }
 
     .source-summary {
-      margin-top: 10px;
+      margin-top: 8px;
       display: flex;
       gap: 8px;
       align-items: center;
@@ -325,7 +392,6 @@
     }
 
     .source-summary .btn {
-      padding: 7px 10px;
       font-size: 12px;
     }
 
@@ -474,8 +540,12 @@
       font-size: 13px;
       font-weight: 500;
       padding: 7px 14px;
-      transition: opacity 0.15s, transform 0.1s;
+      transition: opacity 0.15s, transform 0.1s, border-color 0.15s, background 0.15s;
       white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
 
     .btn:hover {
@@ -512,6 +582,40 @@
       cursor: not-allowed;
     }
 
+    .btn-success:disabled,
+    .btn-danger:disabled,
+    .btn-primary:disabled {
+      background: var(--surface2);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
+
+    .btn:focus-visible,
+    input:focus-visible,
+    select:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .icon-btn {
+      width: 32px;
+      height: 30px;
+      padding: 0;
+      flex: 0 0 32px;
+    }
+
+    .icon-btn-sm {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      flex: 0 0 28px;
+    }
+
+    .btn-pill {
+      height: 30px;
+      padding: 0 10px;
+    }
+
     /* ---- Hunk list ---- */
     .hunk-header {
       padding: 10px 16px;
@@ -527,6 +631,9 @@
       color: var(--text-dim);
       text-transform: uppercase;
       letter-spacing: 0.08em;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
 
     .select-all-row {
@@ -632,7 +739,7 @@
     }
 
     .export-section {
-      padding: 12px 16px;
+      padding: 12px 16px 14px;
       border-top: 1px solid var(--border);
       display: flex;
       flex-direction: column;
@@ -645,7 +752,8 @@
     }
 
     .export-buttons {
-      display: flex;
+      display: grid;
+      grid-template-columns: 32px 1fr;
       gap: 8px;
     }
 
@@ -678,6 +786,9 @@
       color: var(--text-dim);
       text-transform: uppercase;
       letter-spacing: 0.08em;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
 
     .preview-toolbar .preview-file {
@@ -704,7 +815,7 @@
     }
 
     .range-btns .btn {
-      width: 30px;
+      width: 28px;
       height: 28px;
       padding: 0;
       font-size: 12px;
@@ -734,9 +845,7 @@
     }
 
     .nav-btns .btn {
-      min-width: 52px;
-      padding: 4px 10px;
-      font-size: 12px;
+      min-width: 0;
     }
 
     .range-disabled-note {
@@ -794,8 +903,11 @@
     }
 
     .empty-icon {
-      font-size: 40px;
-      opacity: 0.3;
+      color: var(--text-dim);
+      opacity: 0.45;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .empty-label {
@@ -817,6 +929,9 @@
       transition: opacity 0.2s, transform 0.2s;
       z-index: 100;
       max-width: 320px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .toast.show {
@@ -851,25 +966,117 @@
         transform: rotate(360deg);
       }
     }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
   </style>
 </head>
 
 <body>
+  <svg class="icon-sprite" aria-hidden="true">
+    <symbol id="icon-settings" viewBox="0 0 24 24">
+      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6V20a2 2 0 0 1-4 0v-.08a1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1H4a2 2 0 0 1 0-4h.08a1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6V4a2 2 0 0 1 4 0v.08a1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.2.34.4.66.6 1H20a2 2 0 0 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z" />
+    </symbol>
+    <symbol id="icon-x" viewBox="0 0 24 24">
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </symbol>
+    <symbol id="icon-check-square" viewBox="0 0 24 24">
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <path d="m8 12 3 3 5-6" />
+    </symbol>
+    <symbol id="icon-square" viewBox="0 0 24 24">
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+    </symbol>
+    <symbol id="icon-folder-open" viewBox="0 0 24 24">
+      <path d="M3 7.5V18a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7.5a2 2 0 0 0-2-2h-7l-2-2H5a2 2 0 0 0-2 2Z" />
+      <path d="M3 11h18" />
+    </symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </symbol>
+    <symbol id="icon-check-circle" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8 12 3 3 5-6" />
+    </symbol>
+    <symbol id="icon-filter" viewBox="0 0 24 24">
+      <path d="M4 5h16" />
+      <path d="M7 12h10" />
+      <path d="M10 19h4" />
+    </symbol>
+    <symbol id="icon-list-check" viewBox="0 0 24 24">
+      <path d="M9 6h11" />
+      <path d="M9 12h11" />
+      <path d="M9 18h11" />
+      <path d="m3 6 1 1 2-2" />
+      <path d="m3 12 1 1 2-2" />
+      <path d="m3 18 1 1 2-2" />
+    </symbol>
+    <symbol id="icon-upload" viewBox="0 0 24 24">
+      <path d="M12 16V4" />
+      <path d="m7 9 5-5 5 5" />
+      <path d="M5 20h14" />
+    </symbol>
+    <symbol id="icon-chevron-left" viewBox="0 0 24 24">
+      <path d="m15 18-6-6 6-6" />
+    </symbol>
+    <symbol id="icon-chevron-right" viewBox="0 0 24 24">
+      <path d="m9 18 6-6-6-6" />
+    </symbol>
+    <symbol id="icon-arrow-up" viewBox="0 0 24 24">
+      <path d="M12 19V5" />
+      <path d="m5 12 7-7 7 7" />
+    </symbol>
+    <symbol id="icon-arrow-down" viewBox="0 0 24 24">
+      <path d="M12 5v14" />
+      <path d="m19 12-7 7-7-7" />
+    </symbol>
+    <symbol id="icon-undo" viewBox="0 0 24 24">
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10a6 6 0 1 1 0 12h-2" />
+    </symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24">
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M6 6l1 15h10l1-15" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </symbol>
+    <symbol id="icon-external-link" viewBox="0 0 24 24">
+      <path d="M14 4h6v6" />
+      <path d="m10 14 10-10" />
+      <path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5" />
+    </symbol>
+  </svg>
 
   <header>
     <h1>diff2png</h1>
     <span class="subtitle">git diff HEAD → PNG</span>
     <span class="spacer"></span>
     <span class="status" id="statusBar">待機中</span>
-    <button class="btn btn-ghost" id="gearBtn" onclick="toggleDrawer()" title="設定">⚙ 表示設定</button>
+    <button class="btn btn-ghost icon-btn" id="gearBtn" onclick="toggleDrawer()" title="表示設定" aria-label="表示設定">
+      <svg class="icon" aria-hidden="true"><use href="#icon-settings"></use></svg>
+    </button>
   </header>
 
   <!-- Settings Drawer -->
   <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
   <div class="drawer" id="drawer">
     <div class="drawer-header">
-      <h2>⚙ 表示設定</h2>
-      <button class="drawer-close" onclick="closeDrawer()">✕</button>
+      <h2><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-settings"></use></svg>表示設定</h2>
+      <button class="drawer-close" onclick="closeDrawer()" title="閉じる" aria-label="閉じる">
+        <svg class="icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+      </button>
     </div>
     <div class="drawer-body">
 
@@ -962,37 +1169,54 @@
 
   <aside>
     <div class="repo-section">
-      <label>リポジトリパス</label>
+      <div class="panel-title">
+        <span><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-folder-open"></use></svg>Source</span>
+      </div>
+      <label for="repoPath">リポジトリ</label>
       <div class="repo-row">
         <input type="text" id="repoPath" placeholder="/path/to/your/repo" />
-        <button class="btn btn-primary" id="analyzeBtn" onclick="onAnalyzeButtonClick()">参照</button>
+        <button class="btn btn-primary" id="analyzeBtn" onclick="onAnalyzeButtonClick()" title="参照" aria-label="参照">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-folder-open"></use></svg>
+          <span>参照</span>
+        </button>
       </div>
       <div class="source-summary">
         <span class="source-summary-text" id="sourceSummary">変更があったファイル (HEAD差分)</span>
-        <button class="btn btn-ghost" id="sourceDisplayBtn" onclick="openSourceModal()" disabled>差分条件</button>
+        <button class="btn btn-ghost icon-btn" id="sourceDisplayBtn" onclick="openSourceModal()" disabled title="差分条件" aria-label="差分条件">
+          <svg class="icon" aria-hidden="true"><use href="#icon-filter"></use></svg>
+        </button>
       </div>
     </div>
 
     <div class="hunk-header">
-      <span>変更 hunk <span id="hunkCount"></span></span>
+      <span><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-list-check"></use></svg>Hunks <span id="hunkCount"></span></span>
       <div class="select-all-row">
-        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="selectAll(true)">✅️全選択</button>
-        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="selectAll(false)">❌️全解除</button>
+        <button class="btn btn-ghost icon-btn-sm" onclick="selectAll(true)" title="全選択" aria-label="全選択">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-check-square"></use></svg>
+        </button>
+        <button class="btn btn-ghost icon-btn-sm" onclick="selectAll(false)" title="全解除" aria-label="全解除">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-square"></use></svg>
+        </button>
       </div>
     </div>
 
     <div class="hunk-list" id="hunkList">
       <div class="empty-state" style="height:200px">
-        <div class="empty-icon">📂</div>
-        <div class="empty-label">リポジトリを解析してください</div>
+        <div class="empty-icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-folder-open"></use></svg></div>
+        <div class="empty-label">リポジトリを指定して解析してください</div>
       </div>
     </div>
 
     <div class="export-section">
       <div class="export-info" id="exportInfo">選択: 0 件</div>
       <div class="export-buttons">
-        <button class="btn btn-ghost" id="outputFolderBtn" onclick="openOutputModal()">保存先フォルダ</button>
-        <button class="btn btn-success" id="exportSelectedBtn" onclick="exportSelected()" disabled>選択を出力</button>
+        <button class="btn btn-ghost icon-btn" id="outputFolderBtn" onclick="openOutputModal()" title="保存先" aria-label="保存先">
+          <svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg>
+        </button>
+        <button class="btn btn-success" id="exportSelectedBtn" onclick="exportSelected()" disabled>
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-upload"></use></svg>
+          <span>選択を出力</span>
+        </button>
       </div>
     </div>
   </aside>
@@ -1001,7 +1225,9 @@
   <div class="source-modal" id="sourceModal">
     <div class="source-modal-header">
       <div class="source-modal-title">差分条件</div>
-      <button class="drawer-close" onclick="closeSourceModal()">✕</button>
+      <button class="drawer-close" onclick="closeSourceModal()" title="閉じる" aria-label="閉じる">
+        <svg class="icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+      </button>
     </div>
     <div class="source-modal-body">
       <div class="source-control single">
@@ -1046,7 +1272,9 @@
   <div class="source-modal" id="outputModal">
     <div class="source-modal-header">
       <div class="source-modal-title">保存先フォルダ</div>
-      <button class="drawer-close" onclick="closeOutputModal()">✕</button>
+      <button class="drawer-close" onclick="closeOutputModal()" title="閉じる" aria-label="閉じる">
+        <svg class="icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+      </button>
     </div>
     <div class="source-modal-body">
       <div class="source-control single">
@@ -1059,45 +1287,65 @@
       </div>
     </div>
     <div class="source-modal-actions">
-      <button class="btn btn-ghost" id="openOutputBtn" onclick="openOutputDir()">フォルダを開く</button>
-      <button class="btn btn-danger" id="clearOutputBtn" onclick="clearOutputDir()">出力画像の全削除</button>
+      <button class="btn btn-ghost" id="openOutputBtn" onclick="openOutputDir()">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-external-link"></use></svg>
+        <span>開く</span>
+      </button>
+      <button class="btn btn-danger" id="clearOutputBtn" onclick="clearOutputDir()">
+        <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-trash"></use></svg>
+        <span>全削除</span>
+      </button>
     </div>
   </div>
 
   <main>
     <div class="preview-toolbar">
-      <span class="preview-label">Preview</span>
+      <span class="preview-label"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-search"></use></svg>Preview</span>
       <span class="preview-file" id="previewFile">—</span>
       <div class="range-btns">
         <span class="range-group">
           <span class="range-label">上端</span>
           <button class="btn btn-ghost" id="rangeShrinkUpBtn" onclick="adjustActiveRange('shrink_up')" disabled
-            title="上端を1行下げて狭める">−</button>
+            title="上端を1行下げて狭める" aria-label="上端を1行下げて狭める">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-down"></use></svg>
+          </button>
           <button class="btn btn-ghost" id="rangeExpandUpBtn" onclick="adjustActiveRange('expand_up')" disabled
-            title="上端を1行上げて広げる">+</button>
+            title="上端を1行上げて広げる" aria-label="上端を1行上げて広げる">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-up"></use></svg>
+          </button>
         </span>
         <span class="range-group">
           <span class="range-label">下端</span>
           <button class="btn btn-ghost" id="rangeShrinkDownBtn" onclick="adjustActiveRange('shrink_down')" disabled
-            title="下端を1行上げて狭める">−</button>
+            title="下端を1行上げて狭める" aria-label="下端を1行上げて狭める">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-up"></use></svg>
+          </button>
           <button class="btn btn-ghost" id="rangeExpandDownBtn" onclick="adjustActiveRange('expand_down')" disabled
-            title="下端を1行下げて広げる">+</button>
+            title="下端を1行下げて広げる" aria-label="下端を1行下げて広げる">
+            <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-down"></use></svg>
+          </button>
         </span>
         <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
-          title="解析直後の範囲に戻す">↺</button>
+          title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-undo"></use></svg>
+        </button>
       </div>
       <span class="range-disabled-note" id="rangeDisabledNote">パッチ表示では範囲調整なし</span>
       <span class="nav-count" id="previewNavCount">— / —</span>
       <div class="nav-btns">
-        <button class="btn btn-ghost" id="prevBtn" onclick="navigate(-1)" disabled>前へ</button>
-        <button class="btn btn-ghost" id="nextBtn" onclick="navigate(1)" disabled>次へ</button>
+        <button class="btn btn-ghost icon-btn-sm" id="prevBtn" onclick="navigate(-1)" disabled title="前へ" aria-label="前へ">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-chevron-left"></use></svg>
+        </button>
+        <button class="btn btn-ghost icon-btn-sm" id="nextBtn" onclick="navigate(1)" disabled title="次へ" aria-label="次へ">
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-chevron-right"></use></svg>
+        </button>
       </div>
     </div>
 
     <div class="preview-frame-wrap" id="previewWrap">
       <div class="empty-state">
-        <div class="empty-icon">🔍</div>
-        <div class="empty-label">hunkを選択するとプレビューが表示されます</div>
+        <div class="empty-icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-search"></use></svg></div>
+        <div class="empty-label">hunkを選択すると右側にプレビューを表示します</div>
       </div>
     </div>
   </main>
@@ -1123,6 +1371,15 @@
         '"': '&quot;',
         "'": '&#39;',
       }[ch]));
+    }
+
+    function iconHtml(name, className = 'icon') {
+      return `<svg class="${className}" aria-hidden="true"><use href="#icon-${name}"></use></svg>`;
+    }
+
+    function emptyStateHtml(iconName, label, height = '') {
+      const style = height ? ` style="height:${escapeHtml(height)}"` : '';
+      return `<div class="empty-state"${style}><div class="empty-icon">${iconHtml(iconName, 'icon icon-lg')}</div><div class="empty-label">${escapeHtml(label)}</div></div>`;
     }
 
     function findMatchingHunkIndex(hunks, baseHunk) {
@@ -1169,7 +1426,11 @@
     function updateAnalyzeButtonLabel() {
       const btn = document.getElementById('analyzeBtn');
       const path = document.getElementById('repoPath').value.trim();
-      btn.textContent = path ? '解析' : '参照';
+      btn.innerHTML = path
+        ? `${iconHtml('search', 'icon icon-sm')}<span>解析</span>`
+        : `${iconHtml('folder-open', 'icon icon-sm')}<span>参照</span>`;
+      btn.title = path ? '解析' : '参照';
+      btn.setAttribute('aria-label', path ? '解析' : '参照');
       updateSourceDisplayButton();
     }
 
@@ -1669,7 +1930,7 @@
       document.getElementById('hunkCount').textContent = visible ? `(${visible})` : '';
 
       if (total === 0) {
-        list.innerHTML = '<div class="empty-state" style="height:200px"><div class="empty-icon">✅</div><div class="empty-label">差分がありません</div></div>';
+        list.innerHTML = emptyStateHtml('check-circle', '差分がありません', '200px');
         updateExportButtons();
         return;
       }
@@ -1677,7 +1938,7 @@
       // 表示対象のインデックス配列を使って一覧を作成（元のインデックスを保持）
       const indices = Array.isArray(state.visibleIndices) ? state.visibleIndices : Array.from(state.hunks.keys());
       if (indices.length === 0) {
-        list.innerHTML = '<div class="empty-state" style="height:200px"><div class="empty-icon">🔎</div><div class="empty-label">この条件に一致するhunkはありません</div></div>';
+        list.innerHTML = emptyStateHtml('search', 'この条件に一致するhunkはありません', '200px');
         updateExportButtons();
         return;
       }
@@ -1935,7 +2196,7 @@
 
     function clearPreview() {
       const wrap = document.getElementById('previewWrap');
-      wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-label">hunkを選択するとプレビューが表示されます</div></div>';
+      wrap.innerHTML = emptyStateHtml('search', 'hunkを選択すると右側にプレビューを表示します');
       document.getElementById('previewFile').textContent = '—';
       document.getElementById('prevBtn').disabled = true;
       document.getElementById('nextBtn').disabled = true;
@@ -1997,7 +2258,7 @@
         const outDir = data.output_dir || 'diff_screenshots';
         state.lastOutputDir = outDir;
         document.getElementById('cfg-outdir').value = outDir;
-        showToast(`✅ ${data.count} 枚出力しました → ${outDir}/`, 'success');
+        showToast(`${data.count} 枚出力しました → ${outDir}/`, 'success');
         setStatus(`出力完了: ${data.count} 枚`);
       } catch (e) {
         showToast('出力エラー: ' + e.message, 'error');
@@ -2143,7 +2404,8 @@
     let toastTimer;
     function showToast(msg, type) {
       const el = document.getElementById('toast');
-      el.textContent = msg;
+      const iconName = type === 'success' ? 'check-circle' : type === 'error' ? 'x' : 'settings';
+      el.innerHTML = `${iconHtml(iconName, 'icon icon-sm')}<span>${escapeHtml(msg)}</span>`;
       el.className = 'toast show ' + (type || '');
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => el.classList.remove('show'), 3500);

@@ -726,30 +726,55 @@ span.inline-deleted{{background:#fecaca;color:#991b1b;border-radius:3px;padding:
     return html
 
 
-def _single_line_replacement(hunk: dict) -> dict[int, tuple[int | None, str]]:
-    diff_lines = [
-        raw for raw in hunk.get("diff_lines", [])
-        if raw and not raw.startswith("\\")
-    ]
-    deleted = [raw[1:] for raw in diff_lines if raw.startswith("-") and not raw.startswith("---")]
-    added = [raw[1:] for raw in diff_lines if raw.startswith("+") and not raw.startswith("+++")]
-    changed_lines = list(hunk.get("changed_lines", []))
-
-    if len(deleted) != 1 or len(added) != 1 or len(changed_lines) != 1:
-        return {}
-
+def _line_replacements_by_new_lineno(hunk: dict) -> dict[int, tuple[int | None, str]]:
+    replacements: dict[int, tuple[int | None, str]] = {}
     try:
-        new_lineno = int(changed_lines[0])
+        old_ln = int(hunk.get("old_start", hunk.get("start", 1)))
     except (TypeError, ValueError):
-        return {}
-
-    old_lineno = None
+        old_ln = int(hunk.get("start", 1))
     try:
-        old_lineno = int(hunk.get("old_start"))
+        new_ln = int(hunk.get("start", 1))
     except (TypeError, ValueError):
-        pass
+        new_ln = 1
 
-    return {new_lineno: (old_lineno, deleted[0])}
+    deleted_block: list[tuple[int, str]] = []
+    added_block: list[tuple[int, str]] = []
+
+    def flush_block() -> None:
+        nonlocal deleted_block, added_block
+        if deleted_block and len(deleted_block) == len(added_block):
+            for (old_lineno, old_text), (new_lineno, _) in zip(deleted_block, added_block):
+                replacements[new_lineno] = (old_lineno, old_text)
+        deleted_block = []
+        added_block = []
+
+    for raw in hunk.get("diff_lines", []):
+        if not raw or raw.startswith("\\"):
+            continue
+
+        if raw.startswith("-") and not raw.startswith("---"):
+            if added_block:
+                flush_block()
+            deleted_block.append((old_ln, raw[1:]))
+            old_ln += 1
+        elif raw.startswith("+") and not raw.startswith("+++"):
+            added_block.append((new_ln, raw[1:]))
+            new_ln += 1
+        elif raw.startswith(" "):
+            flush_block()
+            old_ln += 1
+            new_ln += 1
+        else:
+            flush_block()
+
+    flush_block()
+    changed_set = set()
+    for lineno in hunk.get("changed_lines", []):
+        try:
+            changed_set.add(int(lineno))
+        except (TypeError, ValueError):
+            continue
+    return {lineno: value for lineno, value in replacements.items() if lineno in changed_set}
 
 
 def _inline_diff_html(old_text: str, new_text: str) -> str | None:
@@ -808,7 +833,7 @@ def build_code_html(
     lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source)
     # 共通インデントを除去（Codesnap風）
     raw_texts = [t for (_, t) in lines]
-    replacements = _single_line_replacement(hunk)
+    replacements = _line_replacements_by_new_lineno(hunk)
     replacement_texts = [text for _, text in replacements.values()]
     stripped_combined, _ = _strip_common_indent_from_lines(raw_texts + replacement_texts)
     stripped_texts = stripped_combined[:len(raw_texts)]

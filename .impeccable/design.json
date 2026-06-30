@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-30T00:00:00+09:00",
+  "title": "Design System: diff2png",
+  "extensions": {
+    "colorMeta": {
+      "ink-bg": {
+        "role": "neutral",
+        "displayName": "Ink Background",
+        "canonical": "#0f1117",
+        "tonalRamp": ["oklch(15% 0.02 265)", "oklch(22% 0.02 265)", "oklch(30% 0.02 265)", "oklch(40% 0.02 265)", "oklch(55% 0.02 265)", "oklch(70% 0.02 265)", "oklch(84% 0.02 265)", "oklch(95% 0.02 265)"]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel Surface",
+        "canonical": "#1a1d27",
+        "tonalRamp": ["oklch(16% 0.025 265)", "oklch(24% 0.025 265)", "oklch(32% 0.025 265)", "oklch(42% 0.025 265)", "oklch(56% 0.025 265)", "oklch(70% 0.025 265)", "oklch(84% 0.025 265)", "oklch(95% 0.025 265)"]
+      },
+      "panel-raised": {
+        "role": "neutral",
+        "displayName": "Raised Panel",
+        "canonical": "#21253a",
+        "tonalRamp": ["oklch(18% 0.035 270)", "oklch(26% 0.035 270)", "oklch(34% 0.035 270)", "oklch(44% 0.035 270)", "oklch(58% 0.035 270)", "oklch(72% 0.035 270)", "oklch(86% 0.035 270)", "oklch(95% 0.035 270)"]
+      },
+      "action-blue": {
+        "role": "primary",
+        "displayName": "Workbench Blue",
+        "canonical": "#5b8af0",
+        "tonalRamp": ["oklch(15% 0.12 260)", "oklch(25% 0.12 260)", "oklch(35% 0.12 260)", "oklch(48% 0.12 260)", "oklch(62% 0.12 260)", "oklch(74% 0.12 260)", "oklch(86% 0.12 260)", "oklch(95% 0.12 260)"]
+      },
+      "success-green": {
+        "role": "secondary",
+        "displayName": "Evidence Green",
+        "canonical": "#3ecf6e",
+        "tonalRamp": ["oklch(15% 0.11 150)", "oklch(25% 0.11 150)", "oklch(35% 0.11 150)", "oklch(48% 0.11 150)", "oklch(62% 0.11 150)", "oklch(74% 0.11 150)", "oklch(86% 0.11 150)", "oklch(95% 0.11 150)"]
+      },
+      "danger-red": {
+        "role": "tertiary",
+        "displayName": "Failure Red",
+        "canonical": "#e05c5c",
+        "tonalRamp": ["oklch(15% 0.11 25)", "oklch(25% 0.11 25)", "oklch(35% 0.11 25)", "oklch(48% 0.11 25)", "oklch(62% 0.11 25)", "oklch(74% 0.11 25)", "oklch(86% 0.11 25)", "oklch(95% 0.11 25)"]
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Tool Title",
+        "purpose": "Header product identity only."
+      },
+      "body": {
+        "displayName": "UI Body",
+        "purpose": "Default Japanese UI text."
+      },
+      "label": {
+        "displayName": "Compact Label",
+        "purpose": "Section labels, buttons, and toolbar text."
+      },
+      "mono": {
+        "displayName": "Mono Data",
+        "purpose": "Paths, line ranges, counters, code-like values, and hunk metadata."
+      }
+    },
+    "shadows": [
+      {
+        "name": "drawer",
+        "value": "-8px 0 32px rgba(0, 0, 0, 0.4)",
+        "purpose": "Right-side settings drawer only."
+      },
+      {
+        "name": "modal",
+        "value": "0 16px 48px rgba(0, 0, 0, 0.45)",
+        "purpose": "Centered modal surfaces."
+      },
+      {
+        "name": "preview",
+        "value": "0 4px 32px rgba(0, 0, 0, 0.5)",
+        "purpose": "Preview iframe separation."
+      },
+      {
+        "name": "toast",
+        "value": "0 4px 20px rgba(0, 0, 0, 0.4)",
+        "purpose": "Bottom-right feedback messages."
+      }
+    ],
+    "motion": [
+      {
+        "name": "fast-state",
+        "value": "0.15s",
+        "purpose": "Border, opacity, and color feedback on controls."
+      },
+      {
+        "name": "overlay",
+        "value": "0.2s",
+        "purpose": "Modal and toast opacity/transform transitions."
+      },
+      {
+        "name": "drawer-slide",
+        "value": "0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Settings drawer entrance and exit."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "current-fixed-desktop",
+        "value": "340px sidebar + flexible preview",
+        "purpose": "The current layout is desktop-workbench first; mobile collapse is not implemented."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary command button for analyze, apply, browse, and confirm actions.",
+      "html": "<button class=\"ds-btn-primary\">解析</button>",
+      "css": ".ds-btn-primary { background: #5b8af0; color: #fff; border: none; border-radius: 6px; font-family: 'Noto Sans JP', sans-serif; font-size: 13px; font-weight: 500; padding: 7px 14px; cursor: pointer; transition: opacity 0.15s, transform 0.1s; white-space: nowrap; } .ds-btn-primary:hover { opacity: 0.85; } .ds-btn-primary:active { transform: scale(0.97); } .ds-btn-primary:focus-visible { outline: 2px solid #5b8af0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary action, navigation, and range-control button.",
+      "html": "<button class=\"ds-btn-ghost\">差分条件</button>",
+      "css": ".ds-btn-ghost { background: #21253a; color: #c8cfe8; border: 1px solid #2a2f45; border-radius: 6px; font-family: 'Noto Sans JP', sans-serif; font-size: 13px; font-weight: 500; padding: 7px 14px; cursor: pointer; transition: opacity 0.15s, transform 0.1s, border-color 0.15s; white-space: nowrap; } .ds-btn-ghost:hover { opacity: 0.85; } .ds-btn-ghost:active { transform: scale(0.97); } .ds-btn-ghost:focus-visible { outline: 2px solid #5b8af0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Success Export Button",
+      "kind": "button",
+      "refersTo": "button-success",
+      "description": "Final export action after hunk selection.",
+      "html": "<button class=\"ds-btn-success\">選択を出力</button>",
+      "css": ".ds-btn-success { background: #3ecf6e; color: #0a1a10; border: none; border-radius: 6px; font-family: 'Noto Sans JP', sans-serif; font-size: 13px; font-weight: 500; padding: 7px 14px; cursor: pointer; transition: opacity 0.15s, transform 0.1s; white-space: nowrap; } .ds-btn-success:hover { opacity: 0.85; } .ds-btn-success:active { transform: scale(0.97); } .ds-btn-success:focus-visible { outline: 2px solid #3ecf6e; outline-offset: 2px; }"
+    },
+    {
+      "name": "Path Input",
+      "kind": "input",
+      "refersTo": "input-text",
+      "description": "Mono text field for repository paths and output folders.",
+      "html": "<input class=\"ds-input-path\" value=\"C:\\\\repo\\\\project\" aria-label=\"リポジトリパス\">",
+      "css": ".ds-input-path { flex: 1; background: #0f1117; border: 1px solid #2a2f45; border-radius: 6px; color: #c8cfe8; font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 7px 10px; outline: none; transition: border-color 0.15s; min-width: 220px; } .ds-input-path:focus { border-color: #5b8af0; } .ds-input-path:focus-visible { outline: 2px solid #5b8af0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Active Hunk Item",
+      "kind": "card",
+      "refersTo": "hunk-item-active",
+      "description": "Selected diff hunk row with file path, line range, and addition badge.",
+      "html": "<div class=\"ds-hunk-item\"><input type=\"checkbox\" checked aria-label=\"選択\"><div class=\"ds-hunk-info\"><div class=\"ds-hunk-file\">templates/index.html</div><div class=\"ds-hunk-range\">L120-L168</div></div><span class=\"ds-hunk-badge\">+24</span></div>",
+      "css": ".ds-hunk-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; border: 1px solid #3d5fad; background: #21253a; color: #c8cfe8; max-width: 320px; } .ds-hunk-item input { accent-color: #5b8af0; width: 14px; height: 14px; flex-shrink: 0; } .ds-hunk-info { flex: 1; min-width: 0; } .ds-hunk-file { font-family: 'JetBrains Mono', monospace; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-hunk-range { color: #5a6080; font-size: 11px; margin-top: 2px; } .ds-hunk-badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #3ecf6e; background: rgba(62, 207, 110, 0.12); padding: 2px 6px; border-radius: 4px; }"
+    },
+    {
+      "name": "Modal Surface",
+      "kind": "card",
+      "refersTo": "source-modal",
+      "description": "Utility modal for diff conditions and output folder controls.",
+      "html": "<section class=\"ds-modal\"><header class=\"ds-modal-header\"><strong>差分条件</strong><button>×</button></header><div class=\"ds-modal-body\">条件を選択して解析します。</div></section>",
+      "css": ".ds-modal { width: min(680px, calc(100vw - 36px)); background: #1a1d27; border: 1px solid #2a2f45; border-radius: 10px; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45); color: #c8cfe8; font-family: 'Noto Sans JP', sans-serif; overflow: hidden; } .ds-modal-header { padding: 14px 16px; border-bottom: 1px solid #2a2f45; display: flex; align-items: center; justify-content: space-between; } .ds-modal-header strong { font-size: 13px; font-weight: 600; } .ds-modal-header button { background: none; border: none; color: #5a6080; cursor: pointer; font-size: 18px; padding: 2px 6px; border-radius: 4px; } .ds-modal-header button:hover { color: #c8cfe8; } .ds-modal-body { padding: 16px; font-size: 12px; }"
+    },
+    {
+      "name": "Success Toast",
+      "kind": "custom",
+      "refersTo": "toast-success",
+      "description": "Bottom-right completion feedback with semantic border and text color.",
+      "html": "<div class=\"ds-toast-success\">3 枚出力しました → diff_screenshots/</div>",
+      "css": ".ds-toast-success { background: #21253a; border: 1px solid #3ecf6e; border-radius: 8px; color: #3ecf6e; padding: 12px 16px; font-family: 'Noto Sans JP', sans-serif; font-size: 13px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4); max-width: 320px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Diff Workbench",
+    "overview": "diff2png is a compact developer workbench, not a presentation surface. The interface should feel like a focused review-prep tool: dark, dense, quiet, and immediately legible while a developer moves from repository path to hunk selection to reviewer-ready PNG output.\n\nThe system uses a restrained product palette: deep ink backgrounds, two panel layers, one blue action accent, and semantic green/yellow/red states. Visual interest comes from hierarchy, alignment, and state clarity, not decoration. It rejects the PRODUCT.md anti-references directly: marketing-site heroes, excessive ornament, flashy gradients, card-heavy SaaS styling, cuteness that reduces density, and custom controls that break familiar development-tool behavior.",
+    "keyCharacteristics": [
+      "Dense two-pane workspace with a persistent header, sidebar controls, and a large preview surface.",
+      "Dark developer-tool theme with a single blue action channel used for primary actions, focus, active state, and adjusted ranges.",
+      "Mono typography for product identity, file paths, counters, code-like values, and commit/diff metadata.",
+      "Flat panel layering by default; shadows appear only for floating UI such as drawers, modals, iframes, and toasts.",
+      "Short state transitions that communicate opening, selection, feedback, and loading without choreography."
+    ],
+    "rules": [
+      {
+        "name": "The One Accent Rule",
+        "body": "Workbench Blue is the only non-semantic accent. Do not introduce purple, cyan, magenta, or gradient accents for decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Dark Workbench Rule",
+        "body": "Keep the application shell dark. A light theme may exist later, but the default identity is a developer tool used for focused review preparation.",
+        "section": "colors"
+      },
+      {
+        "name": "The Data Is Mono Rule",
+        "body": "Anything that behaves like a code artifact, path, line number, ref, config key, or count uses JetBrains Mono.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Display Type Rule",
+        "body": "This is a tool, not a landing page. Do not add oversized headings, fluid clamp() display type, or decorative font pairings.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-Until-Floating Rule",
+        "body": "Do not put broad soft shadows on normal buttons, list items, panels, or cards. If an element is not floating over the app, it gets a tonal surface and a one-pixel border.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep the default shell dark and developer-tool-like; the product's credibility comes from focused utility.",
+      "Do use Workbench Blue only for primary actions, focus, active selection, and adjusted range signals.",
+      "Do preserve density: 52px header, 340px sidebar, compact 6px controls, and 10-13px control labels are part of the system.",
+      "Do use JetBrains Mono for file paths, line ranges, counters, hunk badges, config keys, and status values.",
+      "Do distinguish success, danger, active, disabled, and loading states with both color and text where possible.",
+      "Do keep panels flat unless they are truly floating overlays or preview surfaces."
+    ],
+    "donts": [
+      "Don't create a marketing-site hero, oversized headline area, or explanatory landing screen for the main app.",
+      "Don't add excessive ornament, flashy gradients, purple/blue gradient accents, glassmorphism, or decorative background effects.",
+      "Don't turn the interface into a card-heavy SaaS layout. Repeated cards are the wrong structure for this workflow.",
+      "Don't make the tool cute, playful, or friendly at the cost of density and scan speed.",
+      "Don't invent non-standard form controls, modals, dropdowns, or scroll behavior for flavor.",
+      "Don't use broad shadows on normal controls or combine one-pixel borders with large decorative shadows on buttons.",
+      "Don't rely on color alone to communicate additions, deletions, export success, or errors."
+    ]
+  }
+}

@@ -782,7 +782,9 @@ def _line_replacements_for_diff_lines(
     def similarity(old_text: str, new_text: str) -> float:
         old_tokens = _INLINE_DIFF_TOKEN_RE.findall(old_text)
         new_tokens = _INLINE_DIFF_TOKEN_RE.findall(new_text)
-        return difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False).ratio()
+        token_score = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False).ratio()
+        char_score = difflib.SequenceMatcher(None, old_text, new_text, autojunk=False).ratio()
+        return min(token_score, char_score)
 
     def flush_block() -> None:
         nonlocal deleted_block, added_block

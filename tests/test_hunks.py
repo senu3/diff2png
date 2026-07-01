@@ -775,6 +775,56 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn('class="inline-deleted"', html)
         self.assertNotIn('class="inline-added"', html)
 
+    def test_normal_view_does_not_inline_pair_with_far_added_line(self):
+        hunk = {
+            "filepath": "sample.js",
+            "start": 1,
+            "end": 5,
+            "default_start": 1,
+            "default_end": 5,
+            "old_start": 1,
+            "changed_lines": [1, 2, 3, 4, 5],
+            "diff_lines": [
+                "-const target = config.value",
+                "+const inserted0 = 0",
+                "+const inserted1 = 1",
+                "+const inserted2 = 2",
+                "+const inserted3 = 3",
+                "+const target = config.value.updated",
+            ],
+            "added_count": 5,
+            "deleted_count": 1,
+            "changed_count": 6,
+        }
+        source_lines = [
+            "const inserted0 = 0",
+            "const inserted1 = 1",
+            "const inserted2 = 2",
+            "const inserted3 = 3",
+            "const target = config.value.updated",
+        ]
+
+        replacements = diff2png._line_replacements_by_new_lineno(hunk)
+
+        self.assertNotIn(1, replacements)
+        self.assertIn(5, replacements)
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        first_row_end = html.index('</tr>')
+        self.assertNotIn('class="inline-deleted"', html[:first_row_end])
+        self.assertNotIn('class="inline-added"', html[:first_row_end])
+        self.assertNotIn('class="deleted"', html)
+
     def test_normal_analysis_uses_zero_context_raw_diff(self):
         if shutil.which("git") is None:
             self.skipTest("git is not available")

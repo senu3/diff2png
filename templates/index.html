@@ -479,6 +479,34 @@
       gap: 8px;
     }
 
+    .file-filter-scope {
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .file-filter-scope-label {
+      min-width: 0;
+      color: var(--text);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-filter-clear {
+      height: 24px;
+      padding: 0 8px;
+      font-size: 11px;
+      flex: 0 0 auto;
+    }
+
     .file-filter-list {
       display: grid;
       gap: 4px;
@@ -530,25 +558,30 @@
       border-color: var(--accent-dim);
     }
 
-    .file-filter-radio {
-      width: 12px;
-      height: 12px;
-      border-radius: 999px;
+    .file-filter-check {
+      width: 13px;
+      height: 13px;
+      border-radius: 3px;
       border: 1px solid var(--text-dim);
       position: relative;
       justify-self: center;
     }
 
-    .file-filter-option.active .file-filter-radio {
+    .file-filter-option.active .file-filter-check {
       border-color: var(--accent);
+      background: var(--accent);
     }
 
-    .file-filter-option.active .file-filter-radio::after {
+    .file-filter-option.active .file-filter-check::after {
       content: '';
       position: absolute;
-      inset: 3px;
-      border-radius: inherit;
-      background: var(--accent);
+      left: 3px;
+      top: 1px;
+      width: 4px;
+      height: 7px;
+      border: solid #fff;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
     }
 
     .file-filter-path {
@@ -1199,6 +1232,13 @@
       <path d="M7 12h10" />
       <path d="M10 19h4" />
     </symbol>
+    <symbol id="icon-git-branch" viewBox="0 0 24 24">
+      <circle cx="6" cy="5" r="2" />
+      <circle cx="18" cy="5" r="2" />
+      <circle cx="6" cy="19" r="2" />
+      <path d="M6 7v10" />
+      <path d="M8 5h4a6 6 0 0 1 6 6v6" />
+    </symbol>
     <symbol id="icon-list-check" viewBox="0 0 24 24">
       <path d="M9 6h11" />
       <path d="M9 12h11" />
@@ -1388,7 +1428,7 @@
       <div class="source-summary">
         <span class="source-summary-text" id="sourceSummary">変更があったファイル (HEAD差分)</span>
         <button class="btn btn-ghost icon-btn" id="sourceDisplayBtn" onclick="openSourceModal()" disabled title="差分条件" aria-label="差分条件">
-          <svg class="icon" aria-hidden="true"><use href="#icon-filter"></use></svg>
+          <svg class="icon" aria-hidden="true"><use href="#icon-git-branch"></use></svg>
         </button>
       </div>
     </div>
@@ -1484,10 +1524,17 @@
         <input type="text" id="fileFilterSearch" placeholder="ファイル名で検索" oninput="renderFileFilterList()" onkeydown="onFileFilterSearchKeydown(event)">
       </div>
       <div class="file-filter-status" id="fileFilterStatus"> </div>
-      <div class="file-filter-list" id="fileFilterList" role="radiogroup" aria-label="ファイルフィルタ"></div>
+      <div class="file-filter-scope">
+        <span class="file-filter-scope-label" id="fileFilterScopeLabel">フィルタなし</span>
+        <button class="btn btn-ghost file-filter-clear" id="fileFilterClearBtn" onclick="clearFileFilterDraft()" disabled>
+          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-x"></use></svg>
+          <span>クリア</span>
+        </button>
+      </div>
+      <div class="file-filter-list" id="fileFilterList" role="listbox" aria-label="ファイルフィルタ" aria-multiselectable="true"></div>
     </div>
     <div class="source-modal-actions">
-      <button class="btn btn-ghost" onclick="clearFileFilterDraft()">クリア</button>
+      <button class="btn btn-ghost" onclick="closeFileFilterModal()">閉じる</button>
       <button class="btn btn-primary" onclick="applyFileFilter()">適用</button>
     </div>
   </div>
@@ -1591,10 +1638,10 @@
       selected: new Set(),
       activeIndex: -1,
       lastOutputDir: '',
-      fileFilter: '',
+      fileFilter: [],
       rangeAdjusting: false,
     };
-    let draftFileFilter = '';
+    let draftFileFilter = [];
 
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -2160,7 +2207,8 @@
       const list = document.getElementById('hunkList');
       const total = state.hunks.length;
       const visible = state.visibleIndices ? state.visibleIndices.length : total;
-      document.getElementById('hunkCount').textContent = state.fileFilter
+      const activeFilters = getAppliedFileFilters();
+      document.getElementById('hunkCount').textContent = activeFilters.length > 0
         ? `(${visible}/${total})`
         : (visible ? `(${visible})` : '');
       updateFileFilterButton();
@@ -2237,16 +2285,30 @@
     }
 
     function computeVisibleIndices() {
-      const file = state.fileFilter || '';
+      const files = getAppliedFileFilters();
       if (!state.hunks || state.hunks.length === 0) {
         state.visibleIndices = [];
         return;
       }
-      if (!file) {
+      if (files.length === 0) {
         state.visibleIndices = state.hunks.map((_, i) => i);
       } else {
-        state.visibleIndices = state.hunks.map((h, i) => ({ h, i })).filter(x => x.h.filepath === file).map(x => x.i);
+        const fileSet = new Set(files);
+        state.visibleIndices = state.hunks.map((h, i) => ({ h, i })).filter(x => fileSet.has(x.h.filepath)).map(x => x.i);
       }
+    }
+
+    function normalizeFileFilter(value) {
+      if (Array.isArray(value)) return [...new Set(value.filter(Boolean))];
+      return value ? [value] : [];
+    }
+
+    function getAppliedFileFilters() {
+      return normalizeFileFilter(state.fileFilter);
+    }
+
+    function getDraftFileFilters() {
+      return normalizeFileFilter(draftFileFilter);
     }
 
     function getFileFilterItems() {
@@ -2264,18 +2326,19 @@
     function updateFileFilterButton() {
       const btn = document.getElementById('fileFilterBtn');
       if (!btn) return;
-      const active = Boolean(state.fileFilter);
+      const activeFilters = getAppliedFileFilters();
+      const active = activeFilters.length > 0;
       btn.classList.toggle('active', active);
-      const label = active ? `ファイルフィルタ: ${shortFilePath(state.fileFilter)}` : 'ファイルフィルタ';
+      const label = !active
+        ? 'ファイルフィルタ'
+        : (activeFilters.length === 1 ? `ファイルフィルタ: ${shortFilePath(activeFilters[0])}` : `ファイルフィルタ: ${activeFilters.length} ファイル`);
       btn.title = label;
       btn.setAttribute('aria-label', label);
     }
 
     function populateFileFilter() {
       const files = getFileFilterItems().map(item => item.filepath);
-      if (state.fileFilter && !files.includes(state.fileFilter)) {
-        state.fileFilter = '';
-      }
+      state.fileFilter = getAppliedFileFilters().filter(file => files.includes(file));
       computeVisibleIndices();
       updateFileFilterButton();
       if (document.getElementById('fileFilterModal')?.classList.contains('open')) {
@@ -2286,10 +2349,13 @@
     function renderFileFilterList() {
       const list = document.getElementById('fileFilterList');
       const status = document.getElementById('fileFilterStatus');
+      const scopeLabel = document.getElementById('fileFilterScopeLabel');
+      const clearBtn = document.getElementById('fileFilterClearBtn');
       if (!list || !status) return;
 
       const query = (document.getElementById('fileFilterSearch')?.value || '').trim().toLowerCase();
       const items = getFileFilterItems();
+      const draftFilters = getDraftFileFilters();
       const filtered = query
         ? items.filter(item => item.filepath.toLowerCase().includes(query))
         : items;
@@ -2300,9 +2366,15 @@
         ? `${filtered.length} / ${items.length} ファイル`
         : `${items.length} ファイル`;
       status.textContent = totalCount ? `${statusText} / ${totalCount} hunks` : '解析後にファイルを選択できます';
-
-      const allOption = createFileFilterOption('', 'すべて', totalCount);
-      list.appendChild(allOption);
+      if (scopeLabel) {
+        scopeLabel.textContent = draftFilters.length > 0
+          ? `${draftFilters.length} ファイル選択中`
+          : 'フィルタなし';
+        scopeLabel.title = draftFilters.length > 0 ? draftFilters.join('\n') : 'フィルタなし';
+      }
+      if (clearBtn) {
+        clearBtn.disabled = draftFilters.length === 0;
+      }
 
       filtered.forEach(item => {
         list.appendChild(createFileFilterOption(item.filepath, item.filepath, item.count));
@@ -2327,13 +2399,15 @@
       const option = document.createElement('button');
       option.type = 'button';
       option.className = 'file-filter-option';
-      option.setAttribute('role', 'radio');
-      option.setAttribute('aria-checked', String(draftFileFilter === value));
-      if (draftFileFilter === value) option.classList.add('active');
-      option.addEventListener('click', () => setDraftFileFilter(value));
+      option.setAttribute('role', 'option');
+      const draftFilters = getDraftFileFilters();
+      const active = draftFilters.includes(value);
+      option.setAttribute('aria-selected', String(active));
+      if (active) option.classList.add('active');
+      option.addEventListener('click', () => toggleDraftFileFilter(value));
 
-      const radio = document.createElement('span');
-      radio.className = 'file-filter-radio';
+      const check = document.createElement('span');
+      check.className = 'file-filter-check';
 
       const path = document.createElement('span');
       path.className = 'file-filter-path';
@@ -2344,17 +2418,21 @@
       badge.className = 'file-filter-count';
       badge.textContent = `${count}`;
 
-      option.append(radio, path, badge);
+      option.append(check, path, badge);
       return option;
     }
 
-    function setDraftFileFilter(value) {
-      draftFileFilter = value || '';
+    function toggleDraftFileFilter(value) {
+      const next = getDraftFileFilters();
+      const index = next.indexOf(value);
+      if (index >= 0) next.splice(index, 1);
+      else next.push(value);
+      draftFileFilter = next;
       renderFileFilterList();
     }
 
     function openFileFilterModal() {
-      draftFileFilter = state.fileFilter || '';
+      draftFileFilter = getAppliedFileFilters();
       const search = document.getElementById('fileFilterSearch');
       if (search) search.value = '';
       renderFileFilterList();
@@ -2369,7 +2447,7 @@
     }
 
     function clearFileFilterDraft() {
-      draftFileFilter = '';
+      draftFileFilter = [];
       const search = document.getElementById('fileFilterSearch');
       if (search) search.value = '';
       renderFileFilterList();
@@ -2386,7 +2464,7 @@
     }
 
     function applyFileFilter() {
-      state.fileFilter = draftFileFilter || '';
+      state.fileFilter = getDraftFileFilters();
       closeFileFilterModal();
       computeVisibleIndices();
       renderHunkList();

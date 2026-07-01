@@ -737,6 +737,14 @@ def _line_replacements_by_new_lineno(hunk: dict) -> dict[int, tuple[int | None, 
         new_ln = int(hunk.get("start", 1))
     except (TypeError, ValueError):
         new_ln = 1
+    changed_line_numbers: list[int] = []
+    for lineno in hunk.get("changed_lines", []):
+        try:
+            changed_line_numbers.append(int(lineno))
+        except (TypeError, ValueError):
+            continue
+    changed_line_numbers.sort()
+    added_line_index = 0
 
     deleted_block: list[tuple[int, str]] = []
     added_block: list[tuple[int, str]] = []
@@ -773,8 +781,13 @@ def _line_replacements_by_new_lineno(hunk: dict) -> dict[int, tuple[int | None, 
             deleted_block.append((old_ln, raw[1:]))
             old_ln += 1
         elif raw.startswith("+") and not raw.startswith("+++"):
-            added_block.append((new_ln, raw[1:]))
-            new_ln += 1
+            if added_line_index < len(changed_line_numbers):
+                added_lineno = changed_line_numbers[added_line_index]
+            else:
+                added_lineno = new_ln
+            added_line_index += 1
+            added_block.append((added_lineno, raw[1:]))
+            new_ln = added_lineno + 1
         elif raw.startswith(" "):
             flush_block()
             old_ln += 1

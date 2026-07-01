@@ -206,6 +206,96 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('draft', html)
         self.assertIn('published', html)
 
+    def test_normal_view_inline_diff_uses_changed_line_after_context_expansion(self):
+        hunk = {
+            "filepath": "sample.html",
+            "start": 8,
+            "end": 12,
+            "default_start": 8,
+            "default_end": 12,
+            "orig_start": 10,
+            "orig_end": 10,
+            "old_start": 10,
+            "changed_lines": [10],
+            "diff_lines": ['-<div class="card">', '+<div class="card active">'],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+        source_lines = [f"line {i}" for i in range(1, 8)] + [
+            "<main>",
+            "  <section>",
+            '<div class="card active">',
+            "  </section>",
+            "</main>",
+        ]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('<td class="lineno">10</td>', html)
+        self.assertIn('class="inline-added"', html)
+        self.assertIn(' active', html)
+
+    def test_normal_view_inline_diff_handles_merged_raw_hunks(self):
+        hunk = {
+            "filepath": "sample.html",
+            "start": 8,
+            "end": 18,
+            "default_start": 8,
+            "default_end": 18,
+            "orig_start": 10,
+            "orig_end": 16,
+            "old_start": 10,
+            "changed_lines": [10, 16],
+            "diff_lines": [
+                '-<div class="card">',
+                '+<div class="card active">',
+                '-<button disabled>',
+                '+<button disabled aria-label="save">',
+            ],
+            "added_count": 2,
+            "deleted_count": 2,
+            "changed_count": 4,
+        }
+        source_lines = [f"line {i}" for i in range(1, 8)] + [
+            "<main>",
+            "  <section>",
+            '<div class="card active">',
+            "    <p>body</p>",
+            "    <p>body</p>",
+            "    <p>body</p>",
+            "    <p>body</p>",
+            "    <p>body</p>",
+            '<button disabled aria-label="save">',
+            "  </section>",
+            "</main>",
+        ]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('<td class="lineno">10</td>', html)
+        self.assertIn('<td class="lineno">16</td>', html)
+        self.assertGreaterEqual(html.count('class="inline-added"'), 2)
+        self.assertIn('aria-label', html)
+
     def test_normal_view_skips_inline_spans_when_replacement_is_too_large(self):
         old_text = 'message = "' + ('old-' * 20) + '"'
         new_text = 'message = "' + ('new-' * 20) + '"'

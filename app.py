@@ -822,15 +822,24 @@ def _inline_diff_html(old_text: str, new_text: str) -> str | None:
     for tag, i1, i2, j1, j2 in opcodes:
         old_part = "".join(old_tokens[i1:i2])
         new_part = "".join(new_tokens[j1:j2])
+        is_leading_indent = (
+            not parts
+            and old_part.strip(" \t") == ""
+            and new_part.strip(" \t") == ""
+        )
         if tag == "equal":
             parts.append(escape(new_part))
         elif tag == "insert":
-            parts.append(f'<span class="inline-added">{escape(new_part)}</span>')
+            parts.append(escape(new_part) if is_leading_indent else f'<span class="inline-added">{escape(new_part)}</span>')
         elif tag == "delete":
-            parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
+            if not is_leading_indent:
+                parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
         elif tag == "replace":
-            parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
-            parts.append(f'<span class="inline-added">{escape(new_part)}</span>')
+            if is_leading_indent:
+                parts.append(escape(new_part))
+            else:
+                parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
+                parts.append(f'<span class="inline-added">{escape(new_part)}</span>')
     return "".join(parts)
 
 

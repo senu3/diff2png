@@ -533,8 +533,6 @@ def parse_hunks(diff_text: str) -> list[dict]:
                 "end": max(new_start, new_start + new_count - 1),
                 "old_start": old_start,
                 "old_end": max(old_start, old_start + old_count - 1),
-                "old_count": old_count,
-                "new_count": new_count,
                 "changed_lines": set(),
                 "_cursor": new_start,
                 "diff_lines": [],
@@ -616,7 +614,6 @@ def expand_and_merge(
             diff_block = {
                 "start": int(h["start"]),
                 "old_start": int(h.get("old_start", h["start"])),
-                "new_count": int(h.get("new_count", 1)),
                 "changed_lines": sorted(h.get("changed_lines", [])),
                 "diff_lines": list(h.get("diff_lines", [])),
             }
@@ -984,78 +981,43 @@ def build_deleted_context_html(
 ) -> str:
     render_config = config or current_config_snapshot()
     lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source)
-
-    def deleted_entries_for_block(block: dict) -> list[dict]:
-        try:
-            old_ln = int(block.get("old_start", hunk.get("old_start", hunk.get("start", 1))))
-        except (TypeError, ValueError):
-            old_ln = int(hunk.get("old_start", hunk.get("start", 1)))
-        try:
-            new_ln = int(block.get("start", hunk.get("start", 1)))
-        except (TypeError, ValueError):
-            new_ln = int(hunk.get("start", 1))
-
-        diff_lines = list(block.get("diff_lines", []))
-        has_new_rows = any(
-            (raw.startswith(" ") or (raw.startswith("+") and not raw.startswith("+++")))
-            for raw in diff_lines
-        )
-        pure_deletion = not has_new_rows and int(block.get("new_count", 0)) == 0
-
-        entries = []
-        for raw in diff_lines:
-            if not raw or raw.startswith("\\"):
-                continue
-            if raw.startswith("-") and not raw.startswith("---"):
-                if pure_deletion:
-                    anchor = 1 if new_ln <= 0 else new_ln + 1
-                else:
-                    anchor = max(1, new_ln)
-                entries.append({"anchor": anchor, "old_lineno": old_ln, "text": raw[1:]})
-                old_ln += 1
-            elif raw.startswith("+") and not raw.startswith("+++"):
-                new_ln += 1
-            elif raw.startswith(" "):
-                old_ln += 1
-                new_ln += 1
-        return entries
-
-    diff_blocks = hunk.get("diff_blocks")
-    if isinstance(diff_blocks, list) and diff_blocks:
-        deleted_entries = []
-        for block in diff_blocks:
-            if isinstance(block, dict):
-                deleted_entries.extend(deleted_entries_for_block(block))
-    else:
-        deleted_entries = deleted_entries_for_block(hunk)
-
-    combined_texts = [t for (_, t) in lines] + [entry["text"] for entry in deleted_entries]
+    deleted_texts = [
+        raw[1:]
+        for raw in hunk.get("diff_lines", [])
+        if raw.startswith("-") and not raw.startswith("---")
+    ]
+    combined_texts = [t for (_, t) in lines] + deleted_texts
     stripped_combined, _ = _strip_common_indent_from_lines(combined_texts)
     stripped_lines = stripped_combined[:len(lines)]
     stripped_deleted = stripped_combined[len(lines):]
-    for entry, text in zip(deleted_entries, stripped_deleted):
-        entry["text"] = text
 
     lang = detect_language(hunk["filepath"])
+    deletion_anchor = int(hunk.get("orig_start", hunk.get("start", 1)))
     rows = []
-    deleted_entries.sort(key=lambda entry: (int(entry["anchor"]), int(entry["old_lineno"])))
-    deleted_index = 0
+    deleted_inserted = False
 
-    def append_deleted_rows_before(anchor: int) -> None:
-        nonlocal deleted_index
-        while deleted_index < len(deleted_entries) and int(deleted_entries[deleted_index]["anchor"]) <= anchor:
-            entry = deleted_entries[deleted_index]
+    def append_deleted_rows() -> None:
+        nonlocal deleted_inserted
+        if deleted_inserted:
+            return
+        old_ln = int(hunk.get("old_start", deletion_anchor))
+        for text in stripped_deleted:
             rows.append(
                 '<tr class="deleted">'
-                f'<td class="lineno">{int(entry["old_lineno"])}</td>'
+                f'<td class="lineno">{old_ln}</td>'
                 '<td class="marker">-</td>'
-                f'<td class="code">{escape(str(entry["text"]))}</td>'
+                f'<td class="code">{escape(text)}</td>'
                 '</tr>'
             )
-            deleted_index += 1
+            old_ln += 1
+        deleted_inserted = True
+
+    if deletion_anchor < int(hunk["start"]):
+        append_deleted_rows()
 
     for idx, (lineno, text) in enumerate(lines):
-        append_deleted_rows_before(lineno)
+        if not deleted_inserted and lineno > deletion_anchor:
+            append_deleted_rows()
 
         escaped = escape(stripped_lines[idx])
         rows.append(
@@ -1066,7 +1028,8 @@ def build_deleted_context_html(
             '</tr>'
         )
 
-    append_deleted_rows_before(10 ** 12)
+    if not deleted_inserted:
+        append_deleted_rows()
 
     diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
     background_mode = str(render_config.get("background_mode", BACKGROUND_MODE))

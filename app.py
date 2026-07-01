@@ -828,21 +828,35 @@ def _line_replacements_for_diff_lines(
 
     def flush_block() -> None:
         nonlocal deleted_block, added_block
-        unused_deleted = deleted_block[:]
         allow_html_tag_pairing = block_allows_html_tag_pairing()
-        for new_lineno, new_text in added_block:
-            best_index = -1
-            best_score = 0.0
-            for idx, (_, old_text) in enumerate(unused_deleted):
+        candidates: list[tuple[float, int, int, int, int, str]] = []
+        for added_idx, (new_lineno, new_text) in enumerate(added_block):
+            for deleted_idx, (old_lineno, old_text) in enumerate(deleted_block):
                 score = similarity(old_text, new_text)
                 if allow_html_tag_pairing:
                     score = max(score, html_tag_shape_similarity(old_text, new_text))
-                if score > best_score:
-                    best_score = score
-                    best_index = idx
-            if best_index >= 0 and best_score >= INLINE_DIFF_MIN_SIMILARITY:
-                old_lineno, old_text = unused_deleted.pop(best_index)
-                replacements[new_lineno] = (old_lineno, old_text)
+                if score >= INLINE_DIFF_MIN_SIMILARITY:
+                    candidates.append((
+                        score,
+                        abs(added_idx - deleted_idx),
+                        added_idx,
+                        deleted_idx,
+                        old_lineno,
+                        old_text,
+                    ))
+
+        matched_added: set[int] = set()
+        matched_deleted: set[int] = set()
+        for score, _, added_idx, deleted_idx, old_lineno, old_text in sorted(
+            candidates,
+            key=lambda item: (-item[0], item[1], item[2], item[3]),
+        ):
+            if added_idx in matched_added or deleted_idx in matched_deleted:
+                continue
+            new_lineno, _ = added_block[added_idx]
+            replacements[new_lineno] = (old_lineno, old_text)
+            matched_added.add(added_idx)
+            matched_deleted.add(deleted_idx)
         deleted_block = []
         added_block = []
 

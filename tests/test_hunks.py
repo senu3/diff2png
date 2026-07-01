@@ -885,6 +885,53 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn('class="inline-added"', html[:first_row_end])
         self.assertNotIn('class="deleted"', html)
 
+    def test_normal_view_pairs_best_added_line_after_nearby_insertion(self):
+        hunk = {
+            "filepath": "sample.js",
+            "start": 10,
+            "end": 11,
+            "default_start": 10,
+            "default_end": 11,
+            "old_start": 10,
+            "changed_lines": [10, 11],
+            "diff_lines": [
+                "-const userName = profile.name",
+                "+const inserted = config.value",
+                "+const userName = profile.name.trim()",
+            ],
+            "added_count": 2,
+            "deleted_count": 1,
+            "changed_count": 3,
+        }
+        source_lines = [
+            *[f"line {i}" for i in range(1, 10)],
+            "const inserted = config.value",
+            "const userName = profile.name.trim()",
+        ]
+
+        replacements = diff2png._line_replacements_by_new_lineno(hunk)
+
+        self.assertNotIn(10, replacements)
+        self.assertIn(11, replacements)
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        inserted_row_start = html.index("const inserted = config.value")
+        inserted_row_end = html.index("</tr>", inserted_row_start)
+        inserted_row = html[html.rfind("<tr", 0, inserted_row_start):inserted_row_end]
+        self.assertNotIn("inline-added", inserted_row)
+        self.assertNotIn("inline-deleted", inserted_row)
+        self.assertIn('const userName = profile.name<span class="inline-added">.trim()</span>', html)
+
     def test_normal_preview_inline_matching_uses_real_git_diff(self):
         if shutil.which("git") is None:
             self.skipTest("git is not available")

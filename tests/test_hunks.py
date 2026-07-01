@@ -43,6 +43,56 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"output_dir": selected})
         picker.assert_called_once()
 
+    def test_config_accepts_inline_diff_default_mode(self):
+        original = diff2png.INLINE_DIFF_DEFAULT_MODE
+        try:
+            client = diff2png.app.test_client()
+            response = client.post("/api/config", json={"inline_diff_default_mode": "new"})
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+            get_response = client.get("/api/config")
+            self.assertEqual(get_response.status_code, 200, get_response.get_data(as_text=True))
+            self.assertEqual(get_response.get_json()["inline_diff_default_mode"], "new")
+
+            invalid_response = client.post("/api/config", json={"inline_diff_default_mode": "invalid"})
+            self.assertEqual(invalid_response.status_code, 400)
+        finally:
+            diff2png.INLINE_DIFF_DEFAULT_MODE = original
+
+    def test_finalize_hunks_uses_inline_diff_default_mode(self):
+        source_lines = [f"line {i}" for i in range(1, 11)]
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            hunks = diff2png.finalize_hunks(
+                [_raw_hunk(3)],
+                repo_path=".",
+                content_source={"type": "worktree"},
+                config={
+                    "diff_mode": "file",
+                    "context_lines": 0,
+                    "merge_threshold": 0,
+                    "inline_diff_default_mode": "new",
+                },
+            )
+
+        self.assertEqual(hunks[0]["inline_diff_mode"], "new")
+        self.assertTrue(hunks[0]["inline_diff_enabled"])
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            off_hunks = diff2png.finalize_hunks(
+                [_raw_hunk(3)],
+                repo_path=".",
+                content_source={"type": "worktree"},
+                config={
+                    "diff_mode": "file",
+                    "context_lines": 0,
+                    "merge_threshold": 0,
+                    "inline_diff_default_mode": "off",
+                },
+            )
+
+        self.assertEqual(off_hunks[0]["inline_diff_mode"], "off")
+        self.assertFalse(off_hunks[0]["inline_diff_enabled"])
+
     def test_merge_threshold_counts_unchanged_lines_between_hunks(self):
         source_lines = [f"line {i}" for i in range(1, 101)]
         with patch.object(diff2png, "read_source_lines", return_value=source_lines):

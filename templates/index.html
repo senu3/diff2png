@@ -1499,6 +1499,21 @@
             </select>
           </div>
         </div>
+
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>行内差分の初期値</span>
+            <code>inline_diff_default_mode</code>
+          </div>
+          <div class="setting-desc">解析時に各hunkへ適用する行内差分モード。個別hunkの切替はこの値を上書きします。</div>
+          <div class="setting-row">
+            <select id="cfg-inline-default">
+              <option value="full">行内 両方</option>
+              <option value="new">行内 新のみ</option>
+              <option value="off">行内 OFF</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <div class="setting-group">
@@ -1985,6 +2000,9 @@
       if (prefs.diff_mode === 'file' || prefs.diff_mode === 'patch') {
         document.getElementById('sourceDiffMode').value = prefs.diff_mode;
       }
+      if (prefs.inline_diff_default_mode === 'full' || prefs.inline_diff_default_mode === 'new' || prefs.inline_diff_default_mode === 'off') {
+        document.getElementById('cfg-inline-default').value = prefs.inline_diff_default_mode;
+      }
 
       if (Number.isFinite(Number(prefs.context_lines))) {
         setSlider('cfg-context', 'cfg-context-val', Number(prefs.context_lines));
@@ -2047,6 +2065,7 @@
         html_width: parseInt(document.getElementById('cfg-width').value, 10),
         output_dir: document.getElementById('cfg-outdir').value.trim(),
         background_mode: document.getElementById('cfg-background').value,
+        inline_diff_default_mode: document.getElementById('cfg-inline-default').value,
       };
     }
 
@@ -2058,6 +2077,7 @@
         html_width: Number(payload.html_width),
         output_dir: String(payload.output_dir || ''),
         background_mode: payload.background_mode,
+        inline_diff_default_mode: payload.inline_diff_default_mode || 'full',
       };
     }
 
@@ -3303,7 +3323,7 @@
     }
 
     // ---- 設定ドロワー ----
-    const DEFAULTS = { diffMode: 'file', context: 5, merge: 8, width: 960, outdir: 'diff_screenshots', background: 'normal' };
+    const DEFAULTS = { diffMode: 'file', inlineDiffDefault: 'full', context: 5, merge: 8, width: 960, outdir: 'diff_screenshots', background: 'normal' };
 
     function toggleDrawer() {
       const isOpen = document.getElementById('drawer').classList.contains('open');
@@ -3324,6 +3344,7 @@
 
     function resetConfig() {
       document.getElementById('sourceDiffMode').value = DEFAULTS.diffMode;
+      document.getElementById('cfg-inline-default').value = DEFAULTS.inlineDiffDefault;
       setSlider('cfg-context', 'cfg-context-val', DEFAULTS.context);
       setSlider('cfg-merge', 'cfg-merge-val', DEFAULTS.merge);
       setSlider('cfg-width', 'cfg-width-val', DEFAULTS.width);
@@ -3361,7 +3382,8 @@
         const needsFullAnalyze = changedKeys.includes('diff_mode');
         const needsHunkReconfigure =
           changedKeys.includes('context_lines') ||
-          changedKeys.includes('merge_threshold');
+          changedKeys.includes('merge_threshold') ||
+          changedKeys.includes('inline_diff_default_mode');
         const needsSessionConfigUpdate =
           needsHunkReconfigure ||
           changedKeys.includes('html_width') ||
@@ -3400,6 +3422,7 @@
         setSlider('cfg-width', 'cfg-width-val', cfg.html_width);
         document.getElementById('cfg-outdir').value = cfg.output_dir;
         document.getElementById('cfg-background').value = cfg.background_mode || (cfg.transparent_background ? 'transparent_no_footer' : 'normal');
+        document.getElementById('cfg-inline-default').value = cfg.inline_diff_default_mode || 'full';
 
         const prefs = loadUiPrefs();
         applyUiPrefsToControls(prefs);

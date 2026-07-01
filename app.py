@@ -30,6 +30,7 @@ HTML_WIDTH = 960
 DIFF_MODE = "file"
 # 背景モード: 'normal' | 'no_bg_footer' | 'transparent_no_footer'
 BACKGROUND_MODE = 'normal'
+INLINE_DIFF_DEFAULT_MODE = "full"
 
 app = Flask(__name__)
 
@@ -243,6 +244,13 @@ def hunk_inline_diff_mode(hunk: dict) -> str:
     return "full" if bool(hunk.get("inline_diff_enabled", True)) else "off"
 
 
+def normalize_inline_diff_mode(value: str | None, default: str = "full") -> str:
+    mode = str(value or default).strip().lower()
+    if mode not in INLINE_DIFF_MODES:
+        raise ValueError("inline_diff_default_mode は full, new, off のいずれかを指定してください")
+    return mode
+
+
 def make_hunk_summary(hunk: dict) -> dict:
     start = int(hunk.get("start", 1))
     end = int(hunk.get("end", start))
@@ -274,6 +282,7 @@ def current_config_snapshot() -> dict:
         "output_dir": OUTPUT_DIR_NAME,
         "diff_mode": DIFF_MODE,
         "background_mode": BACKGROUND_MODE,
+        "inline_diff_default_mode": INLINE_DIFF_DEFAULT_MODE,
     }
 
 
@@ -305,8 +314,12 @@ def finalize_hunks(raw_hunks: list[dict], repo_path: str, content_source: dict, 
     for h in hunks:
         h["default_start"] = int(h.get("start", 1))
         h["default_end"] = int(h.get("end", h.get("start", 1)))
-        h["inline_diff_enabled"] = True
-        h["inline_diff_mode"] = "full"
+        inline_diff_mode = normalize_inline_diff_mode(
+            str(config.get("inline_diff_default_mode", INLINE_DIFF_DEFAULT_MODE)),
+            INLINE_DIFF_DEFAULT_MODE,
+        )
+        h["inline_diff_enabled"] = inline_diff_mode != "off"
+        h["inline_diff_mode"] = inline_diff_mode
     return hunks
 
 
@@ -1196,7 +1209,7 @@ def browse_repo():
 
 @app.route("/api/config", methods=["GET", "POST"])
 def config():
-    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME, DIFF_MODE, BACKGROUND_MODE
+    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME, DIFF_MODE, BACKGROUND_MODE, INLINE_DIFF_DEFAULT_MODE
     if request.method == "GET":
         return jsonify({
             "context_lines": CONTEXT_LINES,
@@ -1205,6 +1218,7 @@ def config():
             "output_dir": OUTPUT_DIR_NAME,
             "diff_mode": DIFF_MODE,
             "background_mode": BACKGROUND_MODE,
+            "inline_diff_default_mode": INLINE_DIFF_DEFAULT_MODE,
         })
     data = request.get_json(silent=True) or {}
     try:
@@ -1221,6 +1235,8 @@ def config():
             if mode not in ("file", "patch"):
                 raise ValueError("diff_mode は file または patch を指定してください")
             DIFF_MODE = mode
+        if "inline_diff_default_mode" in data:
+            INLINE_DIFF_DEFAULT_MODE = normalize_inline_diff_mode(str(data["inline_diff_default_mode"]))
         # New setting: background_mode
         if "background_mode" in data:
             bm = str(data["background_mode"]).strip()

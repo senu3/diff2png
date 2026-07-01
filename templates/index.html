@@ -1321,6 +1321,7 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
+
       *,
       *::before,
       *::after {
@@ -1337,7 +1338,8 @@
   <svg class="icon-sprite" aria-hidden="true">
     <symbol id="icon-settings" viewBox="0 0 24 24">
       <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
-      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6V20a2 2 0 0 1-4 0v-.08a1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1H4a2 2 0 0 1 0-4h.08a1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6V4a2 2 0 0 1 4 0v.08a1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.2.34.4.66.6 1H20a2 2 0 0 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z" />
+      <path
+        d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6V20a2 2 0 0 1-4 0v-.08a1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1H4a2 2 0 0 1 0-4h.08a1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6V4a2 2 0 0 1 4 0v.08a1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.2.34.4.66.6 1H20a2 2 0 0 1 0 4h-.08a1.7 1.7 0 0 0-.52 1Z" />
     </symbol>
     <symbol id="icon-x" viewBox="0 0 24 24">
       <path d="M18 6 6 18" />
@@ -1445,7 +1447,9 @@
     <span class="spacer"></span>
     <span class="status" id="statusBar">待機中</span>
     <button class="btn btn-ghost icon-btn" id="gearBtn" onclick="toggleDrawer()" title="表示設定" aria-label="表示設定">
-      <svg class="icon" aria-hidden="true"><use href="#icon-settings"></use></svg>
+      <svg class="icon" aria-hidden="true">
+        <use href="#icon-settings"></use>
+      </svg>
     </button>
   </header>
 
@@ -1453,9 +1457,13 @@
   <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
   <div class="drawer" id="drawer">
     <div class="drawer-header">
-      <h2><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-settings"></use></svg>表示設定</h2>
+      <h2><svg class="icon icon-sm" aria-hidden="true">
+          <use href="#icon-settings"></use>
+        </svg>表示設定</h2>
       <button class="drawer-close" onclick="closeDrawer()" title="閉じる" aria-label="閉じる">
-        <svg class="icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        <svg class="icon" aria-hidden="true">
+          <use href="#icon-x"></use>
+        </svg>
       </button>
     </div>
     <div class="drawer-body">
@@ -1550,42 +1558,60 @@
   <aside>
     <div class="repo-section">
       <div class="panel-title">
-        <span><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-folder-open"></use></svg>Source</span>
+        <span><svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-folder-open"></use>
+          </svg>Source</span>
       </div>
       <label for="repoPath">リポジトリ</label>
       <div class="repo-row">
         <input type="text" id="repoPath" placeholder="/path/to/your/repo" />
         <button class="btn btn-primary" id="analyzeBtn" onclick="onAnalyzeButtonClick()" title="参照" aria-label="参照">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-folder-open"></use></svg>
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-folder-open"></use>
+          </svg>
           <span>参照</span>
         </button>
       </div>
       <div class="source-summary">
-        <span class="source-summary-text" id="sourceSummary">変更があったファイル (HEAD差分)</span>
-        <button class="btn btn-ghost icon-btn" id="sourceDisplayBtn" onclick="openSourceModal()" disabled title="差分条件" aria-label="差分条件">
-          <svg class="icon" aria-hidden="true"><use href="#icon-git-branch"></use></svg>
+        <span class="source-summary-text" id="sourceSummary">取得元: 作業ツリーの差分</span>
+        <button class="btn btn-ghost icon-btn" id="sourceDisplayBtn" onclick="openSourceModal()" disabled title="差分の取得元"
+          aria-label="差分の取得元">
+          <svg class="icon" aria-hidden="true">
+            <use href="#icon-git-branch"></use>
+          </svg>
         </button>
       </div>
     </div>
 
     <div class="hunk-header">
-      <span><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-list-check"></use></svg>Hunks <span id="hunkCount"></span></span>
+      <span><svg class="icon icon-sm" aria-hidden="true">
+          <use href="#icon-list-check"></use>
+        </svg>Hunks <span id="hunkCount"></span></span>
       <div class="select-all-row">
-        <button class="btn btn-ghost icon-btn-sm" id="fileFilterBtn" onclick="openFileFilterModal()" title="ファイルフィルタ" aria-label="ファイルフィルタ">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-filter"></use></svg>
+        <button class="btn btn-ghost icon-btn-sm" id="fileFilterBtn" onclick="openFileFilterModal()" title="ファイルフィルタ"
+          aria-label="ファイルフィルタ">
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-filter"></use>
+          </svg>
         </button>
         <button class="btn btn-ghost icon-btn-sm" onclick="selectAll(true)" title="全選択" aria-label="全選択">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-check-square"></use></svg>
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-check-square"></use>
+          </svg>
         </button>
         <button class="btn btn-ghost icon-btn-sm" onclick="selectAll(false)" title="全解除" aria-label="全解除">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-square"></use></svg>
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-square"></use>
+          </svg>
         </button>
       </div>
     </div>
 
     <div class="hunk-list" id="hunkList">
       <div class="empty-state" style="height:200px">
-        <div class="empty-icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-folder-open"></use></svg></div>
+        <div class="empty-icon"><svg class="icon icon-lg" aria-hidden="true">
+            <use href="#icon-folder-open"></use>
+          </svg></div>
         <div class="empty-label">リポジトリを指定して解析してください</div>
       </div>
     </div>
@@ -1593,11 +1619,16 @@
     <div class="export-section">
       <div class="export-info" id="exportInfo">選択: 0 件</div>
       <div class="export-buttons">
-        <button class="btn btn-ghost icon-btn" id="outputFolderBtn" onclick="openOutputModal()" title="保存先" aria-label="保存先">
-          <svg class="icon" aria-hidden="true"><use href="#icon-folder-open"></use></svg>
+        <button class="btn btn-ghost icon-btn" id="outputFolderBtn" onclick="openOutputModal()" title="保存先"
+          aria-label="保存先">
+          <svg class="icon" aria-hidden="true">
+            <use href="#icon-folder-open"></use>
+          </svg>
         </button>
         <button class="btn btn-success" id="exportSelectedBtn" onclick="exportSelected()" disabled>
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-upload"></use></svg>
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-upload"></use>
+          </svg>
           <span>選択を出力</span>
         </button>
       </div>
@@ -1607,32 +1638,38 @@
   <div class="source-modal-overlay" id="sourceOverlay" onclick="closeSourceModal()"></div>
   <div class="source-modal" id="sourceModal">
     <div class="source-modal-header">
-      <div class="source-modal-title">差分条件</div>
+      <div class="source-modal-title">差分の取得元</div>
       <button class="drawer-close" onclick="closeSourceModal()" title="閉じる" aria-label="閉じる">
-        <svg class="icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        <svg class="icon" aria-hidden="true">
+          <use href="#icon-x"></use>
+        </svg>
       </button>
     </div>
     <div class="source-modal-body">
       <div class="source-control single">
-        <div class="source-control-label">差分ソース</div>
+        <div class="source-control-label">取得元</div>
         <select class="source-native-select" id="diffSourceMode" onchange="onDiffSourceModeChange()">
-          <option value="worktree">変更があったファイル (HEAD差分)</option>
-          <option value="staged">ステージング済み</option>
-          <option value="commit">単一コミット</option>
-          <option value="range">コミット比較</option>
+          <option value="worktree">作業ツリー</option>
+          <option value="staged">ステージ済み</option>
+          <option value="commit">1コミット</option>
+          <option value="range">2点比較</option>
         </select>
-        <div class="source-segmented" role="tablist" aria-label="差分ソース">
-          <button type="button" class="source-segment" data-source-mode="worktree" onclick="setSourceMode('worktree')" role="tab">作業ツリー</button>
-          <button type="button" class="source-segment" data-source-mode="staged" onclick="setSourceMode('staged')" role="tab">ステージ済み</button>
-          <button type="button" class="source-segment" data-source-mode="commit" onclick="setSourceMode('commit')" role="tab">単一コミット</button>
-          <button type="button" class="source-segment" data-source-mode="range" onclick="setSourceMode('range')" role="tab">コミット比較</button>
+        <div class="source-segmented" role="tablist" aria-label="取得元">
+          <button type="button" class="source-segment" data-source-mode="worktree" onclick="setSourceMode('worktree')"
+            role="tab">作業ツリー</button>
+          <button type="button" class="source-segment" data-source-mode="staged" onclick="setSourceMode('staged')"
+            role="tab">ステージ済み</button>
+          <button type="button" class="source-segment" data-source-mode="commit" onclick="setSourceMode('commit')"
+            role="tab">1コミット</button>
+          <button type="button" class="source-segment" data-source-mode="range" onclick="setSourceMode('range')"
+            role="tab">2点比較</button>
         </div>
       </div>
       <div class="source-controls" id="sourceControls">
         <div class="source-commit-tools hidden" id="sourceCommitTools">
           <div class="source-control single">
-            <div class="source-control-label">コミット検索</div>
-            <input type="text" id="sourceCommitSearch" placeholder="hash / メッセージで検索" oninput="renderCommitPickers()">
+            <div class="source-control-label">コミットを検索</div>
+            <input type="text" id="sourceCommitSearch" placeholder="hash またはメッセージ" oninput="renderCommitPickers()">
           </div>
         </div>
         <select class="source-native-select" id="sourceTarget" onchange="updateSourceSummary()"></select>
@@ -1640,8 +1677,8 @@
         <select class="source-native-select" id="sourceTargetRange" onchange="syncRangeTarget()"></select>
         <div class="source-commit-grid hidden" id="sourceCommitGrid">
           <div class="source-commit-panel hidden" id="sourceTargetPanel">
-            <div class="source-control-label">対象コミット</div>
-            <div class="source-commit-list" id="sourceTargetList" role="listbox" aria-label="対象コミット"></div>
+            <div class="source-control-label">変更を見るコミット</div>
+            <div class="source-commit-list" id="sourceTargetList" role="listbox" aria-label="変更を見るコミット"></div>
           </div>
           <div class="source-commit-panel hidden" id="sourceBasePanel">
             <div class="source-control-label">比較元</div>
@@ -1654,10 +1691,10 @@
         </div>
       </div>
       <div class="source-commit-status" id="sourceCommitStatus"> </div>
-      <div class="source-hint" id="sourceHint">作業ツリーの未コミット差分を解析します。</div>
+      <div class="source-hint" id="sourceHint">未コミットの作業ツリー差分を取得します。</div>
     </div>
     <div class="source-modal-actions">
-      <button class="btn btn-primary" onclick="analyzeFromSourceModal()">この条件で解析</button>
+      <button class="btn btn-primary" onclick="analyzeFromSourceModal()">この取得元で解析</button>
       <button class="btn btn-ghost" onclick="closeSourceModal()">閉じる</button>
     </div>
   </div>
@@ -1667,23 +1704,30 @@
     <div class="source-modal-header">
       <div class="source-modal-title">ファイルフィルタ</div>
       <button class="drawer-close" onclick="closeFileFilterModal()" title="閉じる" aria-label="閉じる">
-        <svg class="icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        <svg class="icon" aria-hidden="true">
+          <use href="#icon-x"></use>
+        </svg>
       </button>
     </div>
     <div class="source-modal-body">
       <div class="source-control single">
         <div class="source-control-label">検索</div>
-        <input type="text" id="fileFilterSearch" placeholder="ファイル名で検索" oninput="renderFileFilterList()" onkeydown="onFileFilterSearchKeydown(event)">
+        <input type="text" id="fileFilterSearch" placeholder="ファイル名で検索" oninput="renderFileFilterList()"
+          onkeydown="onFileFilterSearchKeydown(event)">
       </div>
       <div class="file-filter-status" id="fileFilterStatus"> </div>
       <div class="file-filter-scope">
         <span class="file-filter-scope-label" id="fileFilterScopeLabel">フィルタなし</span>
-        <button class="btn btn-ghost file-filter-clear" id="fileFilterClearBtn" onclick="clearFileFilterDraft()" disabled>
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-x"></use></svg>
+        <button class="btn btn-ghost file-filter-clear" id="fileFilterClearBtn" onclick="clearFileFilterDraft()"
+          disabled>
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-x"></use>
+          </svg>
           <span>クリア</span>
         </button>
       </div>
-      <div class="file-filter-list" id="fileFilterList" role="listbox" aria-label="ファイルフィルタ" aria-multiselectable="true"></div>
+      <div class="file-filter-list" id="fileFilterList" role="listbox" aria-label="ファイルフィルタ"
+        aria-multiselectable="true"></div>
     </div>
     <div class="source-modal-actions">
       <button class="btn btn-ghost" onclick="closeFileFilterModal()">閉じる</button>
@@ -1696,7 +1740,9 @@
     <div class="source-modal-header">
       <div class="source-modal-title">保存先フォルダ</div>
       <button class="drawer-close" onclick="closeOutputModal()" title="閉じる" aria-label="閉じる">
-        <svg class="icon" aria-hidden="true"><use href="#icon-x"></use></svg>
+        <svg class="icon" aria-hidden="true">
+          <use href="#icon-x"></use>
+        </svg>
       </button>
     </div>
     <div class="source-modal-body">
@@ -1711,11 +1757,15 @@
     </div>
     <div class="source-modal-actions">
       <button class="btn btn-ghost" id="openOutputBtn" onclick="openOutputDir()">
-        <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-external-link"></use></svg>
+        <svg class="icon icon-sm" aria-hidden="true">
+          <use href="#icon-external-link"></use>
+        </svg>
         <span>開く</span>
       </button>
       <button class="btn btn-danger" id="clearOutputBtn" onclick="clearOutputDir()">
-        <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-trash"></use></svg>
+        <svg class="icon icon-sm" aria-hidden="true">
+          <use href="#icon-trash"></use>
+        </svg>
         <span>全削除</span>
       </button>
     </div>
@@ -1723,23 +1773,33 @@
 
   <main>
     <div class="preview-toolbar">
-      <span class="preview-label"><svg class="icon icon-sm" aria-hidden="true"><use href="#icon-search"></use></svg>Preview</span>
+      <span class="preview-label"><svg class="icon icon-sm" aria-hidden="true">
+          <use href="#icon-search"></use>
+        </svg>Preview</span>
       <span class="preview-file" id="previewFile">—</span>
       <span class="preview-range" id="previewRange" title="現在の行範囲">—</span>
       <div class="range-btns">
         <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
           title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-undo"></use></svg>
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-undo"></use>
+          </svg>
         </button>
       </div>
       <span class="range-disabled-note" id="rangeDisabledNote">パッチ表示では範囲調整なし</span>
       <span class="nav-count" id="previewNavCount">— / —</span>
       <div class="nav-btns">
-        <button class="btn btn-ghost icon-btn-sm" id="prevBtn" onclick="navigate(-1)" disabled title="前へ" aria-label="前へ">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-chevron-left"></use></svg>
+        <button class="btn btn-ghost icon-btn-sm" id="prevBtn" onclick="navigate(-1)" disabled title="前へ"
+          aria-label="前へ">
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-chevron-left"></use>
+          </svg>
         </button>
-        <button class="btn btn-ghost icon-btn-sm" id="nextBtn" onclick="navigate(1)" disabled title="次へ" aria-label="次へ">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-chevron-right"></use></svg>
+        <button class="btn btn-ghost icon-btn-sm" id="nextBtn" onclick="navigate(1)" disabled title="次へ"
+          aria-label="次へ">
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-chevron-right"></use>
+          </svg>
         </button>
       </div>
     </div>
@@ -1749,18 +1809,24 @@
         <span class="range-overlay-label">上端</span>
         <button class="btn btn-ghost" id="rangeExpandUpBtn" onclick="adjustActiveRange('expand_up')" disabled
           title="上に広げる" aria-label="上に広げる">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-up-from-line"></use></svg>
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-arrow-up-from-line"></use>
+          </svg>
           <span>広げる</span>
         </button>
         <button class="btn btn-ghost" id="rangeShrinkUpBtn" onclick="adjustActiveRange('shrink_up')" disabled
           title="上を狭める" aria-label="上を狭める">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-down-to-line"></use></svg>
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-arrow-down-to-line"></use>
+          </svg>
           <span>狭める</span>
         </button>
       </div>
       <div class="preview-content" id="previewContent">
         <div class="empty-state">
-          <div class="empty-icon"><svg class="icon icon-lg" aria-hidden="true"><use href="#icon-search"></use></svg></div>
+          <div class="empty-icon"><svg class="icon icon-lg" aria-hidden="true">
+              <use href="#icon-search"></use>
+            </svg></div>
           <div class="empty-label">hunkを選択すると右側にプレビューを表示します</div>
         </div>
       </div>
@@ -1768,12 +1834,16 @@
         <span class="range-overlay-label">下端</span>
         <button class="btn btn-ghost" id="rangeExpandDownBtn" onclick="adjustActiveRange('expand_down')" disabled
           title="下に広げる" aria-label="下に広げる">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-down-from-line"></use></svg>
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-arrow-down-from-line"></use>
+          </svg>
           <span>広げる</span>
         </button>
         <button class="btn btn-ghost" id="rangeShrinkDownBtn" onclick="adjustActiveRange('shrink_down')" disabled
           title="下を狭める" aria-label="下を狭める">
-          <svg class="icon icon-sm" aria-hidden="true"><use href="#icon-arrow-up-to-line"></use></svg>
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-arrow-up-to-line"></use>
+          </svg>
           <span>狭める</span>
         </button>
       </div>
@@ -1991,24 +2061,24 @@
       const summaryEl = document.getElementById('sourceSummary');
 
       if (mode === 'worktree') {
-        summaryEl.textContent = '変更があったファイル (HEAD差分)';
+        summaryEl.textContent = '取得元: 作業ツリーの差分';
         return;
       }
 
       if (mode === 'staged') {
-        summaryEl.textContent = 'ステージング済み';
+        summaryEl.textContent = '取得元: ステージ済みの差分';
         return;
       }
 
       if (mode === 'commit') {
         const t = getCommitLabel(targetEl.value);
-        summaryEl.textContent = `単一コミット: ${t}`;
+        summaryEl.textContent = `1コミット: ${t}`;
         return;
       }
 
       const b = getCommitLabel(baseEl.value);
       const t = getCommitLabel(rangeTargetEl.value);
-      summaryEl.textContent = `コミット比較: ${b} .. ${t}`;
+      summaryEl.textContent = `2点比較: ${b} -> ${t}`;
     }
 
     function onSourceDiffModeChange() {
@@ -2083,17 +2153,17 @@
       targetRangePanel.classList.toggle('hidden', mode !== 'range');
 
       if (mode === 'commit') {
-        sourceHint.textContent = '選択コミット 1 件の変更を解析します。';
+        sourceHint.textContent = '選んだコミット単体の差分を取得します。';
         loadCommits(false);
       } else if (mode === 'range') {
-        sourceHint.textContent = '比較元から比較先までの差分を解析します。';
+        sourceHint.textContent = '比較元から比較先までの差分を取得します。';
         loadCommits(false);
       } else if (mode === 'worktree') {
-        setSourceCommitStatus('作業ツリーの未コミット差分を解析します');
-        sourceHint.textContent = '作業ツリーの未コミット差分を解析します。';
+        setSourceCommitStatus('取得元: 作業ツリー');
+        sourceHint.textContent = '未コミットの作業ツリー差分を取得します。';
       } else if (mode === 'staged') {
-        setSourceCommitStatus('ステージング済みの差分を解析します');
-        sourceHint.textContent = 'git index にステージ済みの差分を解析します。';
+        setSourceCommitStatus('取得元: ステージ済み');
+        sourceHint.textContent = 'git index にステージ済みの差分だけを取得します。';
       }
       renderCommitPickers();
       updateSourceSummary();
@@ -2255,11 +2325,11 @@
     async function loadCommits(showErrorToast = true) {
       const repoPath = document.getElementById('repoPath').value.trim();
       if (!repoPath) {
-        setSourceCommitStatus('先にリポジトリパスを指定してください');
+        setSourceCommitStatus('先にリポジトリを選択してください');
         return false;
       }
 
-      setSourceCommitStatus('コミット一覧を取得中...');
+      setSourceCommitStatus('コミットを読み込み中...');
       try {
         const res = await fetch('/api/commits', {
           method: 'POST',
@@ -2268,17 +2338,17 @@
         });
         const data = await res.json();
         if (!res.ok) {
-          if (showErrorToast) showToast(data.error || 'コミット取得に失敗しました', 'error');
-          setSourceCommitStatus('コミット取得に失敗しました');
+          if (showErrorToast) showToast(data.error || 'コミットの読み込みに失敗しました', 'error');
+          setSourceCommitStatus('コミットの読み込みに失敗しました');
           return false;
         }
         const items = data.commits || [];
         renderCommitOptions(items);
-        setSourceCommitStatus(`${items.length} 件のコミットを読み込みました`);
+        setSourceCommitStatus(`${items.length} 件のコミットから選択できます`);
         return items.length > 0;
       } catch (e) {
-        if (showErrorToast) showToast('コミット取得に失敗しました: ' + e.message, 'error');
-        setSourceCommitStatus('コミット取得に失敗しました');
+        if (showErrorToast) showToast('コミットの読み込みに失敗しました: ' + e.message, 'error');
+        setSourceCommitStatus('コミットの読み込みに失敗しました');
         return false;
       }
     }

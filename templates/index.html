@@ -1103,6 +1103,21 @@
       background: var(--surface2);
     }
 
+    .inline-diff-toggle {
+      height: 28px;
+      padding: 0 9px;
+      font-size: 11px;
+      line-height: 1;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .inline-diff-toggle.active {
+      border-color: rgba(62, 207, 110, 0.55);
+      color: var(--green);
+      background: rgba(62, 207, 110, 0.08);
+    }
+
     .preview-toolbar .nav-btns {
       display: flex;
       gap: 4px;
@@ -1778,6 +1793,8 @@
         </svg>Preview</span>
       <span class="preview-file" id="previewFile">—</span>
       <span class="preview-range" id="previewRange" title="現在の行範囲">—</span>
+      <button class="btn btn-ghost inline-diff-toggle" id="inlineDiffToggleBtn" onclick="toggleActiveInlineDiff()"
+        disabled title="このhunkの行内差分を切り替え" aria-label="このhunkの行内差分を切り替え">行内 ON</button>
       <div class="range-btns">
         <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
           title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
@@ -1863,6 +1880,7 @@
       fileFilter: [],
       commitItems: [],
       rangeAdjusting: false,
+      inlineDiffUpdating: false,
     };
     let draftFileFilter = [];
 
@@ -2840,6 +2858,24 @@
       return true;
     }
 
+    function updateInlineDiffToggle(index) {
+      const btn = document.getElementById('inlineDiffToggleBtn');
+      if (!btn) return;
+
+      const h = state.hunks[index];
+      const isPatch = currentDiffMode === 'patch';
+      const enabled = h ? h.inline_diff_enabled !== false : true;
+      btn.disabled = !h || isPatch;
+      btn.classList.toggle('active', Boolean(h) && enabled && !isPatch);
+      btn.textContent = enabled ? '行内 ON' : '行内 OFF';
+      const stateText = enabled ? 'ON' : 'OFF';
+      const title = isPatch
+        ? 'パッチ表示では行内差分は使用しません'
+        : `このhunkの行内差分: ${stateText}`;
+      btn.title = title;
+      btn.setAttribute('aria-label', title);
+    }
+
     function updateRangeButtons(index) {
       const adjustable = isRangeAdjustable(index);
       const h = state.hunks[index] || {};
@@ -2854,6 +2890,7 @@
       document.getElementById('rangeShrinkDownBtn').disabled = !adjustable;
       document.getElementById('rangeExpandDownBtn').disabled = !adjustable;
       document.getElementById('rangeResetBtn').disabled = !adjustable || !h.range_adjusted;
+      updateInlineDiffToggle(index);
     }
 
     function updateHunkRangeLabel(index) {
@@ -2936,6 +2973,43 @@
       } finally {
         state.rangeAdjusting = false;
         updateRangeButtons(index);
+      }
+    }
+
+    async function toggleActiveInlineDiff() {
+      const index = state.activeIndex;
+      if (state.inlineDiffUpdating) return;
+      if (index < 0 || !state.analysisId || currentDiffMode === 'patch') return;
+
+      const h = state.hunks[index];
+      if (!h) return;
+      state.inlineDiffUpdating = true;
+      const nextEnabled = h.inline_diff_enabled === false;
+
+      try {
+        const res = await fetch(`/api/hunk-inline-diff/${index}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repo_path: state.repoPath,
+            analysis_id: state.analysisId,
+            enabled: nextEnabled,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || '行内差分の切り替えに失敗しました', 'error');
+          return;
+        }
+
+        state.hunks[index] = data.hunk;
+        updateInlineDiffToggle(index);
+        await showPreview(index, { showLoading: false, keepIframe: true, scrollIntoView: false });
+      } catch (e) {
+        showToast('行内差分の切り替えに失敗しました: ' + e.message, 'error');
+      } finally {
+        state.inlineDiffUpdating = false;
+        updateInlineDiffToggle(index);
       }
     }
 

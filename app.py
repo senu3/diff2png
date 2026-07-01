@@ -240,6 +240,7 @@ def make_hunk_summary(hunk: dict) -> dict:
     end = int(hunk.get("end", start))
     default_start = int(hunk.get("default_start", start))
     default_end = int(hunk.get("default_end", end))
+    inline_diff_enabled = bool(hunk.get("inline_diff_enabled", True))
     return {
         "filepath": hunk.get("filepath", ""),
         "start": start,
@@ -247,6 +248,7 @@ def make_hunk_summary(hunk: dict) -> dict:
         "default_start": default_start,
         "default_end": default_end,
         "range_adjusted": start != default_start or end != default_end,
+        "inline_diff_enabled": inline_diff_enabled,
         "old_start": hunk.get("old_start"),
         "changed_count": hunk.get("changed_count", len(hunk.get("changed_lines", []))),
         "added_count": hunk.get("added_count", 0),
@@ -293,6 +295,7 @@ def finalize_hunks(raw_hunks: list[dict], repo_path: str, content_source: dict, 
     for h in hunks:
         h["default_start"] = int(h.get("start", 1))
         h["default_end"] = int(h.get("end", h.get("start", 1)))
+        h["inline_diff_enabled"] = True
     return hunks
 
 
@@ -870,7 +873,8 @@ def build_code_html(
     lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source)
     # 共通インデントを除去（Codesnap風）
     raw_texts = [t for (_, t) in lines]
-    replacements = _line_replacements_by_new_lineno(hunk)
+    inline_diff_enabled = bool(hunk.get("inline_diff_enabled", True))
+    replacements = _line_replacements_by_new_lineno(hunk) if inline_diff_enabled else {}
     replacement_texts = [text for _, text in replacements.values()]
     stripped_combined, _ = _strip_common_indent_from_lines(raw_texts + replacement_texts)
     stripped_texts = stripped_combined[:len(raw_texts)]
@@ -1356,6 +1360,35 @@ def update_hunk_range(hunk_index: int):
         return jsonify({"error": str(e)}), 400
 
     return jsonify({"hunk": summary})
+
+
+@app.route("/api/hunk-inline-diff/<int:hunk_index>", methods=["POST"])
+def update_hunk_inline_diff(hunk_index: int):
+    data = request.get_json(silent=True) or {}
+    repo_path = str(data.get("repo_path", "")).strip()
+    analysis_id = str(data.get("analysis_id", "")).strip()
+    if not repo_path:
+        return jsonify({"error": "リポジトリパスが無効です"}), 400
+    if not analysis_id:
+        return jsonify({"error": "analysis_id が不正です"}), 400
+
+    try:
+        repo = resolve_repo_path(repo_path)
+        session = get_analysis_session(analysis_id, str(repo))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    hunks = session["hunks"]
+    if hunk_index < 0 or hunk_index >= len(hunks):
+        return jsonify({"error": "無効なインデックス"}), 400
+
+    enabled = data.get("enabled")
+    if not isinstance(enabled, bool):
+        return jsonify({"error": "enabled は真偽値で指定してください"}), 400
+
+    hunk = hunks[hunk_index]
+    hunk["inline_diff_enabled"] = enabled
+    return jsonify({"hunk": make_hunk_summary(hunk)})
 
 
 @app.route("/api/preview/<int:hunk_index>", methods=["POST"])

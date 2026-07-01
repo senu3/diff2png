@@ -66,6 +66,54 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual(merged[0]["end"], 19)
         self.assertEqual(len(not_merged), 2)
 
+    def test_merged_hunk_preserves_raw_diff_blocks(self):
+        source_lines = [f"line {i}" for i in range(1, 101)]
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            merged = diff2png.expand_and_merge(
+                [_raw_hunk(10), _raw_hunk(19)],
+                repo_path=".",
+                context=0,
+                merge_thresh=8,
+                content_source={"type": "worktree"},
+            )
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual([block["start"] for block in merged[0]["diff_blocks"]], [10, 19])
+
+    def test_inline_replacement_mapping_resets_for_each_raw_diff_block(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 10,
+            "end": 20,
+            "old_start": 10,
+            "changed_lines": [10, 20],
+            "diff_lines": [
+                "-alpha = make_value()",
+                "+alpha = make_value(enabled=True)",
+                "-omega = make_value()",
+                "+omega = make_value(enabled=True)",
+            ],
+            "diff_blocks": [
+                {
+                    "start": 10,
+                    "old_start": 10,
+                    "changed_lines": [10],
+                    "diff_lines": ["-alpha = make_value()", "+alpha = make_value(enabled=True)"],
+                },
+                {
+                    "start": 20,
+                    "old_start": 30,
+                    "changed_lines": [20],
+                    "diff_lines": ["-omega = make_value()", "+omega = make_value(enabled=True)"],
+                },
+            ],
+        }
+
+        replacements = diff2png._line_replacements_by_new_lineno(hunk)
+
+        self.assertEqual(replacements[10][0], 10)
+        self.assertEqual(replacements[20][0], 30)
+
     def test_adjust_hunk_range_expands_shrinks_and_resets(self):
         hunk = {
             **_raw_hunk(8, 14),

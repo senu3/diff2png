@@ -611,6 +611,12 @@ def expand_and_merge(
 
         expanded = []
         for h in fhunks:
+            diff_block = {
+                "start": int(h["start"]),
+                "old_start": int(h.get("old_start", h["start"])),
+                "changed_lines": sorted(h.get("changed_lines", [])),
+                "diff_lines": list(h.get("diff_lines", [])),
+            }
             # preserve original hunk bounds (orig_start/orig_end)
             expanded.append({
                 "filepath": filepath,
@@ -621,6 +627,7 @@ def expand_and_merge(
                 "old_start": h.get("old_start", h["start"]),
                 "changed_lines": set(h["changed_lines"]),
                 "diff_lines": list(h.get("diff_lines", [])),
+                "diff_blocks": [diff_block],
                 "added_count": int(h.get("added_count", 0)),
                 "deleted_count": int(h.get("deleted_count", 0)),
                 "diff_cmd": h.get("diff_cmd"),
@@ -638,6 +645,7 @@ def expand_and_merge(
                 prev["old_start"] = min(int(prev.get("old_start", prev["start"])), int(h.get("old_start", h["start"])))
                 prev["changed_lines"] |= h["changed_lines"]
                 prev["diff_lines"].extend(h.get("diff_lines", []))
+                prev.setdefault("diff_blocks", []).extend(h.get("diff_blocks", []))
                 prev["added_count"] = int(prev.get("added_count", 0)) + int(h.get("added_count", 0))
                 prev["deleted_count"] = int(prev.get("deleted_count", 0)) + int(h.get("deleted_count", 0))
             else:
@@ -741,18 +749,23 @@ span.inline-deleted{{background:#fecaca;color:#991b1b;border-radius:3px;padding:
     return html
 
 
-def _line_replacements_by_new_lineno(hunk: dict) -> dict[int, tuple[int | None, str]]:
+def _line_replacements_for_diff_lines(
+    old_start: int,
+    new_start: int,
+    changed_lines: list[int],
+    diff_lines: list[str],
+) -> dict[int, tuple[int | None, str]]:
     replacements: dict[int, tuple[int | None, str]] = {}
     try:
-        old_ln = int(hunk.get("old_start", hunk.get("start", 1)))
+        old_ln = int(old_start)
     except (TypeError, ValueError):
-        old_ln = int(hunk.get("start", 1))
+        old_ln = 1
     try:
-        new_ln = int(hunk.get("start", 1))
+        new_ln = int(new_start)
     except (TypeError, ValueError):
         new_ln = 1
     changed_line_numbers: list[int] = []
-    for lineno in hunk.get("changed_lines", []):
+    for lineno in changed_lines:
         try:
             changed_line_numbers.append(int(lineno))
         except (TypeError, ValueError):
@@ -785,7 +798,7 @@ def _line_replacements_by_new_lineno(hunk: dict) -> dict[int, tuple[int | None, 
         deleted_block = []
         added_block = []
 
-    for raw in hunk.get("diff_lines", []):
+    for raw in diff_lines:
         if not raw or raw.startswith("\\"):
             continue
 
@@ -810,6 +823,30 @@ def _line_replacements_by_new_lineno(hunk: dict) -> dict[int, tuple[int | None, 
             flush_block()
 
     flush_block()
+    return replacements
+
+
+def _line_replacements_by_new_lineno(hunk: dict) -> dict[int, tuple[int | None, str]]:
+    replacements: dict[int, tuple[int | None, str]] = {}
+    diff_blocks = hunk.get("diff_blocks")
+    if isinstance(diff_blocks, list) and diff_blocks:
+        for block in diff_blocks:
+            if not isinstance(block, dict):
+                continue
+            replacements.update(_line_replacements_for_diff_lines(
+                int(block.get("old_start", hunk.get("old_start", hunk.get("start", 1)))),
+                int(block.get("start", hunk.get("start", 1))),
+                list(block.get("changed_lines", [])),
+                list(block.get("diff_lines", [])),
+            ))
+    else:
+        replacements = _line_replacements_for_diff_lines(
+            int(hunk.get("old_start", hunk.get("start", 1))),
+            int(hunk.get("start", 1)),
+            list(hunk.get("changed_lines", [])),
+            list(hunk.get("diff_lines", [])),
+        )
+
     changed_set = set()
     for lineno in hunk.get("changed_lines", []):
         try:

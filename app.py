@@ -39,6 +39,7 @@ ANALYSIS_SESSIONS: dict[str, dict] = {}
 MAX_ANALYSIS_SESSIONS = 20
 GIT_TIMEOUT_SECONDS = 30
 INLINE_DIFF_MAX_CHANGED_CHARS = 40
+INLINE_DIFF_MIN_SIMILARITY = 0.5
 _OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
 _NEW_RE = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -740,10 +741,24 @@ def _line_replacements_by_new_lineno(hunk: dict) -> dict[int, tuple[int | None, 
     deleted_block: list[tuple[int, str]] = []
     added_block: list[tuple[int, str]] = []
 
+    def similarity(old_text: str, new_text: str) -> float:
+        old_tokens = _INLINE_DIFF_TOKEN_RE.findall(old_text)
+        new_tokens = _INLINE_DIFF_TOKEN_RE.findall(new_text)
+        return difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False).ratio()
+
     def flush_block() -> None:
         nonlocal deleted_block, added_block
-        if deleted_block and len(deleted_block) == len(added_block):
-            for (old_lineno, old_text), (new_lineno, _) in zip(deleted_block, added_block):
+        unused_deleted = deleted_block[:]
+        for new_lineno, new_text in added_block:
+            best_index = -1
+            best_score = 0.0
+            for idx, (_, old_text) in enumerate(unused_deleted):
+                score = similarity(old_text, new_text)
+                if score > best_score:
+                    best_score = score
+                    best_index = idx
+            if best_index >= 0 and best_score >= INLINE_DIFF_MIN_SIMILARITY:
+                old_lineno, old_text = unused_deleted.pop(best_index)
                 replacements[new_lineno] = (old_lineno, old_text)
         deleted_block = []
         added_block = []

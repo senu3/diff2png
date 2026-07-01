@@ -282,7 +282,7 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('old', html)
         self.assertIn('new', html)
 
-    def test_normal_view_skips_inline_spans_for_uneven_replacement_block(self):
+    def test_normal_view_pairs_similar_lines_in_uneven_replacement_block(self):
         hunk = {
             "filepath": "sample.js",
             "start": 3,
@@ -304,6 +304,47 @@ class HunkMergeTests(unittest.TestCase):
             "const before = true",
             "",
             "const value = buildConfig({",
+            '  mode: "strict",',
+        ]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('class="inline-deleted"', html)
+        self.assertIn('class="inline-added"', html)
+        self.assertIn("buildConfig", html)
+        self.assertIn("strict", html)
+
+    def test_normal_view_skips_inline_spans_for_dissimilar_uneven_block(self):
+        hunk = {
+            "filepath": "sample.js",
+            "start": 3,
+            "end": 4,
+            "default_start": 3,
+            "default_end": 4,
+            "old_start": 3,
+            "changed_lines": [3, 4],
+            "diff_lines": [
+                "-const value = buildConfig()",
+                "+renderDashboard()",
+                '+  mode: "strict",',
+            ],
+            "added_count": 2,
+            "deleted_count": 1,
+            "changed_count": 3,
+        }
+        source_lines = [
+            "const before = true",
+            "",
+            "renderDashboard()",
             '  mode: "strict",',
         ]
 

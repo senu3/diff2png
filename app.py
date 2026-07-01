@@ -41,6 +41,7 @@ MAX_ANALYSIS_SESSIONS = 20
 GIT_TIMEOUT_SECONDS = 30
 INLINE_DIFF_MAX_CHANGED_CHARS = 40
 INLINE_DIFF_MIN_SIMILARITY = 0.5
+INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 INLINE_DIFF_MODES = {"full", "new", "off"}
 _OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
 _NEW_RE = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
@@ -50,6 +51,7 @@ _FILENAME_UNSAFE_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 _FILENAME_REPEAT_UNDERSCORE_RE = re.compile(r"_+")
 _OUTPUT_PNG_RE = re.compile(r"^\d{8}_\d{6}_\d{3}_.+_L\d+\.png$", re.IGNORECASE)
 _INLINE_DIFF_TOKEN_RE = re.compile(r"\w+|\s+|[^\w\s]+", re.UNICODE)
+_HTML_TAG_NAME_RE = re.compile(r"(</?\s*)[A-Za-z][\w:-]*")
 _WINDOWS_RESERVED_NAMES = {
     "CON", "PRN", "AUX", "NUL",
     "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
@@ -796,14 +798,45 @@ def _line_replacements_for_diff_lines(
         char_score = difflib.SequenceMatcher(None, old_text, new_text, autojunk=False).ratio()
         return min(token_score, char_score)
 
+    def html_tag_shape(text: str) -> str:
+        return _HTML_TAG_NAME_RE.sub(r"\1#", text)
+
+    def html_tag_shape_similarity(old_text: str, new_text: str) -> float:
+        if not _HTML_TAG_NAME_RE.search(old_text) or not _HTML_TAG_NAME_RE.search(new_text):
+            return 0.0
+        return difflib.SequenceMatcher(
+            None,
+            html_tag_shape(old_text),
+            html_tag_shape(new_text),
+            autojunk=False,
+        ).ratio()
+
+    def block_allows_html_tag_pairing() -> bool:
+        if len(deleted_block) < 2 or len(added_block) < 2:
+            return False
+        old_text = "\n".join(text for _, text in deleted_block)
+        new_text = "\n".join(text for _, text in added_block)
+        if len(_HTML_TAG_NAME_RE.findall(old_text)) < 2 or len(_HTML_TAG_NAME_RE.findall(new_text)) < 2:
+            return False
+        score = difflib.SequenceMatcher(
+            None,
+            html_tag_shape(old_text),
+            html_tag_shape(new_text),
+            autojunk=False,
+        ).ratio()
+        return score >= INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY
+
     def flush_block() -> None:
         nonlocal deleted_block, added_block
         unused_deleted = deleted_block[:]
+        allow_html_tag_pairing = block_allows_html_tag_pairing()
         for new_lineno, new_text in added_block:
             best_index = -1
             best_score = 0.0
             for idx, (_, old_text) in enumerate(unused_deleted):
                 score = similarity(old_text, new_text)
+                if allow_html_tag_pairing:
+                    score = max(score, html_tag_shape_similarity(old_text, new_text))
                 if score > best_score:
                     best_score = score
                     best_index = idx

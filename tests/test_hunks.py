@@ -304,6 +304,84 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('draft', html)
         self.assertIn('published', html)
 
+    def test_normal_view_does_not_pair_single_html_tag_rename(self):
+        hunk = {
+            "filepath": "sample.html",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": ["-<table>", "+<div>"],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+        source_lines = ["<div>"]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertNotIn('class="inline-deleted"', html)
+        self.assertNotIn('class="inline-added"', html)
+
+    def test_normal_view_pairs_html_tag_renames_in_structural_block(self):
+        hunk = {
+            "filepath": "sample.html",
+            "start": 1,
+            "end": 5,
+            "default_start": 1,
+            "default_end": 5,
+            "old_start": 1,
+            "changed_lines": [1, 2, 3, 4, 5],
+            "diff_lines": [
+                "-<table>",
+                "-  <tr>",
+                "-    <td>value</td>",
+                "-  </tr>",
+                "-</table>",
+                "+<div>",
+                "+  <div>",
+                "+    <div>value</div>",
+                "+  </div>",
+                "+</div>",
+            ],
+            "added_count": 5,
+            "deleted_count": 5,
+            "changed_count": 10,
+        }
+        source_lines = [
+            "<div>",
+            "  <div>",
+            "    <div>value</div>",
+            "  </div>",
+            "</div>",
+        ]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('<span class="inline-deleted">table</span>', html)
+        self.assertIn('<span class="inline-deleted">td</span>', html)
+        self.assertGreaterEqual(html.count('class="inline-added"'), 5)
+
     def test_normal_view_skips_inline_diff_when_hunk_flag_is_off(self):
         hunk = {
             "filepath": "sample.py",
@@ -869,6 +947,74 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn("inline-deleted", first_row)
         self.assertIn('const target = config.value<span class="inline-added">.updated</span>', html)
         self.assertNotIn('<tr class="deleted">', html)
+
+    def test_normal_preview_pairs_html_tag_block_renames_from_real_git_diff(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not available")
+
+        original_config = {
+            "CONTEXT_LINES": diff2png.CONTEXT_LINES,
+            "MERGE_THRESHOLD": diff2png.MERGE_THRESHOLD,
+            "DIFF_MODE": diff2png.DIFF_MODE,
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+
+            target = repo / "sample.html"
+            target.write_text(
+                "\n".join([
+                    "<table>",
+                    "  <tr>",
+                    "    <td>value</td>",
+                    "  </tr>",
+                    "</table>",
+                ]) + "\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "sample.html"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True, text=True)
+
+            target.write_text(
+                "\n".join([
+                    "<div>",
+                    "  <div>",
+                    "    <div>value</div>",
+                    "  </div>",
+                    "</div>",
+                ]) + "\n",
+                encoding="utf-8",
+            )
+
+            try:
+                diff2png.CONTEXT_LINES = 0
+                diff2png.MERGE_THRESHOLD = 8
+                diff2png.DIFF_MODE = "file"
+                diff2png.ANALYSIS_SESSIONS.clear()
+
+                client = diff2png.app.test_client()
+                analyze_response = client.post("/api/analyze", json={"repo_path": str(repo), "source_mode": "worktree"})
+                self.assertEqual(analyze_response.status_code, 200, analyze_response.get_data(as_text=True))
+                analysis_id = analyze_response.get_json()["analysis_id"]
+
+                preview_response = client.post(
+                    "/api/preview/0",
+                    json={"repo_path": str(repo), "analysis_id": analysis_id},
+                )
+            finally:
+                diff2png.CONTEXT_LINES = original_config["CONTEXT_LINES"]
+                diff2png.MERGE_THRESHOLD = original_config["MERGE_THRESHOLD"]
+                diff2png.DIFF_MODE = original_config["DIFF_MODE"]
+                diff2png.ANALYSIS_SESSIONS.clear()
+
+        self.assertEqual(preview_response.status_code, 200, preview_response.get_data(as_text=True))
+        html = preview_response.get_data(as_text=True)
+        self.assertIn('<span class="inline-deleted">table</span>', html)
+        self.assertIn('<span class="inline-deleted">td</span>', html)
+        self.assertGreaterEqual(html.count('class="inline-added"'), 5)
 
     def test_normal_analysis_uses_zero_context_raw_diff(self):
         if shutil.which("git") is None:

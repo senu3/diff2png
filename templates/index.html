@@ -1794,7 +1794,7 @@
       <span class="preview-file" id="previewFile">—</span>
       <span class="preview-range" id="previewRange" title="現在の行範囲">—</span>
       <button class="btn btn-ghost inline-diff-toggle" id="inlineDiffToggleBtn" onclick="toggleActiveInlineDiff()"
-        disabled title="このhunkの行内差分を切り替え" aria-label="このhunkの行内差分を切り替え">行内 ON</button>
+        disabled title="このhunkの行内差分を切り替え" aria-label="このhunkの行内差分を切り替え">行内 両方</button>
       <div class="range-btns">
         <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
           title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
@@ -2864,16 +2864,30 @@
 
       const h = state.hunks[index];
       const isPatch = currentDiffMode === 'patch';
-      const enabled = h ? h.inline_diff_enabled !== false : true;
+      const mode = getInlineDiffMode(h);
+      const labelByMode = { full: '行内 両方', new: '行内 新', off: '行内 OFF' };
+      const titleByMode = { full: '両方表示', new: '新のみ表示', off: 'OFF' };
       btn.disabled = !h || isPatch;
-      btn.classList.toggle('active', Boolean(h) && enabled && !isPatch);
-      btn.textContent = enabled ? '行内 ON' : '行内 OFF';
-      const stateText = enabled ? 'ON' : 'OFF';
+      btn.classList.toggle('active', Boolean(h) && mode !== 'off' && !isPatch);
+      btn.textContent = labelByMode[mode];
       const title = isPatch
         ? 'パッチ表示では行内差分は使用しません'
-        : `このhunkの行内差分: ${stateText}`;
+        : `このhunkの行内差分: ${titleByMode[mode]}`;
       btn.title = title;
       btn.setAttribute('aria-label', title);
+    }
+
+    function getInlineDiffMode(hunk) {
+      if (!hunk) return 'full';
+      const mode = String(hunk.inline_diff_mode || '').toLowerCase();
+      if (mode === 'full' || mode === 'new' || mode === 'off') return mode;
+      return hunk.inline_diff_enabled === false ? 'off' : 'full';
+    }
+
+    function nextInlineDiffMode(mode) {
+      if (mode === 'full') return 'new';
+      if (mode === 'new') return 'off';
+      return 'full';
     }
 
     function updateRangeButtons(index) {
@@ -2984,7 +2998,7 @@
       const h = state.hunks[index];
       if (!h) return;
       state.inlineDiffUpdating = true;
-      const nextEnabled = h.inline_diff_enabled === false;
+      const nextMode = nextInlineDiffMode(getInlineDiffMode(h));
 
       try {
         const res = await fetch(`/api/hunk-inline-diff/${index}`, {
@@ -2993,7 +3007,7 @@
           body: JSON.stringify({
             repo_path: state.repoPath,
             analysis_id: state.analysisId,
-            enabled: nextEnabled,
+            mode: nextMode,
           }),
         });
         const data = await res.json();

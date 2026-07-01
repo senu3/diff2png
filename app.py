@@ -40,6 +40,7 @@ MAX_ANALYSIS_SESSIONS = 20
 GIT_TIMEOUT_SECONDS = 30
 INLINE_DIFF_MAX_CHANGED_CHARS = 40
 INLINE_DIFF_MIN_SIMILARITY = 0.5
+INLINE_DIFF_MODES = {"full", "new", "off"}
 _OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
 _NEW_RE = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -235,12 +236,20 @@ def content_source_for_diff(source_mode: str, target_ref: str | None) -> dict:
     return {"type": "worktree"}
 
 
+def hunk_inline_diff_mode(hunk: dict) -> str:
+    mode = str(hunk.get("inline_diff_mode", "")).strip().lower()
+    if mode in INLINE_DIFF_MODES:
+        return mode
+    return "full" if bool(hunk.get("inline_diff_enabled", True)) else "off"
+
+
 def make_hunk_summary(hunk: dict) -> dict:
     start = int(hunk.get("start", 1))
     end = int(hunk.get("end", start))
     default_start = int(hunk.get("default_start", start))
     default_end = int(hunk.get("default_end", end))
-    inline_diff_enabled = bool(hunk.get("inline_diff_enabled", True))
+    inline_diff_mode = hunk_inline_diff_mode(hunk)
+    inline_diff_enabled = inline_diff_mode != "off"
     return {
         "filepath": hunk.get("filepath", ""),
         "start": start,
@@ -249,6 +258,7 @@ def make_hunk_summary(hunk: dict) -> dict:
         "default_end": default_end,
         "range_adjusted": start != default_start or end != default_end,
         "inline_diff_enabled": inline_diff_enabled,
+        "inline_diff_mode": inline_diff_mode,
         "old_start": hunk.get("old_start"),
         "changed_count": hunk.get("changed_count", len(hunk.get("changed_lines", []))),
         "added_count": hunk.get("added_count", 0),
@@ -296,6 +306,7 @@ def finalize_hunks(raw_hunks: list[dict], repo_path: str, content_source: dict, 
         h["default_start"] = int(h.get("start", 1))
         h["default_end"] = int(h.get("end", h.get("start", 1)))
         h["inline_diff_enabled"] = True
+        h["inline_diff_mode"] = "full"
     return hunks
 
 
@@ -808,8 +819,9 @@ def _line_replacements_by_new_lineno(hunk: dict) -> dict[int, tuple[int | None, 
     return {lineno: value for lineno, value in replacements.items() if lineno in changed_set}
 
 
-def _inline_diff_html(old_text: str, new_text: str) -> str | None:
+def _inline_diff_html(old_text: str, new_text: str, mode: str = "full") -> str | None:
     parts = []
+    show_old = mode == "full"
     old_tokens = _INLINE_DIFF_TOKEN_RE.findall(old_text)
     new_tokens = _INLINE_DIFF_TOKEN_RE.findall(new_text)
     matcher = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False)
@@ -835,13 +847,14 @@ def _inline_diff_html(old_text: str, new_text: str) -> str | None:
         elif tag == "insert":
             parts.append(escape(new_part) if is_leading_indent else f'<span class="inline-added">{escape(new_part)}</span>')
         elif tag == "delete":
-            if not is_leading_indent:
+            if show_old and not is_leading_indent:
                 parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
         elif tag == "replace":
             if is_leading_indent:
                 parts.append(escape(new_part))
             else:
-                parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
+                if show_old:
+                    parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
                 parts.append(f'<span class="inline-added">{escape(new_part)}</span>')
     return "".join(parts)
 
@@ -873,8 +886,8 @@ def build_code_html(
     lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source)
     # 共通インデントを除去（Codesnap風）
     raw_texts = [t for (_, t) in lines]
-    inline_diff_enabled = bool(hunk.get("inline_diff_enabled", True))
-    replacements = _line_replacements_by_new_lineno(hunk) if inline_diff_enabled else {}
+    inline_diff_mode = hunk_inline_diff_mode(hunk)
+    replacements = _line_replacements_by_new_lineno(hunk) if inline_diff_mode != "off" else {}
     replacement_texts = [text for _, text in replacements.values()]
     stripped_combined, _ = _strip_common_indent_from_lines(raw_texts + replacement_texts)
     stripped_texts = stripped_combined[:len(raw_texts)]
@@ -893,7 +906,7 @@ def build_code_html(
         is_changed = lineno in changed_set
         if is_changed and lineno in replacement_by_lineno:
             _, old_text = replacement_by_lineno[lineno]
-            code_html = _inline_diff_html(old_text, text) or escape(text)
+            code_html = _inline_diff_html(old_text, text, inline_diff_mode) or escape(text)
         else:
             code_html = escape(text)
         row_class = ' class="changed"' if is_changed else ""
@@ -1382,12 +1395,19 @@ def update_hunk_inline_diff(hunk_index: int):
     if hunk_index < 0 or hunk_index >= len(hunks):
         return jsonify({"error": "無効なインデックス"}), 400
 
-    enabled = data.get("enabled")
-    if not isinstance(enabled, bool):
-        return jsonify({"error": "enabled は真偽値で指定してください"}), 400
+    if "mode" in data:
+        mode = str(data.get("mode", "")).strip().lower()
+        if mode not in INLINE_DIFF_MODES:
+            return jsonify({"error": "mode は full, new, off のいずれかを指定してください"}), 400
+    else:
+        enabled = data.get("enabled")
+        if not isinstance(enabled, bool):
+            return jsonify({"error": "enabled は真偽値で指定してください"}), 400
+        mode = "full" if enabled else "off"
 
     hunk = hunks[hunk_index]
-    hunk["inline_diff_enabled"] = enabled
+    hunk["inline_diff_mode"] = mode
+    hunk["inline_diff_enabled"] = mode != "off"
     return jsonify({"hunk": make_hunk_summary(hunk)})
 
 

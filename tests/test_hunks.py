@@ -189,6 +189,74 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('class="deleted"', html)
         self.assertIn("removed line", html)
 
+    def test_deleted_only_hunk_interleaves_deleted_rows_from_raw_blocks(self):
+        hunk = {
+            "filepath": "sample.txt",
+            "start": 1,
+            "end": 2,
+            "default_start": 1,
+            "default_end": 2,
+            "orig_start": 1,
+            "old_start": 1,
+            "changed_lines": [],
+            "diff_lines": ["-one", "-three"],
+            "diff_blocks": [
+                {"start": 0, "old_start": 1, "new_count": 0, "changed_lines": [], "diff_lines": ["-one"]},
+                {"start": 1, "old_start": 3, "new_count": 0, "changed_lines": [], "diff_lines": ["-three"]},
+            ],
+            "added_count": 0,
+            "deleted_count": 2,
+            "changed_count": 2,
+        }
+        source_lines = ["two", "four"]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertLess(html.index("one"), html.index("two"))
+        self.assertLess(html.index("two"), html.index("three"))
+        self.assertLess(html.index("three"), html.index("four"))
+
+    def test_deleted_only_hunk_interleaves_deleted_rows_with_context_lines(self):
+        hunk = {
+            "filepath": "sample.txt",
+            "start": 1,
+            "end": 2,
+            "default_start": 1,
+            "default_end": 2,
+            "old_start": 1,
+            "new_count": 2,
+            "changed_lines": [],
+            "diff_lines": ["-one", " two", "-three", " four"],
+            "added_count": 0,
+            "deleted_count": 2,
+            "changed_count": 2,
+        }
+        source_lines = ["two", "four"]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertLess(html.index("one"), html.index("two"))
+        self.assertLess(html.index("two"), html.index("three"))
+        self.assertLess(html.index("three"), html.index("four"))
+
     def test_normal_view_shows_inline_added_span_for_single_line_replacement(self):
         hunk = {
             "filepath": "sample.html",

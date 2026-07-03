@@ -1514,6 +1514,19 @@
             </select>
           </div>
         </div>
+
+        <div class="setting-item">
+          <div class="setting-label">
+            <span>行内差分の文字数上限</span>
+            <code>inline_diff_max_changed_chars</code>
+          </div>
+          <div class="setting-desc">この文字数を超える変更は、通常表示で行内ハイライトにしません。</div>
+          <div class="setting-row">
+            <input type="range" id="cfg-inline-max-chars" min="0" max="200" step="1" value="40"
+              oninput="document.getElementById('cfg-inline-max-chars-val').textContent=this.value">
+            <span class="range-val" id="cfg-inline-max-chars-val">40</span>
+          </div>
+        </div>
       </div>
 
       <div class="setting-group">
@@ -2003,6 +2016,9 @@
       if (prefs.inline_diff_default_mode === 'full' || prefs.inline_diff_default_mode === 'new' || prefs.inline_diff_default_mode === 'off') {
         document.getElementById('cfg-inline-default').value = prefs.inline_diff_default_mode;
       }
+      if (prefs.inline_diff_max_changed_chars !== null && Number.isFinite(Number(prefs.inline_diff_max_changed_chars))) {
+        setSlider('cfg-inline-max-chars', 'cfg-inline-max-chars-val', Number(prefs.inline_diff_max_changed_chars));
+      }
 
       if (Number.isFinite(Number(prefs.context_lines))) {
         setSlider('cfg-context', 'cfg-context-val', Number(prefs.context_lines));
@@ -2066,6 +2082,7 @@
         output_dir: document.getElementById('cfg-outdir').value.trim(),
         background_mode: document.getElementById('cfg-background').value,
         inline_diff_default_mode: document.getElementById('cfg-inline-default').value,
+        inline_diff_max_changed_chars: parseInt(document.getElementById('cfg-inline-max-chars').value, 10),
       };
     }
 
@@ -2078,6 +2095,9 @@
         output_dir: String(payload.output_dir || ''),
         background_mode: payload.background_mode,
         inline_diff_default_mode: payload.inline_diff_default_mode || 'full',
+        inline_diff_max_changed_chars: Number.isFinite(Number(payload.inline_diff_max_changed_chars))
+          ? Number(payload.inline_diff_max_changed_chars)
+          : 40,
       };
     }
 
@@ -3323,7 +3343,7 @@
     }
 
     // ---- 設定ドロワー ----
-    const DEFAULTS = { diffMode: 'file', inlineDiffDefault: 'full', context: 5, merge: 8, width: 960, outdir: 'diff_screenshots', background: 'normal' };
+    const DEFAULTS = { diffMode: 'file', inlineDiffDefault: 'full', inlineDiffMaxChars: 40, context: 5, merge: 8, width: 960, outdir: 'diff_screenshots', background: 'normal' };
 
     function toggleDrawer() {
       const isOpen = document.getElementById('drawer').classList.contains('open');
@@ -3345,6 +3365,7 @@
     function resetConfig() {
       document.getElementById('sourceDiffMode').value = DEFAULTS.diffMode;
       document.getElementById('cfg-inline-default').value = DEFAULTS.inlineDiffDefault;
+      setSlider('cfg-inline-max-chars', 'cfg-inline-max-chars-val', DEFAULTS.inlineDiffMaxChars);
       setSlider('cfg-context', 'cfg-context-val', DEFAULTS.context);
       setSlider('cfg-merge', 'cfg-merge-val', DEFAULTS.merge);
       setSlider('cfg-width', 'cfg-width-val', DEFAULTS.width);
@@ -3388,7 +3409,8 @@
           needsHunkReconfigure ||
           changedKeys.includes('html_width') ||
           changedKeys.includes('background_mode') ||
-          changedKeys.includes('output_dir');
+          changedKeys.includes('output_dir') ||
+          changedKeys.includes('inline_diff_max_changed_chars');
 
         if (needsFullAnalyze) {
           await analyze({ preserveActive: true, preserveSelection: true });
@@ -3420,6 +3442,7 @@
         setSlider('cfg-context', 'cfg-context-val', cfg.context_lines);
         setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);
         setSlider('cfg-width', 'cfg-width-val', cfg.html_width);
+        setSlider('cfg-inline-max-chars', 'cfg-inline-max-chars-val', cfg.inline_diff_max_changed_chars ?? DEFAULTS.inlineDiffMaxChars);
         document.getElementById('cfg-outdir').value = cfg.output_dir;
         document.getElementById('cfg-background').value = cfg.background_mode || (cfg.transparent_background ? 'transparent_no_footer' : 'normal');
         document.getElementById('cfg-inline-default').value = cfg.inline_diff_default_mode || 'full';

@@ -59,6 +59,22 @@ class HunkMergeTests(unittest.TestCase):
         finally:
             diff2png.INLINE_DIFF_DEFAULT_MODE = original
 
+    def test_config_accepts_inline_diff_max_changed_chars(self):
+        original = diff2png.INLINE_DIFF_MAX_CHANGED_CHARS
+        try:
+            client = diff2png.app.test_client()
+            response = client.post("/api/config", json={"inline_diff_max_changed_chars": 120})
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+            get_response = client.get("/api/config")
+            self.assertEqual(get_response.status_code, 200, get_response.get_data(as_text=True))
+            self.assertEqual(get_response.get_json()["inline_diff_max_changed_chars"], 120)
+
+            invalid_response = client.post("/api/config", json={"inline_diff_max_changed_chars": "invalid"})
+            self.assertEqual(invalid_response.status_code, 400)
+        finally:
+            diff2png.INLINE_DIFF_MAX_CHANGED_CHARS = original
+
     def test_finalize_hunks_uses_inline_diff_default_mode(self):
         source_lines = [f"line {i}" for i in range(1, 11)]
         with patch.object(diff2png, "read_source_lines", return_value=source_lines):
@@ -680,8 +696,8 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('aria-label', html)
 
     def test_normal_view_skips_inline_spans_when_replacement_is_too_large(self):
-        old_text = 'message = "' + ('old-' * 20) + '"'
-        new_text = 'message = "' + ('new-' * 20) + '"'
+        old_text = 'config = { label: "' + ('a' * 30) + '", enabled: true, mode: "strict", retries: 3 }'
+        new_text = 'config = { label: "' + ('b' * 30) + '", enabled: true, mode: "strict", retries: 3 }'
         hunk = {
             "filepath": "sample.py",
             "start": 1,
@@ -710,7 +726,46 @@ class HunkMergeTests(unittest.TestCase):
 
         self.assertNotIn('class="inline-deleted"', html)
         self.assertNotIn('class="inline-added"', html)
-        self.assertIn('new-new-new', html)
+        self.assertIn('bbbbbbbbbb', html)
+
+    def test_normal_view_uses_configured_inline_diff_max_changed_chars(self):
+        old_text = 'config = { label: "' + ('a' * 30) + '", enabled: true, mode: "strict", retries: 3 }'
+        new_text = 'config = { label: "' + ('b' * 30) + '", enabled: true, mode: "strict", retries: 3 }'
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": [f"-{old_text}", f"+{new_text}"],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+        source_lines = [new_text]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {
+                    "diff_mode": "file",
+                    "html_width": 960,
+                    "background_mode": "normal",
+                    "inline_diff_max_changed_chars": 200,
+                },
+            )
+
+        self.assertIn('class="inline-deleted"', html)
+        self.assertIn('class="inline-added"', html)
+        self.assertIn('aaaaaaaaaa', html)
+        self.assertIn('bbbbbbbbbb', html)
 
     def test_normal_view_shows_inline_spans_for_equal_size_multi_line_replacement(self):
         hunk = {

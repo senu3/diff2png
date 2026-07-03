@@ -40,6 +40,7 @@ ANALYSIS_SESSIONS: dict[str, dict] = {}
 MAX_ANALYSIS_SESSIONS = 20
 GIT_TIMEOUT_SECONDS = 30
 INLINE_DIFF_MAX_CHANGED_CHARS = 40
+INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
 INLINE_DIFF_MIN_SIMILARITY = 0.5
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 INLINE_DIFF_MODES = {"full", "new", "off"}
@@ -253,6 +254,10 @@ def normalize_inline_diff_mode(value: str | None, default: str = "full") -> str:
     return mode
 
 
+def normalize_inline_diff_max_changed_chars(value: int | str | None) -> int:
+    return max(0, min(INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT, int(value)))
+
+
 def make_hunk_summary(hunk: dict) -> dict:
     start = int(hunk.get("start", 1))
     end = int(hunk.get("end", start))
@@ -285,6 +290,7 @@ def current_config_snapshot() -> dict:
         "diff_mode": DIFF_MODE,
         "background_mode": BACKGROUND_MODE,
         "inline_diff_default_mode": INLINE_DIFF_DEFAULT_MODE,
+        "inline_diff_max_changed_chars": INLINE_DIFF_MAX_CHANGED_CHARS,
     }
 
 
@@ -918,9 +924,19 @@ def _line_replacements_by_new_lineno(hunk: dict) -> dict[int, tuple[int | None, 
     return {lineno: value for lineno, value in replacements.items() if lineno in changed_set}
 
 
-def _inline_diff_html(old_text: str, new_text: str, mode: str = "full") -> str | None:
+def _inline_diff_html(
+    old_text: str,
+    new_text: str,
+    mode: str = "full",
+    max_changed_chars: int | None = None,
+) -> str | None:
     parts = []
     show_old = mode == "full"
+    changed_chars_limit = (
+        INLINE_DIFF_MAX_CHANGED_CHARS
+        if max_changed_chars is None
+        else normalize_inline_diff_max_changed_chars(max_changed_chars)
+    )
     old_tokens = _INLINE_DIFF_TOKEN_RE.findall(old_text)
     new_tokens = _INLINE_DIFF_TOKEN_RE.findall(new_text)
     matcher = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False)
@@ -930,7 +946,7 @@ def _inline_diff_html(old_text: str, new_text: str, mode: str = "full") -> str |
         if tag == "equal":
             continue
         changed_chars += len("".join(old_tokens[i1:i2])) + len("".join(new_tokens[j1:j2]))
-    if changed_chars > INLINE_DIFF_MAX_CHANGED_CHARS:
+    if changed_chars > changed_chars_limit:
         return None
 
     for tag, i1, i2, j1, j2 in opcodes:
@@ -987,6 +1003,9 @@ def build_code_html(
     raw_texts = [t for (_, t) in lines]
     inline_diff_mode = hunk_inline_diff_mode(hunk)
     replacements = _line_replacements_by_new_lineno(hunk) if inline_diff_mode != "off" else {}
+    inline_diff_max_changed_chars = normalize_inline_diff_max_changed_chars(
+        render_config.get("inline_diff_max_changed_chars", INLINE_DIFF_MAX_CHANGED_CHARS)
+    )
     replacement_texts = [text for _, text in replacements.values()]
     stripped_combined, _ = _strip_common_indent_from_lines(raw_texts + replacement_texts)
     stripped_texts = stripped_combined[:len(raw_texts)]
@@ -1005,7 +1024,12 @@ def build_code_html(
         is_changed = lineno in changed_set
         if is_changed and lineno in replacement_by_lineno:
             _, old_text = replacement_by_lineno[lineno]
-            code_html = _inline_diff_html(old_text, text, inline_diff_mode) or escape(text)
+            code_html = _inline_diff_html(
+                old_text,
+                text,
+                inline_diff_mode,
+                inline_diff_max_changed_chars,
+            ) or escape(text)
         else:
             code_html = escape(text)
         row_class = ' class="changed"' if is_changed else ""
@@ -1256,7 +1280,7 @@ def browse_repo():
 
 @app.route("/api/config", methods=["GET", "POST"])
 def config():
-    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME, DIFF_MODE, BACKGROUND_MODE, INLINE_DIFF_DEFAULT_MODE
+    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME, DIFF_MODE, BACKGROUND_MODE, INLINE_DIFF_DEFAULT_MODE, INLINE_DIFF_MAX_CHANGED_CHARS
     if request.method == "GET":
         return jsonify({
             "context_lines": CONTEXT_LINES,
@@ -1266,6 +1290,7 @@ def config():
             "diff_mode": DIFF_MODE,
             "background_mode": BACKGROUND_MODE,
             "inline_diff_default_mode": INLINE_DIFF_DEFAULT_MODE,
+            "inline_diff_max_changed_chars": INLINE_DIFF_MAX_CHANGED_CHARS,
         })
     data = request.get_json(silent=True) or {}
     try:
@@ -1284,6 +1309,8 @@ def config():
             DIFF_MODE = mode
         if "inline_diff_default_mode" in data:
             INLINE_DIFF_DEFAULT_MODE = normalize_inline_diff_mode(str(data["inline_diff_default_mode"]))
+        if "inline_diff_max_changed_chars" in data:
+            INLINE_DIFF_MAX_CHANGED_CHARS = normalize_inline_diff_max_changed_chars(data["inline_diff_max_changed_chars"])
         # New setting: background_mode
         if "background_mode" in data:
             bm = str(data["background_mode"]).strip()
@@ -1425,6 +1452,25 @@ def reconfigure_analysis():
         if context_changed:
             return jsonify({"requires_reanalyze": True})
 
+        session["config"] = deepcopy(config_snapshot)
+        session["diff_mode"] = config_snapshot.get("diff_mode", DIFF_MODE)
+        return jsonify({
+            "analysis_id": analysis_id,
+            "hunks": [make_hunk_summary(h) for h in session["hunks"]],
+            "total": len(session["hunks"]),
+        })
+
+    context_changed = (
+        int(previous_config.get("context_lines", CONTEXT_LINES))
+        != int(config_snapshot.get("context_lines", CONTEXT_LINES))
+        or int(previous_config.get("merge_threshold", MERGE_THRESHOLD))
+        != int(config_snapshot.get("merge_threshold", MERGE_THRESHOLD))
+    )
+    inline_default_changed = (
+        previous_config.get("inline_diff_default_mode", INLINE_DIFF_DEFAULT_MODE)
+        != config_snapshot.get("inline_diff_default_mode", INLINE_DIFF_DEFAULT_MODE)
+    )
+    if not context_changed and not inline_default_changed:
         session["config"] = deepcopy(config_snapshot)
         session["diff_mode"] = config_snapshot.get("diff_mode", DIFF_MODE)
         return jsonify({

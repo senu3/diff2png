@@ -43,7 +43,7 @@ INLINE_DIFF_MAX_CHANGED_CHARS = 120
 INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
 INLINE_DIFF_MIN_SIMILARITY = 0.62
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
-INLINE_DIFF_MODES = {"full", "new", "same", "off"}
+INLINE_DIFF_MODES = {"full", "new", "off"}
 _OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
 _NEW_RE = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -250,7 +250,7 @@ def hunk_inline_diff_mode(hunk: dict) -> str:
 def normalize_inline_diff_mode(value: str | None, default: str = "full") -> str:
     mode = str(value or default).strip().lower()
     if mode not in INLINE_DIFF_MODES:
-        raise ValueError("inline_diff_default_mode は full, new, same, off のいずれかを指定してください")
+        raise ValueError("inline_diff_default_mode は full, new, off のいずれかを指定してください")
     return mode
 
 
@@ -744,7 +744,6 @@ tr.deleted td.marker{{color:#dc2626}}
 td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
 span.inline-added{{background:#bbf7d0;color:#14532d;border-radius:3px;padding:0 2px}}
 span.inline-deleted{{background:#fecaca;color:#991b1b;border-radius:3px;padding:0 2px;text-decoration:line-through}}
-span.inline-same{{background:#cffafe;color:#164e63;border-radius:3px;padding:0 2px}}
 tr.changed.inline-rendered{{background:#f8fafc}}
 tr.changed.inline-rendered td.lineno{{background:#f8fafc;color:#64748b}}
 .footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
@@ -1042,7 +1041,6 @@ def _inline_diff_html(
 ) -> str | None:
     parts = []
     show_old = mode == "full"
-    highlight_same = mode == "same"
     changed_chars_limit = (
         INLINE_DIFF_MAX_CHANGED_CHARS
         if max_changed_chars is None
@@ -1069,14 +1067,11 @@ def _inline_diff_html(
             and new_part.strip(" \t") == ""
         )
         if tag == "equal":
-            if highlight_same and new_part.strip(" \t"):
-                parts.append(f'<span class="inline-same">{escape(new_part)}</span>')
-            else:
-                parts.append(escape(new_part))
+            parts.append(escape(new_part))
         elif tag == "insert":
             parts.append(
                 escape(new_part)
-                if is_leading_indent or highlight_same
+                if is_leading_indent
                 else f'<span class="inline-added">{escape(new_part)}</span>'
             )
         elif tag == "delete":
@@ -1084,8 +1079,6 @@ def _inline_diff_html(
                 parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
         elif tag == "replace":
             if is_leading_indent:
-                parts.append(escape(new_part))
-            elif highlight_same:
                 parts.append(escape(new_part))
             else:
                 if show_old:

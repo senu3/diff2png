@@ -47,12 +47,12 @@ class HunkMergeTests(unittest.TestCase):
         original = diff2png.INLINE_DIFF_DEFAULT_MODE
         try:
             client = diff2png.app.test_client()
-            response = client.post("/api/config", json={"inline_diff_default_mode": "same"})
+            response = client.post("/api/config", json={"inline_diff_default_mode": "new"})
             self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 
             get_response = client.get("/api/config")
             self.assertEqual(get_response.status_code, 200, get_response.get_data(as_text=True))
-            self.assertEqual(get_response.get_json()["inline_diff_default_mode"], "same")
+            self.assertEqual(get_response.get_json()["inline_diff_default_mode"], "new")
 
             invalid_response = client.post("/api/config", json={"inline_diff_default_mode": "invalid"})
             self.assertEqual(invalid_response.status_code, 400)
@@ -462,43 +462,6 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn('class="inline-deleted"', html)
         self.assertNotIn('draft', html)
         self.assertIn('published', html)
-
-    def test_normal_view_inline_diff_same_mode_highlights_unchanged_text(self):
-        hunk = {
-            "filepath": "sample.py",
-            "start": 1,
-            "end": 1,
-            "default_start": 1,
-            "default_end": 1,
-            "old_start": 1,
-            "changed_lines": [1],
-            "diff_lines": [
-                "-result = config.old_value",
-                "+result = config.new_value",
-            ],
-            "added_count": 1,
-            "deleted_count": 1,
-            "changed_count": 2,
-            "inline_diff_mode": "same",
-        }
-        source_lines = ["result = config.new_value"]
-
-        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
-            html = diff2png.build_code_html(
-                hunk,
-                ".",
-                1,
-                1,
-                "2026-06-11 00:00:00",
-                {"type": "worktree"},
-                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
-            )
-
-        self.assertIn('class="inline-same"', html)
-        self.assertNotIn('class="inline-added"', html)
-        self.assertNotIn('class="inline-deleted"', html)
-        self.assertNotIn('old_value', html)
-        self.assertIn('new_value', html)
 
     def test_hunk_inline_diff_endpoint_updates_target_hunk(self):
         if shutil.which("git") is None:

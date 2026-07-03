@@ -1204,13 +1204,19 @@
 
     .range-disabled-note {
       display: none;
-      flex-shrink: 0;
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      z-index: 4;
+      align-items: center;
+      transform: translateX(-50%);
       color: var(--text-dim);
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 4px 8px;
-      background: var(--bg);
+      background: rgba(15, 17, 23, 0.92);
       font-size: 11px;
+      pointer-events: none;
     }
 
     .range-disabled-note.show {
@@ -1862,7 +1868,6 @@
           </svg>
         </button>
       </div>
-      <span class="range-disabled-note" id="rangeDisabledNote">パッチ表示では範囲調整なし</span>
       <span class="nav-count" id="previewNavCount">— / —</span>
       <div class="nav-btns">
         <button class="btn btn-ghost icon-btn-sm" id="prevBtn" onclick="navigate(-1)" disabled title="前へ"
@@ -1906,6 +1911,7 @@
           <div class="empty-label">hunkを選択すると右側にプレビューを表示します</div>
         </div>
       </div>
+      <span class="range-disabled-note" id="rangeDisabledNote">パッチ表示では範囲調整なし</span>
       <div class="range-overlay range-overlay-bottom hidden" id="rangeOverlayBottom">
         <span class="range-overlay-label">下端</span>
         <button class="btn btn-ghost" id="rangeExpandDownBtn" onclick="adjustActiveRange('expand_down')" disabled
@@ -3011,7 +3017,6 @@
       const adjustable = isRangeAdjustable(index);
       const h = state.hunks[index] || {};
       const isPatch = currentDiffMode === 'patch';
-      document.querySelector('.range-btns')?.classList.toggle('hidden', isPatch);
       document.querySelectorAll('.range-overlay').forEach(el => {
         el.classList.toggle('hidden', !adjustable || isPatch);
       });

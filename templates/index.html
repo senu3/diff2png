@@ -1118,6 +1118,40 @@
       background: rgba(62, 207, 110, 0.08);
     }
 
+    .preview-mode-segment {
+      display: inline-flex;
+      align-items: center;
+      height: 28px;
+      padding: 2px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      flex-shrink: 0;
+    }
+
+    .preview-mode-segment button {
+      height: 22px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-dim);
+      font-family: var(--font);
+      font-size: 11px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .preview-mode-segment button.active {
+      background: var(--surface2);
+      color: var(--text);
+    }
+
+    .preview-mode-segment button:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+
     .preview-toolbar .nav-btns {
       display: flex;
       gap: 4px;
@@ -1467,6 +1501,10 @@
       </svg>
     </button>
   </header>
+  <select id="sourceDiffMode" onchange="onSourceDiffModeChange()" hidden aria-hidden="true" tabindex="-1">
+    <option value="file">通常表示</option>
+    <option value="patch">パッチ表示（+/-）</option>
+  </select>
 
   <!-- Settings Drawer -->
   <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
@@ -1484,21 +1522,7 @@
     <div class="drawer-body">
 
       <div class="setting-group">
-        <div class="setting-group-label">表示 / 差分</div>
-
-        <div class="setting-item">
-          <div class="setting-label">
-            <span>差分表示モード</span>
-            <code>diff_mode</code>
-          </div>
-          <div class="setting-desc">通常表示またはパッチ形式の表示を切り替えます。</div>
-          <div class="setting-row">
-            <select id="sourceDiffMode" onchange="onSourceDiffModeChange()">
-              <option value="file">通常表示</option>
-              <option value="patch">パッチ表示（+/-）</option>
-            </select>
-          </div>
-        </div>
+        <div class="setting-group-label">表示 / 行内差分</div>
 
         <div class="setting-item">
           <div class="setting-label">
@@ -1822,6 +1846,12 @@
         </svg>Preview</span>
       <span class="preview-file" id="previewFile">—</span>
       <span class="preview-range" id="previewRange" title="現在の行範囲">—</span>
+      <div class="preview-mode-segment" aria-label="表示モード">
+        <button type="button" class="preview-mode-btn" data-diff-mode="file" onclick="setPreviewDiffMode('file')"
+          aria-pressed="true">通常</button>
+        <button type="button" class="preview-mode-btn" data-diff-mode="patch" onclick="setPreviewDiffMode('patch')"
+          aria-pressed="false">パッチ</button>
+      </div>
       <button class="btn btn-ghost inline-diff-toggle" id="inlineDiffToggleBtn" onclick="toggleActiveInlineDiff()"
         disabled title="このhunkの行内差分を切り替え" aria-label="このhunkの行内差分を切り替え">行内 両方</button>
       <div class="range-btns">
@@ -2063,6 +2093,17 @@
       return document.getElementById('sourceDiffMode').value || 'file';
     }
 
+    function updatePreviewDiffModeSegment() {
+      const mode = getSelectedDiffMode();
+      const hasAnalysis = Boolean(state.analysisId);
+      document.querySelectorAll('.preview-mode-btn').forEach(btn => {
+        const active = btn.dataset.diffMode === mode;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', String(active));
+        btn.disabled = !hasAnalysis;
+      });
+    }
+
     function getDiffSourceValues() {
       const mode = getSelectedSourceMode();
       return {
@@ -2142,7 +2183,37 @@
 
     function onSourceDiffModeChange() {
       saveUiPrefsFromPayload(buildConfigPayload());
+      updatePreviewDiffModeSegment();
       updateSourceSummary();
+    }
+
+    async function setPreviewDiffMode(mode) {
+      if (mode !== 'file' && mode !== 'patch') return;
+      if (!state.analysisId) return;
+
+      const select = document.getElementById('sourceDiffMode');
+      const previousMode = select.value || currentDiffMode || 'file';
+      if (previousMode === mode && currentDiffMode === mode) return;
+
+      select.value = mode;
+      saveUiPrefsFromPayload(buildConfigPayload());
+      updatePreviewDiffModeSegment();
+
+      const applied = await ensureDiffMode(mode);
+      if (!applied) {
+        select.value = previousMode;
+        updatePreviewDiffModeSegment();
+        return;
+      }
+
+      lastAppliedConfig = normalizeConfigPayload({
+        ...(lastAppliedConfig || buildConfigPayload()),
+        diff_mode: mode,
+      });
+
+      if (document.getElementById('repoPath').value.trim()) {
+        await analyze({ preserveActive: true, preserveSelection: true });
+      }
     }
 
     async function openSourceModal() {
@@ -2246,6 +2317,8 @@
           return false;
         }
         currentDiffMode = mode;
+        document.getElementById('sourceDiffMode').value = mode;
+        updatePreviewDiffModeSegment();
         return true;
       } catch (e) {
         showToast('差分表示モード変更に失敗しました: ' + e.message, 'error');
@@ -2500,6 +2573,7 @@
         state.analysisId = data.analysis_id || '';
         state.hunks = data.hunks;
         updateSourceDisplayButton();
+        updatePreviewDiffModeSegment();
         state.selected = preserveSelection
           ? remapSelectedHunks(state.hunks, prevHunks, prevSelected)
           : new Set();
@@ -2564,6 +2638,7 @@
         state.hunks = data.hunks || [];
         state.selected = remapSelectedHunks(state.hunks, prevHunks, prevSelected);
         state.activeIndex = -1;
+        updatePreviewDiffModeSegment();
         computeVisibleIndices();
         populateFileFilter();
         renderHunkList();
@@ -3135,6 +3210,7 @@
       document.getElementById('nextBtn').disabled = true;
       document.getElementById('previewNavCount').textContent = '— / —';
       updateRangeButtons(-1);
+      updatePreviewDiffModeSegment();
     }
 
     function navigate(dir) {
@@ -3392,6 +3468,7 @@
         const data = await res.json();
         if (!res.ok) { showToast(data.error || '設定の適用に失敗しました', 'error'); return; }
         currentDiffMode = payload.diff_mode;
+        updatePreviewDiffModeSegment();
         lastAppliedConfig = payload;
         saveUiPrefsFromPayload(payload);
         showToast('設定を適用しました', 'success');
@@ -3440,6 +3517,7 @@
         const cfg = await res.json();
         currentDiffMode = cfg.diff_mode || 'file';
         document.getElementById('sourceDiffMode').value = currentDiffMode;
+        updatePreviewDiffModeSegment();
         document.getElementById('diffSourceMode').value = 'worktree';
         setSlider('cfg-context', 'cfg-context-val', cfg.context_lines);
         setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);
@@ -3451,6 +3529,7 @@
 
         const prefs = loadUiPrefs();
         applyUiPrefsToControls(prefs);
+        updatePreviewDiffModeSegment();
         await ensureDiffMode(getSelectedDiffMode());
         const syncPayload = buildConfigPayload();
         await fetch('/api/config', {

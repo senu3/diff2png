@@ -282,7 +282,7 @@ class HunkMergeTests(unittest.TestCase):
                 {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
             )
 
-        self.assertIn('class="changed"', html)
+        self.assertIn('class="changed inline-rendered"', html)
         self.assertIn('class="inline-added"', html)
         self.assertIn('&lt;div class=&quot;card', html)
         self.assertIn(' active', html)
@@ -686,7 +686,7 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('class="inline-added"', html)
         self.assertIn(' table-striped', html)
 
-    def test_normal_view_html_class_addition_respects_changed_char_limit(self):
+    def test_normal_view_inlines_long_html_table_class_addition(self):
         old_text = '<table class="table">'
         new_text = '<table class="table table-striped table-hover table-bordered align-middle">'
         hunk = {
@@ -729,9 +729,45 @@ class HunkMergeTests(unittest.TestCase):
                 },
             )
 
-        self.assertNotIn('class="inline-added"', default_html)
+        self.assertIn('class="inline-added"', default_html)
         self.assertIn('class="inline-added"', expanded_html)
         self.assertIn(' table-striped table-hover table-bordered align-middle', expanded_html)
+
+    def test_normal_view_extreme_length_mismatch_is_not_inline_rendered(self):
+        old_text = "const value = getConfig()"
+        new_text = old_text + " + " + ("extraValue" * 40)
+        hunk = {
+            "filepath": "sample.js",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": [f"-{old_text}", f"+{new_text}"],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+
+        replacements = diff2png._line_replacements_by_new_lineno(hunk)
+
+        self.assertIn(1, replacements)
+
+        with patch.object(diff2png, "read_source_lines", return_value=[new_text]):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('class="changed"', html)
+        self.assertNotIn('class="changed inline-rendered"', html)
+        self.assertNotIn('class="inline-added"', html)
 
     def test_normal_view_does_not_inline_highlight_leading_indent_change(self):
         hunk = {
@@ -816,8 +852,8 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('aria-label', html)
 
     def test_normal_view_skips_inline_spans_when_replacement_is_too_large(self):
-        old_text = 'config = { label: "' + ('a' * 30) + '", enabled: true, mode: "strict", retries: 3 }'
-        new_text = 'config = { label: "' + ('b' * 30) + '", enabled: true, mode: "strict", retries: 3 }'
+        old_text = 'config = { label: "' + ('a' * 80) + '", enabled: true, mode: "strict", retries: 3 }'
+        new_text = 'config = { label: "' + ('b' * 80) + '", enabled: true, mode: "strict", retries: 3 }'
         hunk = {
             "filepath": "sample.py",
             "start": 1,
@@ -1106,6 +1142,35 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn("inline-added", inserted_row)
         self.assertNotIn("inline-deleted", inserted_row)
         self.assertIn('const userName = profile.name<span class="inline-added">.trim()</span>', html)
+
+    def test_normal_view_pairs_only_similar_lines_inside_replace_block(self):
+        hunk = {
+            "filepath": "sample.js",
+            "start": 1,
+            "end": 3,
+            "default_start": 1,
+            "default_end": 3,
+            "old_start": 1,
+            "changed_lines": [1, 2, 3],
+            "diff_lines": [
+                "-alphaTokenAlphaTokenAlphaToken()",
+                "-betaValueBetaValueBetaValue()",
+                "-omegaValueOmegaValueOmegaValue()",
+                "+alphaTokenAlphaTokenAlphaToken.trim()",
+                "+insertedCompletelyDifferentCall()",
+                "+omegaValueOmegaValueOmegaValue.trim()",
+            ],
+            "added_count": 3,
+            "deleted_count": 3,
+            "changed_count": 6,
+        }
+
+        replacements = diff2png._line_replacements_by_new_lineno(hunk)
+
+        self.assertEqual(
+            {lineno: old_lineno for lineno, (old_lineno, _) in replacements.items()},
+            {1: 1, 3: 3},
+        )
 
     def test_normal_view_inline_matching_preserves_line_order(self):
         hunk = {

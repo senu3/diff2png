@@ -1523,9 +1523,9 @@
           </div>
           <div class="setting-desc">この文字数を超える変更は、通常表示で行内ハイライトにしません。</div>
           <div class="setting-row">
-            <input type="range" id="cfg-inline-max-chars" min="0" max="200" step="1" value="40"
+            <input type="range" id="cfg-inline-max-chars" min="0" max="200" step="1" value="120"
               oninput="document.getElementById('cfg-inline-max-chars-val').textContent=this.value">
-            <span class="range-val" id="cfg-inline-max-chars-val">40</span>
+            <span class="range-val" id="cfg-inline-max-chars-val">120</span>
           </div>
         </div>
       </div>
@@ -2098,7 +2098,7 @@
         inline_diff_default_mode: payload.inline_diff_default_mode || 'full',
         inline_diff_max_changed_chars: Number.isFinite(Number(payload.inline_diff_max_changed_chars))
           ? Number(payload.inline_diff_max_changed_chars)
-          : 40,
+          : 120,
       };
     }
 
@@ -3345,7 +3345,7 @@
     }
 
     // ---- 設定ドロワー ----
-    const DEFAULTS = { diffMode: 'file', inlineDiffDefault: 'full', inlineDiffMaxChars: 40, context: 5, merge: 8, width: 960, outdir: 'diff_screenshots', background: 'normal' };
+    const DEFAULTS = { diffMode: 'file', inlineDiffDefault: 'full', inlineDiffMaxChars: 120, context: 5, merge: 8, width: 960, outdir: 'diff_screenshots', background: 'normal' };
 
     function toggleDrawer() {
       const isOpen = document.getElementById('drawer').classList.contains('open');

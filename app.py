@@ -39,9 +39,9 @@ FILE_CONTENT_CACHE: dict[str, list[str]] = {}
 ANALYSIS_SESSIONS: dict[str, dict] = {}
 MAX_ANALYSIS_SESSIONS = 20
 GIT_TIMEOUT_SECONDS = 30
-INLINE_DIFF_MAX_CHANGED_CHARS = 40
+INLINE_DIFF_MAX_CHANGED_CHARS = 120
 INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
-INLINE_DIFF_MIN_SIMILARITY = 0.5
+INLINE_DIFF_MIN_SIMILARITY = 0.62
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 INLINE_DIFF_MODES = {"full", "new", "same", "off"}
 _OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
@@ -745,6 +745,8 @@ td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:
 span.inline-added{{background:#bbf7d0;color:#14532d;border-radius:3px;padding:0 2px}}
 span.inline-deleted{{background:#fecaca;color:#991b1b;border-radius:3px;padding:0 2px;text-decoration:line-through}}
 span.inline-same{{background:#cffafe;color:#164e63;border-radius:3px;padding:0 2px}}
+tr.changed.inline-rendered{{background:#f8fafc}}
+tr.changed.inline-rendered td.lineno{{background:#f8fafc;color:#64748b}}
 .footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
 </style></head><body>
 <div class=\"header\">
@@ -795,10 +797,16 @@ def _line_replacements_for_diff_lines(
     changed_line_numbers.sort()
     added_line_index = 0
 
-    deleted_block: list[tuple[int, str]] = []
-    added_block: list[tuple[int, str]] = []
-
     def similarity(old_text: str, new_text: str) -> float:
+        old_stripped = old_text.strip()
+        new_stripped = new_text.strip()
+        if not old_stripped or not new_stripped:
+            return 0.0
+        if not re.search(r"\w", old_stripped) or not re.search(r"\w", new_stripped):
+            return 0.0
+        if old_stripped == new_stripped and old_text != new_text:
+            return 0.0
+
         old_tokens = _INLINE_DIFF_TOKEN_RE.findall(old_text)
         new_tokens = _INLINE_DIFF_TOKEN_RE.findall(new_text)
         token_score = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False).ratio()
@@ -808,7 +816,9 @@ def _line_replacements_for_diff_lines(
             for block in difflib.SequenceMatcher(None, old_text, new_text, autojunk=False).get_matching_blocks()
         )
         preserved_shorter_score = matching_chars / max(1, min(len(old_text), len(new_text)))
-        return max(min(token_score, char_score), preserved_shorter_score)
+        length_ratio = min(len(old_text), len(new_text)) / max(1, max(len(old_text), len(new_text)))
+        insertion_score = preserved_shorter_score * (0.55 + 0.45 * length_ratio)
+        return max(min(token_score, char_score), insertion_score)
 
     def html_tag_shape(text: str) -> str:
         return _HTML_TAG_NAME_RE.sub(r"\1#", text)
@@ -823,7 +833,29 @@ def _line_replacements_for_diff_lines(
             autojunk=False,
         ).ratio()
 
-    def block_allows_html_tag_pairing() -> bool:
+    def simple_html_tag_name(text: str) -> str | None:
+        match = re.fullmatch(r"</?\s*([A-Za-z][\w:-]*)\s*/?\s*>", text.strip())
+        return match.group(1).lower() if match else None
+
+    def directly_pairable(old_text: str, new_text: str) -> bool:
+        old_stripped = old_text.strip()
+        new_stripped = new_text.strip()
+        if not old_stripped or not new_stripped:
+            return False
+        if not re.search(r"\w", old_stripped) or not re.search(r"\w", new_stripped):
+            return False
+        if old_stripped == new_stripped and old_text != new_text:
+            return False
+        old_tag = simple_html_tag_name(old_text)
+        new_tag = simple_html_tag_name(new_text)
+        if old_tag and new_tag and old_tag != new_tag:
+            return False
+        return True
+
+    def block_allows_html_tag_pairing(
+        deleted_block: list[tuple[int, str]],
+        added_block: list[tuple[int, str]],
+    ) -> bool:
         if len(deleted_block) < 2 or len(added_block) < 2:
             return False
         old_text = "\n".join(text for _, text in deleted_block)
@@ -838,9 +870,11 @@ def _line_replacements_for_diff_lines(
         ).ratio()
         return score >= INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY
 
-    def flush_block() -> None:
-        nonlocal deleted_block, added_block
-        allow_html_tag_pairing = block_allows_html_tag_pairing()
+    def pair_replace_block(
+        deleted_block: list[tuple[int, str]],
+        added_block: list[tuple[int, str]],
+    ) -> None:
+        allow_html_tag_pairing = block_allows_html_tag_pairing(deleted_block, added_block)
 
         def candidate_score(old_text: str, new_text: str) -> float:
             score = similarity(old_text, new_text)
@@ -854,6 +888,44 @@ def _line_replacements_for_diff_lines(
             [candidate_score(old_text, new_text) for _, new_text in added_block]
             for _, old_text in deleted_block
         ]
+
+        def add_direct_pairs() -> None:
+            for (old_lineno, old_text), (new_lineno, _) in zip(deleted_block, added_block):
+                replacements[new_lineno] = (old_lineno, old_text)
+
+        if deleted_count == 1 and added_count == 1:
+            old_text = deleted_block[0][1]
+            new_text = added_block[0][1]
+            if directly_pairable(old_text, new_text):
+                add_direct_pairs()
+            return
+
+        if deleted_count == added_count and deleted_count > 1:
+            shifted = False
+            for idx in range(deleted_count):
+                direct_score = score_matrix[idx][idx]
+                off_axis_score = max(
+                    [
+                        score_matrix[idx][new_idx]
+                        for new_idx in range(added_count)
+                        if new_idx != idx
+                    ] + [
+                        score_matrix[old_idx][idx]
+                        for old_idx in range(deleted_count)
+                        if old_idx != idx
+                    ],
+                    default=0.0,
+                )
+                if direct_score < INLINE_DIFF_MIN_SIMILARITY and off_axis_score >= INLINE_DIFF_MIN_SIMILARITY:
+                    shifted = True
+                    break
+            if not shifted and all(
+                directly_pairable(old_text, new_text)
+                for (_, old_text), (_, new_text) in zip(deleted_block, added_block)
+            ):
+                add_direct_pairs()
+                return
+
         # Keep line order like an editor diff alignment. This avoids crossed matches
         # that can look plausible by score but highlight the wrong added line.
         dp: list[list[tuple[float, int, int, list[tuple[int, int]]]]] = [
@@ -891,17 +963,16 @@ def _line_replacements_for_diff_lines(
             old_lineno, old_text = deleted_block[deleted_idx]
             new_lineno, _ = added_block[added_idx]
             replacements[new_lineno] = (old_lineno, old_text)
-        deleted_block = []
-        added_block = []
+
+    old_items: list[tuple[int, str]] = []
+    new_items: list[tuple[int, str]] = []
 
     for raw in diff_lines:
         if not raw or raw.startswith("\\"):
             continue
 
         if raw.startswith("-") and not raw.startswith("---"):
-            if added_block:
-                flush_block()
-            deleted_block.append((old_ln, raw[1:]))
+            old_items.append((old_ln, raw[1:]))
             old_ln += 1
         elif raw.startswith("+") and not raw.startswith("+++"):
             if added_line_index < len(changed_line_numbers):
@@ -909,16 +980,27 @@ def _line_replacements_for_diff_lines(
             else:
                 added_lineno = new_ln
             added_line_index += 1
-            added_block.append((added_lineno, raw[1:]))
+            new_items.append((added_lineno, raw[1:]))
             new_ln = added_lineno + 1
         elif raw.startswith(" "):
-            flush_block()
+            text = raw[1:]
+            old_items.append((old_ln, text))
+            new_items.append((new_ln, text))
             old_ln += 1
             new_ln += 1
-        else:
-            flush_block()
 
-    flush_block()
+    matcher = difflib.SequenceMatcher(
+        None,
+        [text for _, text in old_items],
+        [text for _, text in new_items],
+        autojunk=False,
+    )
+    for tag, old_start_idx, old_end_idx, new_start_idx, new_end_idx in matcher.get_opcodes():
+        if tag == "replace":
+            pair_replace_block(
+                old_items[old_start_idx:old_end_idx],
+                new_items[new_start_idx:new_end_idx],
+            )
     return replacements
 
 
@@ -1060,17 +1142,28 @@ def build_code_html(
         # text は共通インデントを削除したものを使う
         text = stripped_texts[idx]
         is_changed = lineno in changed_set
+        inline_rendered = False
         if is_changed and lineno in replacement_by_lineno:
             _, old_text = replacement_by_lineno[lineno]
-            code_html = _inline_diff_html(
+            inline_html = _inline_diff_html(
                 old_text,
                 text,
                 inline_diff_mode,
                 inline_diff_max_changed_chars,
-            ) or escape(text)
+            )
+            if inline_html is not None:
+                code_html = inline_html
+                inline_rendered = "inline-" in inline_html
+            else:
+                code_html = escape(text)
         else:
             code_html = escape(text)
-        row_class = ' class="changed"' if is_changed else ""
+        row_classes = []
+        if is_changed:
+            row_classes.append("changed")
+        if inline_rendered:
+            row_classes.append("inline-rendered")
+        row_class = f' class="{" ".join(row_classes)}"' if row_classes else ""
         marker = "+" if is_changed else " "
         rows.append(
             f'<tr{row_class}>'

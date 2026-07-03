@@ -52,6 +52,7 @@ _FILENAME_UNSAFE_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 _FILENAME_REPEAT_UNDERSCORE_RE = re.compile(r"_+")
 _OUTPUT_PNG_RE = re.compile(r"^\d{8}_\d{6}_\d{3}_.+_L\d+\.png$", re.IGNORECASE)
 _INLINE_DIFF_TOKEN_RE = re.compile(r"\w+|\s+|[^\w\s]+", re.UNICODE)
+_INLINE_DIFF_JOINER_RE = re.compile(r"^[^\w\s]{1,3}$", re.UNICODE)
 _HTML_TAG_NAME_RE = re.compile(r"(</?\s*)[A-Za-z][\w:-]*")
 _WINDOWS_RESERVED_NAMES = {
     "CON", "PRN", "AUX", "NUL",
@@ -1051,6 +1052,7 @@ def _inline_diff_html(
     matcher = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False)
     changed_chars = 0
     opcodes = matcher.get_opcodes()
+    opcodes = _merge_inline_punctuation_fragments(opcodes, old_tokens, new_tokens)
     for tag, i1, i2, j1, j2 in opcodes:
         if tag == "equal":
             continue
@@ -1085,6 +1087,64 @@ def _inline_diff_html(
                     parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
                 parts.append(f'<span class="inline-added">{escape(new_part)}</span>')
     return "".join(parts)
+
+
+def _merge_inline_punctuation_fragments(
+    opcodes: list[tuple[str, int, int, int, int]],
+    old_tokens: list[str],
+    new_tokens: list[str],
+) -> list[tuple[str, int, int, int, int]]:
+    merged: list[tuple[str, int, int, int, int]] = []
+    idx = 0
+
+    def is_change(tag: str) -> bool:
+        return tag in {"insert", "delete", "replace"}
+
+    def is_short_punctuation_equal(opcode: tuple[str, int, int, int, int]) -> bool:
+        tag, i1, i2, j1, j2 = opcode
+        if tag != "equal":
+            return False
+        old_part = "".join(old_tokens[i1:i2])
+        new_part = "".join(new_tokens[j1:j2])
+        return old_part == new_part and bool(_INLINE_DIFF_JOINER_RE.fullmatch(old_part))
+
+    def merged_tag(i1: int, i2: int, j1: int, j2: int) -> str:
+        old_empty = i1 == i2
+        new_empty = j1 == j2
+        if old_empty:
+            return "insert"
+        if new_empty:
+            return "delete"
+        return "replace"
+
+    while idx < len(opcodes):
+        tag, i1, i2, j1, j2 = opcodes[idx]
+        if not is_change(tag):
+            merged.append(opcodes[idx])
+            idx += 1
+            continue
+
+        end_idx = idx
+        end_i2 = i2
+        end_j2 = j2
+        while (
+            end_idx + 2 < len(opcodes)
+            and is_short_punctuation_equal(opcodes[end_idx + 1])
+            and is_change(opcodes[end_idx + 2][0])
+        ):
+            _, _, equal_i2, _, equal_j2 = opcodes[end_idx + 1]
+            _, _, next_i2, _, next_j2 = opcodes[end_idx + 2]
+            end_i2 = next_i2 if next_i2 != equal_i2 else equal_i2
+            end_j2 = next_j2 if next_j2 != equal_j2 else equal_j2
+            end_idx += 2
+
+        if end_idx == idx:
+            merged.append(opcodes[idx])
+        else:
+            merged.append((merged_tag(i1, end_i2, j1, end_j2), i1, end_i2, j1, end_j2))
+        idx = end_idx + 1
+
+    return merged
 
 
 def build_code_html(

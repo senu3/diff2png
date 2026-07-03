@@ -320,6 +320,21 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('draft', html)
         self.assertIn('published', html)
 
+    def test_inline_diff_merges_changes_split_by_short_punctuation(self):
+        html = diff2png._inline_diff_html("value = foo.bar", "value = baz.qux")
+
+        self.assertIn(
+            '<span class="inline-deleted">foo.bar</span><span class="inline-added">baz.qux</span>',
+            html,
+        )
+        self.assertNotIn('</span>.<span', html)
+
+    def test_inline_diff_keeps_single_character_change(self):
+        html = diff2png._inline_diff_html("value = a", "value = b")
+
+        self.assertIn('<span class="inline-deleted">a</span>', html)
+        self.assertIn('<span class="inline-added">b</span>', html)
+
     def test_normal_view_does_not_pair_single_html_tag_rename(self):
         hunk = {
             "filepath": "sample.html",

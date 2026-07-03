@@ -987,6 +987,34 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn("inline-deleted", inserted_row)
         self.assertIn('const userName = profile.name<span class="inline-added">.trim()</span>', html)
 
+    def test_normal_view_inline_matching_preserves_line_order(self):
+        hunk = {
+            "filepath": "sample.js",
+            "start": 1,
+            "end": 2,
+            "default_start": 1,
+            "default_end": 2,
+            "old_start": 1,
+            "changed_lines": [1, 2],
+            "diff_lines": [
+                "-alphaTokenAlphaTokenAlphaToken()",
+                "-omegaValueOmegaValueOmegaValue()",
+                "+omegaValueOmegaValueOmegaValue.trim()",
+                "+alphaTokenAlphaTokenAlphaToken.trim()",
+            ],
+            "added_count": 2,
+            "deleted_count": 2,
+            "changed_count": 4,
+        }
+
+        replacements = diff2png._line_replacements_by_new_lineno(hunk)
+
+        self.assertEqual(len(replacements), 1)
+        self.assertNotEqual(
+            {lineno: old_lineno for lineno, (old_lineno, _) in replacements.items()},
+            {1: 2, 2: 1},
+        )
+
     def test_normal_preview_inline_matching_uses_real_git_diff(self):
         if shutil.which("git") is None:
             self.skipTest("git is not available")

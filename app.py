@@ -835,34 +835,56 @@ def _line_replacements_for_diff_lines(
     def flush_block() -> None:
         nonlocal deleted_block, added_block
         allow_html_tag_pairing = block_allows_html_tag_pairing()
-        candidates: list[tuple[float, int, int, int, int, str]] = []
-        for added_idx, (new_lineno, new_text) in enumerate(added_block):
-            for deleted_idx, (old_lineno, old_text) in enumerate(deleted_block):
-                score = similarity(old_text, new_text)
-                if allow_html_tag_pairing:
-                    score = max(score, html_tag_shape_similarity(old_text, new_text))
-                if score >= INLINE_DIFF_MIN_SIMILARITY:
-                    candidates.append((
-                        score,
-                        abs(added_idx - deleted_idx),
-                        added_idx,
-                        deleted_idx,
-                        old_lineno,
-                        old_text,
-                    ))
 
-        matched_added: set[int] = set()
-        matched_deleted: set[int] = set()
-        for score, _, added_idx, deleted_idx, old_lineno, old_text in sorted(
-            candidates,
-            key=lambda item: (-item[0], item[1], item[2], item[3]),
-        ):
-            if added_idx in matched_added or deleted_idx in matched_deleted:
-                continue
+        def candidate_score(old_text: str, new_text: str) -> float:
+            score = similarity(old_text, new_text)
+            if allow_html_tag_pairing:
+                score = max(score, html_tag_shape_similarity(old_text, new_text))
+            return score
+
+        deleted_count = len(deleted_block)
+        added_count = len(added_block)
+        score_matrix = [
+            [candidate_score(old_text, new_text) for _, new_text in added_block]
+            for _, old_text in deleted_block
+        ]
+        # Keep line order like an editor diff alignment. This avoids crossed matches
+        # that can look plausible by score but highlight the wrong added line.
+        dp: list[list[tuple[float, int, int, list[tuple[int, int]]]]] = [
+            [(0.0, 0, 0, []) for _ in range(added_count + 1)]
+            for _ in range(deleted_count + 1)
+        ]
+
+        def better(
+            current: tuple[float, int, int, list[tuple[int, int]]],
+            candidate: tuple[float, int, int, list[tuple[int, int]]],
+        ) -> tuple[float, int, int, list[tuple[int, int]]]:
+            if (
+                candidate[0] > current[0]
+                or (candidate[0] == current[0] and candidate[1] > current[1])
+                or (candidate[0] == current[0] and candidate[1] == current[1] and candidate[2] < current[2])
+            ):
+                return candidate
+            return current
+
+        for deleted_idx in range(1, deleted_count + 1):
+            for added_idx in range(1, added_count + 1):
+                best = better(dp[deleted_idx - 1][added_idx], dp[deleted_idx][added_idx - 1])
+                score = score_matrix[deleted_idx - 1][added_idx - 1]
+                if score >= INLINE_DIFF_MIN_SIMILARITY:
+                    previous_score, previous_pairs, previous_distance, previous_matches = dp[deleted_idx - 1][added_idx - 1]
+                    best = better(best, (
+                        previous_score + score,
+                        previous_pairs + 1,
+                        previous_distance + abs((deleted_idx - 1) - (added_idx - 1)),
+                        previous_matches + [(deleted_idx - 1, added_idx - 1)],
+                    ))
+                dp[deleted_idx][added_idx] = best
+
+        for deleted_idx, added_idx in dp[deleted_count][added_count][3]:
+            old_lineno, old_text = deleted_block[deleted_idx]
             new_lineno, _ = added_block[added_idx]
             replacements[new_lineno] = (old_lineno, old_text)
-            matched_added.add(added_idx)
-            matched_deleted.add(deleted_idx)
         deleted_block = []
         added_block = []
 

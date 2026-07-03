@@ -47,12 +47,12 @@ class HunkMergeTests(unittest.TestCase):
         original = diff2png.INLINE_DIFF_DEFAULT_MODE
         try:
             client = diff2png.app.test_client()
-            response = client.post("/api/config", json={"inline_diff_default_mode": "new"})
+            response = client.post("/api/config", json={"inline_diff_default_mode": "same"})
             self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 
             get_response = client.get("/api/config")
             self.assertEqual(get_response.status_code, 200, get_response.get_data(as_text=True))
-            self.assertEqual(get_response.get_json()["inline_diff_default_mode"], "new")
+            self.assertEqual(get_response.get_json()["inline_diff_default_mode"], "same")
 
             invalid_response = client.post("/api/config", json={"inline_diff_default_mode": "invalid"})
             self.assertEqual(invalid_response.status_code, 400)
@@ -463,6 +463,43 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn('draft', html)
         self.assertIn('published', html)
 
+    def test_normal_view_inline_diff_same_mode_highlights_unchanged_text(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": [
+                "-result = config.old_value",
+                "+result = config.new_value",
+            ],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+            "inline_diff_mode": "same",
+        }
+        source_lines = ["result = config.new_value"]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('class="inline-same"', html)
+        self.assertNotIn('class="inline-added"', html)
+        self.assertNotIn('class="inline-deleted"', html)
+        self.assertNotIn('old_value', html)
+        self.assertIn('new_value', html)
+
     def test_hunk_inline_diff_endpoint_updates_target_hunk(self):
         if shutil.which("git") is None:
             self.skipTest("git is not available")
@@ -612,6 +649,89 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('<td class="lineno">10</td>', html)
         self.assertIn('class="inline-added"', html)
         self.assertIn(' active', html)
+
+    def test_normal_view_inlines_html_table_class_addition(self):
+        hunk = {
+            "filepath": "sample.html",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": [
+                '-<table class="table">',
+                '+<table class="table table-striped">',
+            ],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+        source_lines = ['<table class="table table-striped">']
+
+        replacements = diff2png._line_replacements_by_new_lineno(hunk)
+        self.assertIn(1, replacements)
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('class="inline-added"', html)
+        self.assertIn(' table-striped', html)
+
+    def test_normal_view_html_class_addition_respects_changed_char_limit(self):
+        old_text = '<table class="table">'
+        new_text = '<table class="table table-striped table-hover table-bordered align-middle">'
+        hunk = {
+            "filepath": "sample.html",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": [f"-{old_text}", f"+{new_text}"],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+        source_lines = [new_text]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            default_html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+            expanded_html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {
+                    "diff_mode": "file",
+                    "html_width": 960,
+                    "background_mode": "normal",
+                    "inline_diff_max_changed_chars": 120,
+                },
+            )
+
+        self.assertNotIn('class="inline-added"', default_html)
+        self.assertIn('class="inline-added"', expanded_html)
+        self.assertIn(' table-striped table-hover table-bordered align-middle', expanded_html)
 
     def test_normal_view_does_not_inline_highlight_leading_indent_change(self):
         hunk = {

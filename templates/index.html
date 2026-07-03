@@ -1510,6 +1510,7 @@
             <select id="cfg-inline-default">
               <option value="full">行内 両方</option>
               <option value="new">行内 新のみ</option>
+              <option value="same">行内 共通</option>
               <option value="off">行内 OFF</option>
             </select>
           </div>
@@ -2013,7 +2014,7 @@
       if (prefs.diff_mode === 'file' || prefs.diff_mode === 'patch') {
         document.getElementById('sourceDiffMode').value = prefs.diff_mode;
       }
-      if (prefs.inline_diff_default_mode === 'full' || prefs.inline_diff_default_mode === 'new' || prefs.inline_diff_default_mode === 'off') {
+      if (prefs.inline_diff_default_mode === 'full' || prefs.inline_diff_default_mode === 'new' || prefs.inline_diff_default_mode === 'same' || prefs.inline_diff_default_mode === 'off') {
         document.getElementById('cfg-inline-default').value = prefs.inline_diff_default_mode;
       }
       if (prefs.inline_diff_max_changed_chars !== null && Number.isFinite(Number(prefs.inline_diff_max_changed_chars))) {
@@ -2905,8 +2906,8 @@
       const h = state.hunks[index];
       const isPatch = currentDiffMode === 'patch';
       const mode = getInlineDiffMode(h);
-      const labelByMode = { full: '行内 両方', new: '行内 新', off: '行内 OFF' };
-      const titleByMode = { full: '両方表示', new: '新のみ表示', off: 'OFF' };
+      const labelByMode = { full: '行内 両方', new: '行内 新', same: '行内 共通', off: '行内 OFF' };
+      const titleByMode = { full: '両方表示', new: '新のみ表示', same: '共通部分を強調', off: 'OFF' };
       btn.disabled = !h || isPatch;
       btn.classList.toggle('active', Boolean(h) && mode !== 'off' && !isPatch);
       btn.textContent = labelByMode[mode];
@@ -2920,13 +2921,14 @@
     function getInlineDiffMode(hunk) {
       if (!hunk) return 'full';
       const mode = String(hunk.inline_diff_mode || '').toLowerCase();
-      if (mode === 'full' || mode === 'new' || mode === 'off') return mode;
+      if (mode === 'full' || mode === 'new' || mode === 'same' || mode === 'off') return mode;
       return hunk.inline_diff_enabled === false ? 'off' : 'full';
     }
 
     function nextInlineDiffMode(mode) {
       if (mode === 'full') return 'new';
-      if (mode === 'new') return 'off';
+      if (mode === 'new') return 'same';
+      if (mode === 'same') return 'off';
       return 'full';
     }
 

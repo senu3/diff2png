@@ -43,7 +43,7 @@ INLINE_DIFF_MAX_CHANGED_CHARS = 40
 INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
 INLINE_DIFF_MIN_SIMILARITY = 0.5
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
-INLINE_DIFF_MODES = {"full", "new", "off"}
+INLINE_DIFF_MODES = {"full", "new", "same", "off"}
 _OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
 _NEW_RE = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -250,7 +250,7 @@ def hunk_inline_diff_mode(hunk: dict) -> str:
 def normalize_inline_diff_mode(value: str | None, default: str = "full") -> str:
     mode = str(value or default).strip().lower()
     if mode not in INLINE_DIFF_MODES:
-        raise ValueError("inline_diff_default_mode は full, new, off のいずれかを指定してください")
+        raise ValueError("inline_diff_default_mode は full, new, same, off のいずれかを指定してください")
     return mode
 
 
@@ -744,6 +744,7 @@ tr.deleted td.marker{{color:#dc2626}}
 td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
 span.inline-added{{background:#bbf7d0;color:#14532d;border-radius:3px;padding:0 2px}}
 span.inline-deleted{{background:#fecaca;color:#991b1b;border-radius:3px;padding:0 2px;text-decoration:line-through}}
+span.inline-same{{background:#cffafe;color:#164e63;border-radius:3px;padding:0 2px}}
 .footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
 </style></head><body>
 <div class=\"header\">
@@ -802,7 +803,12 @@ def _line_replacements_for_diff_lines(
         new_tokens = _INLINE_DIFF_TOKEN_RE.findall(new_text)
         token_score = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False).ratio()
         char_score = difflib.SequenceMatcher(None, old_text, new_text, autojunk=False).ratio()
-        return min(token_score, char_score)
+        matching_chars = sum(
+            block.size
+            for block in difflib.SequenceMatcher(None, old_text, new_text, autojunk=False).get_matching_blocks()
+        )
+        preserved_shorter_score = matching_chars / max(1, min(len(old_text), len(new_text)))
+        return max(min(token_score, char_score), preserved_shorter_score)
 
     def html_tag_shape(text: str) -> str:
         return _HTML_TAG_NAME_RE.sub(r"\1#", text)
@@ -954,6 +960,7 @@ def _inline_diff_html(
 ) -> str | None:
     parts = []
     show_old = mode == "full"
+    highlight_same = mode == "same"
     changed_chars_limit = (
         INLINE_DIFF_MAX_CHANGED_CHARS
         if max_changed_chars is None
@@ -980,14 +987,23 @@ def _inline_diff_html(
             and new_part.strip(" \t") == ""
         )
         if tag == "equal":
-            parts.append(escape(new_part))
+            if highlight_same and new_part.strip(" \t"):
+                parts.append(f'<span class="inline-same">{escape(new_part)}</span>')
+            else:
+                parts.append(escape(new_part))
         elif tag == "insert":
-            parts.append(escape(new_part) if is_leading_indent else f'<span class="inline-added">{escape(new_part)}</span>')
+            parts.append(
+                escape(new_part)
+                if is_leading_indent or highlight_same
+                else f'<span class="inline-added">{escape(new_part)}</span>'
+            )
         elif tag == "delete":
             if show_old and not is_leading_indent:
                 parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
         elif tag == "replace":
             if is_leading_indent:
+                parts.append(escape(new_part))
+            elif highlight_same:
                 parts.append(escape(new_part))
             else:
                 if show_old:

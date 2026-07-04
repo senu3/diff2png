@@ -335,6 +335,16 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('<span class="inline-deleted">a</span>', html)
         self.assertIn('<span class="inline-added">b</span>', html)
 
+    def test_inline_diff_can_mute_added_highlight(self):
+        html = diff2png._inline_diff_html(
+            "value = old",
+            "value = new",
+            muted_added_keys={"10:0:new"},
+            added_key_prefix="10",
+        )
+
+        self.assertIn('<span class="inline-added inline-added-muted">new</span>', html)
+
     def test_normal_view_does_not_pair_single_html_tag_rename(self):
         hunk = {
             "filepath": "sample.html",
@@ -588,6 +598,90 @@ class HunkMergeTests(unittest.TestCase):
         self.assertTrue(data["hunk"]["inline_diff_enabled"])
         self.assertEqual(data["hunk"]["inline_diff_mode"], "new")
         self.assertEqual(hunks[0]["inline_diff_mode"], "new")
+
+    def test_hunk_inline_added_mute_endpoint_updates_target_hunk(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not available")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+            hunks = [
+                {
+                    "filepath": "sample.py",
+                    "start": 1,
+                    "end": 1,
+                    "default_start": 1,
+                    "default_end": 1,
+                    "old_start": 1,
+                    "changed_lines": [1],
+                    "diff_lines": ['-a = "old"', '+a = "new"'],
+                    "added_count": 1,
+                    "deleted_count": 1,
+                    "changed_count": 2,
+                    "inline_diff_mode": "full",
+                    "inline_diff_enabled": True,
+                },
+            ]
+
+            try:
+                diff2png.ANALYSIS_SESSIONS.clear()
+                analysis_id = diff2png.create_analysis_session(
+                    str(repo),
+                    hunks,
+                    hunks,
+                    {"type": "worktree"},
+                    {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+                )
+                client = diff2png.app.test_client()
+                response = client.post(
+                    "/api/hunk-inline-added-mute/0",
+                    json={
+                        "repo_path": str(repo),
+                        "analysis_id": analysis_id,
+                        "key": "1:0:new",
+                        "muted": True,
+                    },
+                )
+            finally:
+                diff2png.ANALYSIS_SESSIONS.clear()
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = response.get_json()
+        self.assertEqual(data["hunk"]["inline_added_mutes"], ["1:0:new"])
+        self.assertEqual(hunks[0]["inline_added_mutes"], ["1:0:new"])
+
+    def test_normal_view_renders_muted_added_highlight(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": ['-value = "old"', '+value = "new"'],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+            "inline_diff_mode": "full",
+            "inline_diff_enabled": True,
+            "inline_added_mutes": ["1:0:new"],
+        }
+        source_lines = ['value = "new"']
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('<span class="inline-added inline-added-muted">new</span>', html)
 
     def test_normal_view_inline_diff_uses_changed_line_after_context_expansion(self):
         hunk = {

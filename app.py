@@ -44,6 +44,8 @@ INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
 INLINE_DIFF_MIN_SIMILARITY = 0.62
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 INLINE_DIFF_MODES = {"full", "new", "off"}
+INLINE_ADDED_MUTES_LIMIT = 200
+INLINE_ADDED_MUTE_KEY_LIMIT = 1000
 _OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
 _NEW_RE = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -259,6 +261,24 @@ def normalize_inline_diff_max_changed_chars(value: int | str | None) -> int:
     return max(0, min(INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT, int(value)))
 
 
+def normalize_inline_added_mute_key(value: str | None) -> str:
+    key = str(value or "")
+    if not key or len(key) > INLINE_ADDED_MUTE_KEY_LIMIT:
+        raise ValueError("key が不正です")
+    return key
+
+
+def hunk_inline_added_mutes(hunk: dict) -> set[str]:
+    values = hunk.get("inline_added_mutes", [])
+    if not isinstance(values, list):
+        return set()
+    return {
+        str(value)
+        for value in values[:INLINE_ADDED_MUTES_LIMIT]
+        if isinstance(value, str) and value
+    }
+
+
 def make_hunk_summary(hunk: dict) -> dict:
     start = int(hunk.get("start", 1))
     end = int(hunk.get("end", start))
@@ -279,6 +299,7 @@ def make_hunk_summary(hunk: dict) -> dict:
         "changed_count": hunk.get("changed_count", len(hunk.get("changed_lines", []))),
         "added_count": hunk.get("added_count", 0),
         "deleted_count": hunk.get("deleted_count", 0),
+        "inline_added_mutes": sorted(hunk_inline_added_mutes(hunk)),
     }
 
 
@@ -329,6 +350,7 @@ def finalize_hunks(raw_hunks: list[dict], repo_path: str, content_source: dict, 
         )
         h["inline_diff_enabled"] = inline_diff_mode != "off"
         h["inline_diff_mode"] = inline_diff_mode
+        h["inline_added_mutes"] = []
     return hunks
 
 
@@ -744,6 +766,7 @@ tr.added td.marker{{color:#16a34a}}
 tr.deleted td.marker{{color:#dc2626}}
 td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
 span.inline-added{{background:#bbf7d0;color:#14532d;border-radius:3px;padding:0 2px}}
+span.inline-added.inline-added-muted{{background:transparent;color:inherit}}
 span.inline-deleted{{background:#fecaca;color:#991b1b;border-radius:3px;padding:0 2px;text-decoration:line-through}}
 tr.changed.inline-rendered{{background:#f8fafc}}
 tr.changed.inline-rendered td.lineno{{background:#f8fafc;color:#64748b}}
@@ -1039,9 +1062,13 @@ def _inline_diff_html(
     new_text: str,
     mode: str = "full",
     max_changed_chars: int | None = None,
+    muted_added_keys: set[str] | None = None,
+    added_key_prefix: str = "",
 ) -> str | None:
     parts = []
     show_old = mode == "full"
+    added_index = 0
+    muted_added_keys = muted_added_keys or set()
     changed_chars_limit = (
         INLINE_DIFF_MAX_CHANGED_CHARS
         if max_changed_chars is None
@@ -1060,6 +1087,13 @@ def _inline_diff_html(
     if changed_chars > changed_chars_limit:
         return None
 
+    def added_span(text: str) -> str:
+        nonlocal added_index
+        key = f"{added_key_prefix}:{added_index}:{text}"
+        added_index += 1
+        class_name = "inline-added inline-added-muted" if key in muted_added_keys else "inline-added"
+        return f'<span class="{class_name}">{escape(text)}</span>'
+
     for tag, i1, i2, j1, j2 in opcodes:
         old_part = "".join(old_tokens[i1:i2])
         new_part = "".join(new_tokens[j1:j2])
@@ -1074,7 +1108,7 @@ def _inline_diff_html(
             parts.append(
                 escape(new_part)
                 if is_leading_indent
-                else f'<span class="inline-added">{escape(new_part)}</span>'
+                else added_span(new_part)
             )
         elif tag == "delete":
             if show_old and not is_leading_indent:
@@ -1085,7 +1119,7 @@ def _inline_diff_html(
             else:
                 if show_old:
                     parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
-                parts.append(f'<span class="inline-added">{escape(new_part)}</span>')
+                parts.append(added_span(new_part))
     return "".join(parts)
 
 
@@ -1179,6 +1213,7 @@ def build_code_html(
     inline_diff_max_changed_chars = normalize_inline_diff_max_changed_chars(
         render_config.get("inline_diff_max_changed_chars", INLINE_DIFF_MAX_CHANGED_CHARS)
     )
+    inline_added_mutes = hunk_inline_added_mutes(hunk)
     replacement_texts = [text for _, text in replacements.values()]
     stripped_combined, _ = _strip_common_indent_from_lines(raw_texts + replacement_texts)
     stripped_texts = stripped_combined[:len(raw_texts)]
@@ -1203,6 +1238,8 @@ def build_code_html(
                 text,
                 inline_diff_mode,
                 inline_diff_max_changed_chars,
+                inline_added_mutes,
+                str(lineno),
             )
             if inline_html is not None:
                 code_html = inline_html
@@ -1740,6 +1777,48 @@ def update_hunk_inline_diff(hunk_index: int):
     hunk = hunks[hunk_index]
     hunk["inline_diff_mode"] = mode
     hunk["inline_diff_enabled"] = mode != "off"
+    return jsonify({"hunk": make_hunk_summary(hunk)})
+
+
+@app.route("/api/hunk-inline-added-mute/<int:hunk_index>", methods=["POST"])
+def update_hunk_inline_added_mute(hunk_index: int):
+    data = request.get_json(silent=True) or {}
+    repo_path = str(data.get("repo_path", "")).strip()
+    analysis_id = str(data.get("analysis_id", "")).strip()
+    muted = data.get("muted")
+    if not repo_path:
+        return jsonify({"error": "リポジトリパスが無効です"}), 400
+    if not analysis_id:
+        return jsonify({"error": "analysis_id が不正です"}), 400
+    if not isinstance(muted, bool):
+        return jsonify({"error": "muted は真偽値で指定してください"}), 400
+
+    try:
+        key = normalize_inline_added_mute_key(data.get("key"))
+        repo = resolve_repo_path(repo_path)
+        session = get_analysis_session(analysis_id, str(repo))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    if session_config(session).get("diff_mode") == "patch":
+        return jsonify({"error": "追加ハイライトのミュートは通常表示でのみ使用できます"}), 400
+
+    hunks = session["hunks"]
+    if hunk_index < 0 or hunk_index >= len(hunks):
+        return jsonify({"error": "無効なインデックス"}), 400
+
+    hunk = hunks[hunk_index]
+    if hunk_inline_diff_mode(hunk) == "off":
+        return jsonify({"error": "行内差分が非表示のhunkでは使用できません"}), 400
+
+    mutes = hunk_inline_added_mutes(hunk)
+    if muted:
+        if len(mutes) >= INLINE_ADDED_MUTES_LIMIT and key not in mutes:
+            return jsonify({"error": "ミュート数が上限に達しました"}), 400
+        mutes.add(key)
+    else:
+        mutes.discard(key)
+    hunk["inline_added_mutes"] = sorted(mutes)
     return jsonify({"hunk": make_hunk_summary(hunk)})
 
 

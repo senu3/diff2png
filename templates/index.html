@@ -1118,6 +1118,21 @@
       background: rgba(62, 207, 110, 0.08);
     }
 
+    .inline-added-mute-toggle {
+      height: 28px;
+      padding: 0 9px;
+      font-size: 11px;
+      line-height: 1;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .inline-added-mute-toggle.active {
+      border-color: rgba(245, 200, 66, 0.55);
+      color: var(--yellow);
+      background: rgba(245, 200, 66, 0.08);
+    }
+
     .preview-mode-segment {
       display: inline-flex;
       align-items: center;
@@ -1846,6 +1861,9 @@
       </div>
       <button class="btn btn-ghost inline-diff-toggle" id="inlineDiffToggleBtn" onclick="toggleActiveInlineDiff()"
         disabled title="このhunkの行内差分を切り替え" aria-label="このhunkの行内差分を切り替え">行内差分: 両方</button>
+      <button class="btn btn-ghost inline-added-mute-toggle" id="inlineAddedMuteBtn"
+        onclick="toggleInlineAddedMutePicker()" disabled title="追加ハイライトを消す"
+        aria-label="追加ハイライトを消す">追加色OFF</button>
       <div class="range-btns">
         <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
           title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
@@ -1932,6 +1950,8 @@
       commitItems: [],
       rangeAdjusting: false,
       inlineDiffUpdating: false,
+      inlineAddedMutePicking: false,
+      inlineAddedMuteUpdating: false,
     };
     let draftFileFilter = [];
 
@@ -2093,6 +2113,8 @@
         btn.setAttribute('aria-pressed', String(active));
         btn.disabled = !hasAnalysis;
       });
+      updateInlineAddedMuteButton(state.activeIndex);
+      updatePreviewInlineAddedMuteMode();
     }
 
     function getDiffSourceValues() {
@@ -2561,6 +2583,7 @@
         state.repoPath = repoPath;
         state.analysisId = data.analysis_id || '';
         state.hunks = data.hunks;
+        state.inlineAddedMutePicking = false;
         updateSourceDisplayButton();
         updatePreviewDiffModeSegment();
         state.selected = preserveSelection
@@ -2625,6 +2648,7 @@
         }
 
         state.hunks = data.hunks || [];
+        state.inlineAddedMutePicking = false;
         state.selected = remapSelectedHunks(state.hunks, prevHunks, prevSelected);
         state.activeIndex = -1;
         updatePreviewDiffModeSegment();
@@ -2982,6 +3006,29 @@
       btn.setAttribute('aria-label', title);
     }
 
+    function canUseInlineAddedMute(index) {
+      const h = state.hunks[index];
+      return Boolean(h) && currentDiffMode !== 'patch' && getInlineDiffMode(h) !== 'off';
+    }
+
+    function updateInlineAddedMuteButton(index) {
+      const btn = document.getElementById('inlineAddedMuteBtn');
+      if (!btn) return;
+
+      const enabled = canUseInlineAddedMute(index);
+      if (!enabled && state.inlineAddedMutePicking) {
+        state.inlineAddedMutePicking = false;
+        updatePreviewInlineAddedMuteMode();
+      }
+      btn.disabled = !enabled;
+      btn.classList.toggle('active', enabled && state.inlineAddedMutePicking);
+      const title = enabled
+        ? '追加ハイライトをクリックして消す/戻す'
+        : '通常表示の行内差分で使用できます';
+      btn.title = title;
+      btn.setAttribute('aria-label', title);
+    }
+
     function getInlineDiffMode(hunk) {
       if (!hunk) return 'full';
       const mode = String(hunk.inline_diff_mode || '').toLowerCase();
@@ -3009,6 +3056,7 @@
       document.getElementById('rangeExpandDownBtn').disabled = !adjustable;
       document.getElementById('rangeResetBtn').disabled = !adjustable || !h.range_adjusted;
       updateInlineDiffToggle(index);
+      updateInlineAddedMuteButton(index);
     }
 
     function updateHunkRangeLabel(index) {
@@ -3037,6 +3085,117 @@
       el.classList.toggle('adjusted', Boolean(hunk.range_adjusted));
     }
 
+    function currentPreviewIframe() {
+      return document.getElementById('previewContent')?.querySelector('iframe') || null;
+    }
+
+    function inlineAddedMuteStyle() {
+      return `
+        span.inline-added.inline-added-muted {
+          background: transparent !important;
+          color: inherit !important;
+        }
+        body.inline-added-mute-picking span.inline-added {
+          cursor: pointer;
+          outline: 1px dashed #16a34a;
+          outline-offset: 1px;
+        }
+        body.inline-added-mute-picking span.inline-added.inline-added-muted {
+          outline-color: #94a3b8;
+        }
+        body.inline-added-mute-picking span.inline-added:hover {
+          box-shadow: 0 0 0 2px rgba(91, 138, 240, 0.35);
+        }
+      `;
+    }
+
+    function installInlineAddedMuteControls(iframe) {
+      const doc = iframe?.contentDocument;
+      if (!doc?.body) return;
+      if (!doc.getElementById('inline-added-mute-style')) {
+        const style = doc.createElement('style');
+        style.id = 'inline-added-mute-style';
+        style.textContent = inlineAddedMuteStyle();
+        doc.head.appendChild(style);
+      }
+      doc.body.addEventListener('click', onPreviewInlineAddedClick);
+      updatePreviewInlineAddedMuteMode(iframe);
+    }
+
+    function updatePreviewInlineAddedMuteMode(iframe = currentPreviewIframe()) {
+      const doc = iframe?.contentDocument;
+      if (!doc?.body) return;
+      const enabled = canUseInlineAddedMute(state.activeIndex) && state.inlineAddedMutePicking;
+      doc.body.classList.toggle('inline-added-mute-picking', enabled);
+      doc.querySelectorAll('span.inline-added').forEach(span => {
+        if (enabled) {
+          span.setAttribute('title', 'クリックで追加ハイライトを消す/戻す');
+        } else {
+          span.removeAttribute('title');
+        }
+      });
+    }
+
+    function getInlineAddedMuteKey(span) {
+      const row = span.closest('tr');
+      const line = row?.querySelector('td.lineno')?.textContent.trim() || '';
+      const spansInRow = Array.from(row?.querySelectorAll('span.inline-added') || []);
+      const indexInRow = Math.max(0, spansInRow.indexOf(span));
+      return `${line}:${indexInRow}:${span.textContent || ''}`;
+    }
+
+    async function toggleInlineAddedMuteSpan(span) {
+      const index = state.activeIndex;
+      if (state.inlineAddedMuteUpdating || index < 0 || !state.analysisId || !canUseInlineAddedMute(index)) return;
+
+      const key = getInlineAddedMuteKey(span);
+      const nextMuted = !span.classList.contains('inline-added-muted');
+      state.inlineAddedMuteUpdating = true;
+      span.classList.toggle('inline-added-muted', nextMuted);
+
+      try {
+        const res = await fetch(`/api/hunk-inline-added-mute/${index}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repo_path: state.repoPath,
+            analysis_id: state.analysisId,
+            key,
+            muted: nextMuted,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          span.classList.toggle('inline-added-muted', !nextMuted);
+          showToast(data.error || '追加ハイライトの変更に失敗しました', 'error');
+          return;
+        }
+        state.hunks[index] = data.hunk;
+      } catch (e) {
+        span.classList.toggle('inline-added-muted', !nextMuted);
+        showToast('追加ハイライトの変更に失敗しました: ' + e.message, 'error');
+      } finally {
+        state.inlineAddedMuteUpdating = false;
+      }
+    }
+
+    function onPreviewInlineAddedClick(event) {
+      if (!state.inlineAddedMutePicking || !canUseInlineAddedMute(state.activeIndex)) return;
+      const target = event.target?.nodeType === 1 ? event.target : event.target?.parentElement;
+      const span = target?.closest?.('span.inline-added');
+      if (!span) return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggleInlineAddedMuteSpan(span);
+    }
+
+    function toggleInlineAddedMutePicker() {
+      if (!canUseInlineAddedMute(state.activeIndex)) return;
+      state.inlineAddedMutePicking = !state.inlineAddedMutePicking;
+      updateInlineAddedMuteButton(state.activeIndex);
+      updatePreviewInlineAddedMuteMode();
+    }
+
     function writePreviewHtml(html, options = {}) {
       const keepExisting = Boolean(options.keepExisting);
       const content = document.getElementById('previewContent');
@@ -3050,6 +3209,7 @@
       iframe.contentDocument.open();
       iframe.contentDocument.write(html);
       iframe.contentDocument.close();
+      installInlineAddedMuteControls(iframe);
 
       const fitHeight = () => {
         if (!iframe.contentDocument?.body) return;
@@ -3122,12 +3282,14 @@
 
         state.hunks[index] = data.hunk;
         updateInlineDiffToggle(index);
+        updateInlineAddedMuteButton(index);
         await showPreview(index, { showLoading: false, keepIframe: true, scrollIntoView: false });
       } catch (e) {
         showToast('行内差分の切り替えに失敗しました: ' + e.message, 'error');
       } finally {
         state.inlineDiffUpdating = false;
         updateInlineDiffToggle(index);
+        updateInlineAddedMuteButton(index);
       }
     }
 

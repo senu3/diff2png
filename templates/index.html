@@ -1532,15 +1532,15 @@
 
         <div class="setting-item">
           <div class="setting-label">
-            <span>行内差分の初期値</span>
+            <span>行内差分の初期表示</span>
             <code>inline_diff_default_mode</code>
           </div>
-          <div class="setting-desc">解析時に各hunkへ適用する行内差分モード。個別hunkの切替はこの値を上書きします。</div>
+          <div class="setting-desc">行内差分モードの初期値を設定します。</div>
           <div class="setting-row">
             <select id="cfg-inline-default">
-              <option value="full">行内 両方</option>
-              <option value="new">行内 新のみ</option>
-              <option value="off">行内 OFF</option>
+              <option value="full">両方表示</option>
+              <option value="new">追加のみ</option>
+              <option value="off">非表示</option>
             </select>
           </div>
         </div>
@@ -1554,7 +1554,7 @@
             <span>前後コンテキスト行数</span>
             <code>CONTEXT_LINES</code>
           </div>
-          <div class="setting-desc">変更hunkの前後に追加する行数。大きいほど周辺コードが多く見える。</div>
+          <div class="setting-desc">変更hunkの前後に追加する行数。大きいほど周辺コードが多く見えます。</div>
           <div class="setting-row">
             <input type="range" id="cfg-context" min="0" max="20" step="1" value="5"
               oninput="document.getElementById('cfg-context-val').textContent=this.value">
@@ -1567,7 +1567,7 @@
             <span>近接hunk統合の閾値</span>
             <code>MERGE_THRESHOLD</code>
           </div>
-          <div class="setting-desc">この行数以内に隣接するhunkは1枚に統合される。</div>
+          <div class="setting-desc">この行数以内に隣接するhunkは1枚に統合されます。</div>
           <div class="setting-row">
             <input type="range" id="cfg-merge" min="0" max="30" step="1" value="8"
               oninput="document.getElementById('cfg-merge-val').textContent=this.value">
@@ -1845,7 +1845,7 @@
           aria-pressed="false">パッチ</button>
       </div>
       <button class="btn btn-ghost inline-diff-toggle" id="inlineDiffToggleBtn" onclick="toggleActiveInlineDiff()"
-        disabled title="このhunkの行内差分を切り替え" aria-label="このhunkの行内差分を切り替え">行内 両方</button>
+        disabled title="このhunkの行内差分を切り替え" aria-label="このhunkの行内差分を切り替え">行内差分: 両方</button>
       <div class="range-btns">
         <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
           title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
@@ -2970,8 +2970,8 @@
       const h = state.hunks[index];
       const isPatch = currentDiffMode === 'patch';
       const mode = getInlineDiffMode(h);
-      const labelByMode = { full: '行内 両方', new: '行内 新', off: '行内 OFF' };
-      const titleByMode = { full: '両方表示', new: '新のみ表示', off: 'OFF' };
+      const labelByMode = { full: '行内差分: 両方', new: '行内差分: 追加のみ', off: '行内差分: OFF' };
+      const titleByMode = { full: '両方表示', new: '追加のみ', off: '非表示' };
       btn.disabled = !h || isPatch;
       btn.classList.toggle('active', Boolean(h) && mode !== 'off' && !isPatch);
       btn.textContent = labelByMode[mode];

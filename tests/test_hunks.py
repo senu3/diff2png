@@ -841,6 +841,35 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn('class="changed inline-rendered"', html)
         self.assertNotIn('class="inline-added"', html)
 
+    def test_normal_view_new_added_line_uses_added_row_color(self):
+        hunk = {
+            "filepath": "sample.js",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": ['+const value = "new"'],
+            "added_count": 1,
+            "deleted_count": 0,
+            "changed_count": 1,
+        }
+
+        with patch.object(diff2png, "read_source_lines", return_value=['const value = "new"']):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('class="added"', html)
+        self.assertNotIn('class="changed"', html)
+
     def test_normal_view_does_not_inline_highlight_leading_indent_change(self):
         hunk = {
             "filepath": "sample.py",

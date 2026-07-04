@@ -760,6 +760,7 @@ td{{vertical-align:top;padding:2px 0;line-height:1.6}}
 td.lineno{{width:52px;text-align:right;color:#94a3b8;padding:2px 10px 2px 6px;
     border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
 tr.changed td.lineno{{background:#fef9c3;color:#78716c}}
+tr.added td.lineno{{background:#ecfdf5;color:#64748b}}
 td.lineno.new{{border-right:none}}
 td.marker{{width:18px;text-align:center;color:#64748b;font-weight:bold}}
 tr.added td.marker{{color:#16a34a}}
@@ -1231,6 +1232,7 @@ def build_code_html(
         text = stripped_texts[idx]
         is_changed = lineno in changed_set
         inline_rendered = False
+        inline_missed = False
         if is_changed and lineno in replacement_by_lineno:
             _, old_text = replacement_by_lineno[lineno]
             inline_html = _inline_diff_html(
@@ -1246,11 +1248,14 @@ def build_code_html(
                 inline_rendered = "inline-" in inline_html
             else:
                 code_html = escape(text)
+                inline_missed = True
         else:
             code_html = escape(text)
         row_classes = []
-        if is_changed:
+        if inline_missed or inline_rendered:
             row_classes.append("changed")
+        elif is_changed:
+            row_classes.append("added")
         if inline_rendered:
             row_classes.append("inline-rendered")
         row_class = f' class="{" ".join(row_classes)}"' if row_classes else ""

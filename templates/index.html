@@ -1081,28 +1081,6 @@
       white-space: nowrap;
     }
 
-    .preview-range {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 92px;
-      height: 28px;
-      padding: 0 8px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--bg);
-      color: var(--text-dim);
-      font-family: var(--mono);
-      font-size: 11px;
-      flex-shrink: 0;
-    }
-
-    .preview-range.adjusted {
-      color: var(--accent);
-      border-color: var(--accent-dim);
-      background: var(--surface2);
-    }
-
     .inline-diff-control {
       display: inline-flex;
       align-items: center;
@@ -1329,6 +1307,20 @@
       font-size: 11px;
       white-space: nowrap;
       padding: 0 4px;
+    }
+
+    .range-overlay-line {
+      min-width: 42px;
+      padding: 0 5px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .range-overlay-line.adjusted {
+      color: var(--accent);
     }
 
     .range-overlay .btn {
@@ -1897,7 +1889,6 @@
           <use href="#icon-search"></use>
         </svg>Preview</span>
       <span class="preview-file" id="previewFile">—</span>
-      <span class="preview-range" id="previewRange" title="現在の行範囲">—</span>
       <div class="preview-mode-segment" aria-label="表示モード">
         <button type="button" class="preview-mode-btn" data-diff-mode="file" onclick="setPreviewDiffMode('file')"
           aria-pressed="true">通常</button>
@@ -1946,6 +1937,7 @@
     <div class="preview-frame-wrap" id="previewWrap">
       <div class="range-overlay range-overlay-top hidden" id="rangeOverlayTop">
         <span class="range-overlay-label">上端</span>
+        <span class="range-overlay-line" id="rangeOverlayStart">—</span>
         <button class="btn btn-ghost" id="rangeExpandUpBtn" onclick="adjustActiveRange('expand_up')" disabled
           title="上に広げる" aria-label="上に広げる">
           <svg class="icon icon-sm" aria-hidden="true">
@@ -1972,6 +1964,7 @@
       <span class="range-disabled-note" id="rangeDisabledNote">パッチ表示では範囲調整なし</span>
       <div class="range-overlay range-overlay-bottom hidden" id="rangeOverlayBottom">
         <span class="range-overlay-label">下端</span>
+        <span class="range-overlay-line" id="rangeOverlayEnd">—</span>
         <button class="btn btn-ghost" id="rangeExpandDownBtn" onclick="adjustActiveRange('expand_down')" disabled
           title="下に広げる" aria-label="下に広げる">
           <svg class="icon icon-sm" aria-hidden="true">
@@ -3119,18 +3112,28 @@
     }
 
     function updatePreviewRange(hunk) {
-      const el = document.getElementById('previewRange');
-      if (!el) return;
+      const startEl = document.getElementById('rangeOverlayStart');
+      const endEl = document.getElementById('rangeOverlayEnd');
+      if (!startEl || !endEl) return;
       if (!hunk) {
-        el.textContent = '—';
-        el.title = '現在の行範囲';
-        el.classList.remove('adjusted');
+        startEl.textContent = '—';
+        endEl.textContent = '—';
+        startEl.title = '上端';
+        endEl.title = '下端';
+        startEl.classList.remove('adjusted');
+        endEl.classList.remove('adjusted');
         return;
       }
-      const text = `L${hunk.start}–${hunk.end}`;
-      el.textContent = text;
-      el.title = hunk.range_adjusted ? `${text}（調整済み）` : text;
-      el.classList.toggle('adjusted', Boolean(hunk.range_adjusted));
+      const startText = `L${hunk.start}`;
+      const endText = `L${hunk.end}`;
+      const startAdjusted = Number(hunk.start) !== Number(hunk.default_start ?? hunk.start);
+      const endAdjusted = Number(hunk.end) !== Number(hunk.default_end ?? hunk.end);
+      startEl.textContent = startText;
+      endEl.textContent = endText;
+      startEl.title = startAdjusted ? `上端 ${startText}（調整済み）` : `上端 ${startText}`;
+      endEl.title = endAdjusted ? `下端 ${endText}（調整済み）` : `下端 ${endText}`;
+      startEl.classList.toggle('adjusted', startAdjusted);
+      endEl.classList.toggle('adjusted', endAdjusted);
     }
 
     function currentPreviewIframe() {

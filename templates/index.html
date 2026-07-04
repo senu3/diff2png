@@ -1113,6 +1113,12 @@
     }
 
     .inline-diff-toggle.active {
+      border-color: var(--accent-dim);
+      color: var(--accent);
+      background: rgba(91, 138, 240, 0.08);
+    }
+
+    .inline-diff-toggle.active.inline-diff-mode-new {
       border-color: rgba(62, 207, 110, 0.55);
       color: var(--green);
       background: rgba(62, 207, 110, 0.08);
@@ -1128,9 +1134,9 @@
     }
 
     .inline-added-mute-toggle.active {
-      border-color: rgba(245, 200, 66, 0.55);
-      color: var(--yellow);
-      background: rgba(245, 200, 66, 0.08);
+      border-color: rgba(91, 138, 240, 0.45);
+      color: var(--text);
+      background: rgba(91, 138, 240, 0.06);
     }
 
     .preview-mode-segment {
@@ -2998,6 +3004,7 @@
       const titleByMode = { full: '両方表示', new: '追加のみ', off: '非表示' };
       btn.disabled = !h || isPatch;
       btn.classList.toggle('active', Boolean(h) && mode !== 'off' && !isPatch);
+      btn.classList.toggle('inline-diff-mode-new', Boolean(h) && mode === 'new' && !isPatch);
       btn.textContent = labelByMode[mode];
       const title = isPatch
         ? 'パッチ表示では行内差分は使用しません'

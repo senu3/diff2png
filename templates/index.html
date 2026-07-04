@@ -1907,8 +1907,8 @@
         </div>
       </div>
       <button class="btn btn-ghost inline-added-mute-toggle" id="inlineAddedMuteBtn"
-        onclick="toggleInlineAddedMutePicker()" disabled title="追加ハイライトを消す"
-        aria-label="追加ハイライトを消す">追加色OFF</button>
+        onclick="toggleInlineAddedMutePicker()" disabled title="追加ハイライトを編集"
+        aria-label="追加ハイライトを編集">追加ハイライト編集</button>
       <div class="range-btns">
         <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
           title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
@@ -3053,25 +3053,33 @@
       });
     }
 
-    function canUseInlineAddedMute(index) {
-      const h = state.hunks[index];
-      return Boolean(h) && currentDiffMode !== 'patch' && getInlineDiffMode(h) !== 'off';
+    function hasInlineAddedMuteTargets(iframe = currentPreviewIframe()) {
+      const doc = iframe?.contentDocument;
+      return Boolean(doc?.querySelector('span.inline-added'));
     }
 
-    function updateInlineAddedMuteButton(index) {
+    function canUseInlineAddedMute(index, iframe = currentPreviewIframe()) {
+      const h = state.hunks[index];
+      return Boolean(h)
+        && currentDiffMode !== 'patch'
+        && getInlineDiffMode(h) !== 'off'
+        && hasInlineAddedMuteTargets(iframe);
+    }
+
+    function updateInlineAddedMuteButton(index, iframe = currentPreviewIframe()) {
       const btn = document.getElementById('inlineAddedMuteBtn');
       if (!btn) return;
 
-      const enabled = canUseInlineAddedMute(index);
+      const enabled = canUseInlineAddedMute(index, iframe);
       if (!enabled && state.inlineAddedMutePicking) {
         state.inlineAddedMutePicking = false;
-        updatePreviewInlineAddedMuteMode();
+        updatePreviewInlineAddedMuteMode(iframe);
       }
       btn.disabled = !enabled;
       btn.classList.toggle('active', enabled && state.inlineAddedMutePicking);
       const title = enabled
         ? '追加ハイライトをクリックして消す/戻す'
-        : '通常表示の行内差分で使用できます';
+        : '編集できる追加ハイライトがありません';
       btn.title = title;
       btn.setAttribute('aria-label', title);
     }
@@ -3170,13 +3178,14 @@
         doc.head.appendChild(style);
       }
       doc.body.addEventListener('click', onPreviewInlineAddedClick);
+      updateInlineAddedMuteButton(state.activeIndex, iframe);
       updatePreviewInlineAddedMuteMode(iframe);
     }
 
     function updatePreviewInlineAddedMuteMode(iframe = currentPreviewIframe()) {
       const doc = iframe?.contentDocument;
       if (!doc?.body) return;
-      const enabled = canUseInlineAddedMute(state.activeIndex) && state.inlineAddedMutePicking;
+      const enabled = canUseInlineAddedMute(state.activeIndex, iframe) && state.inlineAddedMutePicking;
       doc.body.classList.toggle('inline-added-mute-picking', enabled);
       doc.querySelectorAll('span.inline-added').forEach(span => {
         if (enabled) {

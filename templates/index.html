@@ -2186,6 +2186,7 @@
     let currentDiffMode = 'file';
     let lastAppliedConfig = null;
     const UI_PREFS_KEY = 'diff2png.ui.v1';
+    const SESSION_CACHE_KEY = 'diff2png.session.v1';
 
     function loadUiPrefs() {
       try {
@@ -2200,6 +2201,78 @@
       try {
         localStorage.setItem(UI_PREFS_KEY, JSON.stringify(payload));
       } catch (_) { }
+    }
+
+    function loadSessionCache() {
+      try {
+        const raw = localStorage.getItem(SESSION_CACHE_KEY);
+        const cache = raw ? JSON.parse(raw) : {};
+        return cache && typeof cache === 'object' ? cache : {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function saveSessionCache(cache) {
+      try {
+        localStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(cache));
+      } catch (_) { }
+    }
+
+    function normalizeRepoPath(value) {
+      return String(value || '').trim();
+    }
+
+    function cacheRepoPath(repoPath) {
+      const normalized = normalizeRepoPath(repoPath);
+      if (!normalized) return;
+      const cache = loadSessionCache();
+      cache.repoPath = normalized;
+      saveSessionCache(cache);
+    }
+
+    function applySessionCacheToControls() {
+      const cache = loadSessionCache();
+      const cachedRepo = normalizeRepoPath(cache.repoPath);
+      const repoInput = document.getElementById('repoPath');
+      if (cachedRepo && repoInput && !repoInput.value.trim()) {
+        repoInput.value = cachedRepo;
+      }
+    }
+
+    function getCachedFileFilterForRepo(repoPath) {
+      const key = normalizeRepoPath(repoPath);
+      if (!key) return [];
+      const cache = loadSessionCache();
+      const filters = cache.fileFilters && typeof cache.fileFilters === 'object'
+        ? cache.fileFilters[key]
+        : [];
+      return normalizeFileFilter(filters);
+    }
+
+    function cacheFileFilterForRepo(repoPath, filters) {
+      const key = normalizeRepoPath(repoPath);
+      if (!key) return;
+      const cache = loadSessionCache();
+      cache.fileFilters = cache.fileFilters && typeof cache.fileFilters === 'object'
+        ? cache.fileFilters
+        : {};
+      const normalizedFilters = normalizeFileFilter(filters);
+      if (normalizedFilters.length > 0) {
+        cache.fileFilters[key] = normalizedFilters;
+      } else {
+        delete cache.fileFilters[key];
+      }
+
+      const entries = Object.entries(cache.fileFilters);
+      if (entries.length > 20) {
+        entries.slice(0, entries.length - 20).forEach(([oldKey]) => delete cache.fileFilters[oldKey]);
+      }
+      saveSessionCache(cache);
+    }
+
+    function restoreCachedFileFilterForRepo(repoPath) {
+      state.fileFilter = getCachedFileFilterForRepo(repoPath);
     }
 
     function applyUiPrefsToControls(prefs) {
@@ -2669,6 +2742,7 @@
           return false;
         }
         document.getElementById('repoPath').value = data.repo_path;
+        cacheRepoPath(data.repo_path);
         updateAnalyzeButtonLabel();
         return true;
       } catch (e) {
@@ -2739,6 +2813,7 @@
         if (!res.ok) { showToast(data.error, 'error'); return; }
 
         state.repoPath = repoPath;
+        cacheRepoPath(repoPath);
         state.analysisId = data.analysis_id || '';
         state.hunks = data.hunks;
         state.inlineAddedMutePicking = false;
@@ -2746,8 +2821,9 @@
         updatePreviewDiffModeSegment();
         state.activeIndex = -1;
 
-        // ファイルフィルタを初期化して表示インデックスを計算
-        computeVisibleIndices();
+        if (!preserveSelection) {
+          restoreCachedFileFilterForRepo(repoPath);
+        }
         if (preserveSelection) {
           state.selected = preserveAllVisibleSelection
             ? new Set()
@@ -2995,6 +3071,7 @@
     function populateFileFilter() {
       const files = getFileFilterItems().map(item => item.filepath);
       state.fileFilter = getAppliedFileFilters().filter(file => files.includes(file));
+      cacheFileFilterForRepo(state.repoPath, state.fileFilter);
       computeVisibleIndices();
       updateFileFilterButton();
       if (document.getElementById('fileFilterModal')?.classList.contains('open')) {
@@ -3121,6 +3198,7 @@
 
     function applyFileFilter() {
       state.fileFilter = getDraftFileFilters();
+      cacheFileFilterForRepo(state.repoPath || document.getElementById('repoPath').value.trim(), state.fileFilter);
       closeFileFilterModal();
       computeVisibleIndices();
       renderHunkList();
@@ -3867,6 +3945,9 @@
     document.getElementById('repoPath').addEventListener('input', () => {
       updateAnalyzeButtonLabel();
     });
+
+    applySessionCacheToControls();
+    updateAnalyzeButtonLabel();
 
     // 起動時にサーバーの現在値を取得してスライダーに反映
     (async () => {

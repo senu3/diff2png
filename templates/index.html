@@ -1473,6 +1473,33 @@
       color: var(--danger);
     }
 
+    .modal-notice {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.035);
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .modal-notice.show {
+      display: flex;
+    }
+
+    .modal-notice.success {
+      border-color: var(--green);
+      color: var(--green);
+    }
+
+    .modal-notice.error {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
     .spinner {
       display: inline-block;
       width: 14px;
@@ -1930,6 +1957,7 @@
         </div>
         <div class="source-hint">相対パスまたは絶対パス。PNG出力で使用します。</div>
       </div>
+      <div class="modal-notice" id="outputNotice" role="status" aria-live="polite"></div>
     </div>
     <div class="source-modal-actions">
       <button class="btn btn-ghost" id="openOutputBtn" onclick="openOutputDir()">
@@ -2363,6 +2391,7 @@
     }
 
     function openOutputModal() {
+      clearOutputNotice();
       document.getElementById('outputModal').classList.add('open');
       document.getElementById('outputOverlay').classList.add('open');
       document.getElementById('cfg-outdir').focus();
@@ -3655,6 +3684,7 @@
 
       const btn = document.getElementById('clearOutputBtn');
       btn.disabled = true;
+      clearOutputNotice();
       setStatus('<span class="spinner"></span>PNGクリア中...');
 
       try {
@@ -3665,15 +3695,15 @@
         });
         const data = await res.json();
         if (!res.ok) {
-          showToast(data.error || 'PNGクリアに失敗しました', 'error');
+          showOutputNotice(data.error || 'PNGクリアに失敗しました', 'error');
           return;
         }
         state.lastOutputDir = data.output_dir || outputDir;
         document.getElementById('cfg-outdir').value = state.lastOutputDir;
-        showToast(`PNGクリアが完了しました（${data.deleted || 0} 件削除）`, 'success');
+        showOutputNotice(`PNGクリアが完了しました（${data.deleted || 0} 件削除）`, 'success');
         setStatus(`PNGクリア完了: ${data.deleted || 0} 件削除`);
       } catch (e) {
-        showToast('PNGクリアに失敗しました: ' + e.message, 'error');
+        showOutputNotice('PNGクリアに失敗しました: ' + e.message, 'error');
         setStatus('エラー');
       } finally {
         btn.disabled = false;
@@ -3683,6 +3713,21 @@
     // ---- UI utils ----
     function setStatus(html) {
       document.getElementById('statusBar').innerHTML = html;
+    }
+
+    function showOutputNotice(msg, type = '') {
+      const el = document.getElementById('outputNotice');
+      if (!el) return;
+      const iconName = type === 'success' ? 'check-circle' : type === 'error' ? 'x' : 'settings';
+      el.innerHTML = `${iconHtml(iconName, 'icon icon-sm')}<span>${escapeHtml(msg)}</span>`;
+      el.className = 'modal-notice show ' + (type || '');
+    }
+
+    function clearOutputNotice() {
+      const el = document.getElementById('outputNotice');
+      if (!el) return;
+      el.className = 'modal-notice';
+      el.innerHTML = '';
     }
 
     let toastTimer;

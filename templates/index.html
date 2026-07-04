@@ -420,6 +420,8 @@
       left: 50%;
       transform: translate(-50%, -48%) scale(0.98);
       width: min(680px, calc(100vw - 36px));
+      max-width: calc(100vw - 36px);
+      max-height: calc(100vh - 36px);
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -427,11 +429,38 @@
       z-index: 221;
       opacity: 0;
       pointer-events: none;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      overflow: hidden;
       transition: opacity 0.2s, transform 0.2s;
     }
 
     .source-modal.compact {
       width: min(560px, calc(100vw - 36px));
+    }
+
+    .source-modal.resizable-modal {
+      resize: both;
+      min-width: min(560px, calc(100vw - 36px));
+      min-height: 360px;
+    }
+
+    .source-modal.compact.resizable-modal {
+      min-width: min(440px, calc(100vw - 36px));
+      min-height: 330px;
+    }
+
+    .source-modal.resizable-modal::after {
+      content: '';
+      position: absolute;
+      right: 7px;
+      bottom: 7px;
+      width: 10px;
+      height: 10px;
+      border-right: 2px solid var(--text-dim);
+      border-bottom: 2px solid var(--text-dim);
+      opacity: 0.55;
+      pointer-events: none;
     }
 
     .source-modal.open {
@@ -458,7 +487,12 @@
       padding: 16px;
       display: grid;
       grid-template-columns: 1fr;
+      grid-auto-rows: max-content;
       gap: 12px;
+      align-content: start;
+      align-items: start;
+      min-height: 0;
+      overflow: auto;
     }
 
     .source-modal-actions {
@@ -509,10 +543,12 @@
 
     .file-filter-list {
       display: grid;
+      grid-auto-rows: max-content;
       gap: 4px;
       max-height: min(360px, calc(100vh - 320px));
       overflow-y: auto;
       padding-right: 2px;
+      width: 100%;
     }
 
     .file-filter-list::-webkit-scrollbar {
@@ -606,8 +642,12 @@
 
     .source-controls {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-auto-rows: max-content;
       gap: 8px;
+      align-content: start;
+      align-items: start;
+      width: 100%;
       max-height: 0;
       opacity: 0;
       overflow: hidden;
@@ -618,6 +658,8 @@
       display: grid;
       grid-template-columns: 1fr;
       gap: 6px;
+      align-content: start;
+      width: 100%;
     }
 
     .source-control-label {
@@ -646,17 +688,34 @@
     }
 
     .source-segmented {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      display: flex;
+      flex-wrap: nowrap;
       gap: 4px;
       padding: 4px;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: var(--bg);
+      overflow-x: auto;
+      overflow-y: hidden;
+      width: 100%;
+    }
+
+    .source-segmented::-webkit-scrollbar {
+      height: 4px;
+    }
+
+    .source-segmented::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .source-segmented::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 2px;
     }
 
     .source-segment {
-      min-width: 0;
+      min-width: 112px;
+      flex: 1 0 112px;
       height: 32px;
       padding: 0 8px;
       border: 1px solid transparent;
@@ -696,8 +755,10 @@
 
     .source-commit-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 10px;
+      align-items: start;
+      width: 100%;
     }
 
     .source-commit-grid.single {
@@ -707,11 +768,14 @@
     .source-commit-panel {
       min-width: 0;
       display: grid;
+      grid-auto-rows: max-content;
       gap: 6px;
+      align-content: start;
     }
 
     .source-commit-list {
       display: grid;
+      grid-auto-rows: max-content;
       gap: 4px;
       max-height: 230px;
       overflow-y: auto;
@@ -1748,7 +1812,7 @@
   </aside>
 
   <div class="source-modal-overlay" id="sourceOverlay" onclick="closeSourceModal()"></div>
-  <div class="source-modal" id="sourceModal">
+  <div class="source-modal resizable-modal" id="sourceModal">
     <div class="source-modal-header">
       <div class="source-modal-title">差分の取得元</div>
       <button class="drawer-close" onclick="closeSourceModal()" title="閉じる" aria-label="閉じる">
@@ -1812,7 +1876,7 @@
   </div>
 
   <div class="source-modal-overlay" id="fileFilterOverlay" onclick="closeFileFilterModal()"></div>
-  <div class="source-modal compact" id="fileFilterModal">
+  <div class="source-modal compact resizable-modal" id="fileFilterModal">
     <div class="source-modal-header">
       <div class="source-modal-title">ファイルフィルタ</div>
       <button class="drawer-close" onclick="closeFileFilterModal()" title="閉じる" aria-label="閉じる">

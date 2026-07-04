@@ -1103,25 +1103,64 @@
       background: var(--surface2);
     }
 
-    .inline-diff-toggle {
+    .inline-diff-control {
+      display: inline-flex;
+      align-items: center;
       height: 28px;
-      padding: 0 9px;
-      font-size: 11px;
-      line-height: 1;
-      white-space: nowrap;
+      gap: 5px;
       flex-shrink: 0;
     }
 
-    .inline-diff-toggle.active {
+    .inline-diff-label {
+      color: var(--text-dim);
+      font-size: 11px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .inline-diff-segment {
+      display: inline-flex;
+      align-items: center;
+      height: 28px;
+      padding: 2px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+    }
+
+    .inline-diff-mode-btn {
+      height: 22px;
+      padding: 0 7px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-dim);
+      font-family: var(--font);
+      font-size: 11px;
+      line-height: 1;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .inline-diff-mode-btn.active {
+      background: var(--surface2);
+      color: var(--text);
+    }
+
+    .inline-diff-mode-btn.active[data-inline-diff-mode="full"] {
       border-color: var(--accent-dim);
       color: var(--accent);
       background: rgba(91, 138, 240, 0.08);
     }
 
-    .inline-diff-toggle.active.inline-diff-mode-new {
-      border-color: rgba(62, 207, 110, 0.55);
+    .inline-diff-mode-btn.active[data-inline-diff-mode="new"] {
       color: var(--green);
       background: rgba(62, 207, 110, 0.08);
+    }
+
+    .inline-diff-mode-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
     }
 
     .inline-added-mute-toggle {
@@ -1865,8 +1904,17 @@
         <button type="button" class="preview-mode-btn" data-diff-mode="patch" onclick="setPreviewDiffMode('patch')"
           aria-pressed="false">パッチ</button>
       </div>
-      <button class="btn btn-ghost inline-diff-toggle" id="inlineDiffToggleBtn" onclick="toggleActiveInlineDiff()"
-        disabled title="このhunkの行内差分を切り替え" aria-label="このhunkの行内差分を切り替え">行内差分: 両方</button>
+      <div class="inline-diff-control" aria-label="行内差分">
+        <span class="inline-diff-label">行内差分</span>
+        <div class="inline-diff-segment" role="group" aria-label="行内差分">
+          <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="full"
+            onclick="setActiveInlineDiffMode('full')" disabled aria-pressed="true">両方</button>
+          <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="new"
+            onclick="setActiveInlineDiffMode('new')" disabled aria-pressed="false">追加</button>
+          <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="off"
+            onclick="setActiveInlineDiffMode('off')" disabled aria-pressed="false">OFF</button>
+        </div>
+      </div>
       <button class="btn btn-ghost inline-added-mute-toggle" id="inlineAddedMuteBtn"
         onclick="toggleInlineAddedMutePicker()" disabled title="追加ハイライトを消す"
         aria-label="追加ハイライトを消す">追加色OFF</button>
@@ -2119,6 +2167,7 @@
         btn.setAttribute('aria-pressed', String(active));
         btn.disabled = !hasAnalysis;
       });
+      updateInlineDiffControls(state.activeIndex);
       updateInlineAddedMuteButton(state.activeIndex);
       updatePreviewInlineAddedMuteMode();
     }
@@ -2993,24 +3042,22 @@
       return true;
     }
 
-    function updateInlineDiffToggle(index) {
-      const btn = document.getElementById('inlineDiffToggleBtn');
-      if (!btn) return;
-
+    function updateInlineDiffControls(index) {
       const h = state.hunks[index];
       const isPatch = currentDiffMode === 'patch';
       const mode = getInlineDiffMode(h);
-      const labelByMode = { full: '行内差分: 両方', new: '行内差分: 追加のみ', off: '行内差分: OFF' };
       const titleByMode = { full: '両方表示', new: '追加のみ', off: '非表示' };
-      btn.disabled = !h || isPatch;
-      btn.classList.toggle('active', Boolean(h) && mode !== 'off' && !isPatch);
-      btn.classList.toggle('inline-diff-mode-new', Boolean(h) && mode === 'new' && !isPatch);
-      btn.textContent = labelByMode[mode];
       const title = isPatch
         ? 'パッチ表示では行内差分は使用しません'
         : `このhunkの行内差分: ${titleByMode[mode]}`;
-      btn.title = title;
-      btn.setAttribute('aria-label', title);
+      document.querySelectorAll('.inline-diff-mode-btn').forEach(btn => {
+        const active = Boolean(h) && btn.dataset.inlineDiffMode === mode && !isPatch;
+        btn.disabled = !h || isPatch;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', String(active));
+        btn.title = title;
+        btn.setAttribute('aria-label', `${title}。${btn.textContent}`);
+      });
     }
 
     function canUseInlineAddedMute(index) {
@@ -3043,12 +3090,6 @@
       return hunk.inline_diff_enabled === false ? 'off' : 'full';
     }
 
-    function nextInlineDiffMode(mode) {
-      if (mode === 'full') return 'new';
-      if (mode === 'new') return 'off';
-      return 'full';
-    }
-
     function updateRangeButtons(index) {
       const adjustable = isRangeAdjustable(index);
       const h = state.hunks[index] || {};
@@ -3062,7 +3103,7 @@
       document.getElementById('rangeShrinkDownBtn').disabled = !adjustable;
       document.getElementById('rangeExpandDownBtn').disabled = !adjustable;
       document.getElementById('rangeResetBtn').disabled = !adjustable || !h.range_adjusted;
-      updateInlineDiffToggle(index);
+      updateInlineDiffControls(index);
       updateInlineAddedMuteButton(index);
     }
 
@@ -3261,15 +3302,16 @@
       }
     }
 
-    async function toggleActiveInlineDiff() {
+    async function setActiveInlineDiffMode(mode) {
       const index = state.activeIndex;
       if (state.inlineDiffUpdating) return;
       if (index < 0 || !state.analysisId || currentDiffMode === 'patch') return;
 
       const h = state.hunks[index];
       if (!h) return;
+      if (mode !== 'full' && mode !== 'new' && mode !== 'off') return;
+      if (getInlineDiffMode(h) === mode) return;
       state.inlineDiffUpdating = true;
-      const nextMode = nextInlineDiffMode(getInlineDiffMode(h));
 
       try {
         const res = await fetch(`/api/hunk-inline-diff/${index}`, {
@@ -3278,7 +3320,7 @@
           body: JSON.stringify({
             repo_path: state.repoPath,
             analysis_id: state.analysisId,
-            mode: nextMode,
+            mode,
           }),
         });
         const data = await res.json();
@@ -3288,14 +3330,14 @@
         }
 
         state.hunks[index] = data.hunk;
-        updateInlineDiffToggle(index);
+        updateInlineDiffControls(index);
         updateInlineAddedMuteButton(index);
         await showPreview(index, { showLoading: false, keepIframe: true, scrollIntoView: false });
       } catch (e) {
         showToast('行内差分の切り替えに失敗しました: ' + e.message, 'error');
       } finally {
         state.inlineDiffUpdating = false;
-        updateInlineDiffToggle(index);
+        updateInlineDiffControls(index);
         updateInlineAddedMuteButton(index);
       }
     }

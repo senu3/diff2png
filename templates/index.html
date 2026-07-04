@@ -1590,9 +1590,9 @@
           <div class="setting-desc">行内差分モードの初期値を設定します。</div>
           <div class="setting-row">
             <select id="cfg-inline-default">
-              <option value="full">両方表示</option>
-              <option value="new">追加のみ</option>
-              <option value="off">非表示</option>
+              <option value="full">ON（両方表示）</option>
+              <option value="new">緑のみ</option>
+              <option value="off">OFF</option>
             </select>
           </div>
         </div>
@@ -1889,6 +1889,7 @@
           <use href="#icon-search"></use>
         </svg>Preview</span>
       <span class="preview-file" id="previewFile">—</span>
+      <span class="inline-diff-label">全体表示</span>
       <div class="preview-mode-segment" aria-label="表示モード">
         <button type="button" class="preview-mode-btn" data-diff-mode="file" onclick="setPreviewDiffMode('file')"
           aria-pressed="true">通常</button>
@@ -1901,14 +1902,14 @@
           <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="full"
             onclick="setActiveInlineDiffMode('full')" disabled aria-pressed="true">両方</button>
           <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="new"
-            onclick="setActiveInlineDiffMode('new')" disabled aria-pressed="false">追加</button>
+            onclick="setActiveInlineDiffMode('new')" disabled aria-pressed="false">緑のみ</button>
           <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="off"
             onclick="setActiveInlineDiffMode('off')" disabled aria-pressed="false">OFF</button>
         </div>
       </div>
       <button class="btn btn-ghost inline-added-mute-toggle" id="inlineAddedMuteBtn"
         onclick="toggleInlineAddedMutePicker()" disabled title="追加ハイライトを編集"
-        aria-label="追加ハイライトを編集">追加ハイライト編集</button>
+        aria-label="追加ハイライトを編集">ハイライト編集</button>
       <div class="range-btns">
         <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
           title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
@@ -3039,7 +3040,7 @@
       const h = state.hunks[index];
       const isPatch = currentDiffMode === 'patch';
       const mode = getInlineDiffMode(h);
-      const titleByMode = { full: '両方表示', new: '追加のみ', off: '非表示' };
+      const titleByMode = { full: 'ON（両方表示）', new: '緑のみ', off: 'OFF' };
       const title = isPatch
         ? 'パッチ表示では行内差分は使用しません'
         : `このhunkの行内差分: ${titleByMode[mode]}`;

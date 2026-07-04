@@ -2088,6 +2088,7 @@
       lastOutputDir: '',
       fileFilter: [],
       commitItems: [],
+      selectionMode: 'custom',
       rangeAdjusting: false,
       inlineDiffUpdating: false,
       inlineAddedMutePicking: false,
@@ -2153,6 +2154,15 @@
         }
       });
       return remapped;
+    }
+
+    function areVisibleHunksFullySelected() {
+      const indices = getNavigableIndices();
+      return indices.length > 0 && indices.every(i => state.selected.has(i));
+    }
+
+    function shouldPreserveAllVisibleSelection() {
+      return state.selectionMode === 'all' || areVisibleHunksFullySelected();
     }
 
     function updateAnalyzeButtonLabel() {
@@ -2364,7 +2374,11 @@
       });
 
       if (document.getElementById('repoPath').value.trim()) {
-        await analyze({ preserveActive: true, preserveSelection: true });
+        await analyze({
+          preserveActive: true,
+          preserveSelection: true,
+          preserveAllSelection: shouldPreserveAllVisibleSelection(),
+        });
       }
     }
 
@@ -2703,6 +2717,8 @@
         : null;
       const prevHunks = preserveSelection ? state.hunks.slice() : [];
       const prevSelected = preserveSelection ? new Set(state.selected) : new Set();
+      const preserveAllVisibleSelection = preserveSelection
+        && (Boolean(options.preserveAllSelection) || shouldPreserveAllVisibleSelection());
 
       setStatus('<span class="spinner"></span>解析中...');
       document.getElementById('analyzeBtn').disabled = true;
@@ -2728,13 +2744,19 @@
         state.inlineAddedMutePicking = false;
         updateSourceDisplayButton();
         updatePreviewDiffModeSegment();
-        state.selected = preserveSelection
-          ? remapSelectedHunks(state.hunks, prevHunks, prevSelected)
-          : new Set();
         state.activeIndex = -1;
 
         // ファイルフィルタを初期化して表示インデックスを計算
         computeVisibleIndices();
+        if (preserveSelection) {
+          state.selected = preserveAllVisibleSelection
+            ? new Set()
+            : remapSelectedHunks(state.hunks, prevHunks, prevSelected);
+          state.selectionMode = preserveAllVisibleSelection ? 'all' : 'custom';
+        } else {
+          state.selected = new Set();
+          state.selectionMode = 'custom';
+        }
         populateFileFilter();
         renderHunkList();
         clearPreview();
@@ -2770,6 +2792,7 @@
       const prevActiveHunk = state.activeIndex >= 0 ? state.hunks[state.activeIndex] : null;
       const prevHunks = state.hunks.slice();
       const prevSelected = new Set(state.selected);
+      const preserveAllVisibleSelection = shouldPreserveAllVisibleSelection();
       setStatus('<span class="spinner"></span>設定を反映中...');
 
       try {
@@ -2785,16 +2808,23 @@
           return false;
         }
         if (data.requires_reanalyze) {
-          await analyze({ preserveActive: true, preserveSelection: true });
+          await analyze({
+            preserveActive: true,
+            preserveSelection: true,
+            preserveAllSelection: preserveAllVisibleSelection,
+          });
           return true;
         }
 
         state.hunks = data.hunks || [];
         state.inlineAddedMutePicking = false;
-        state.selected = remapSelectedHunks(state.hunks, prevHunks, prevSelected);
         state.activeIndex = -1;
         updatePreviewDiffModeSegment();
         computeVisibleIndices();
+        state.selected = preserveAllVisibleSelection
+          ? new Set()
+          : remapSelectedHunks(state.hunks, prevHunks, prevSelected);
+        state.selectionMode = preserveAllVisibleSelection ? 'all' : 'custom';
         populateFileFilter();
         renderHunkList();
 
@@ -2878,7 +2908,11 @@
     </div>`;
       }).join('');
 
-      updateExportButtons();
+      if (state.selectionMode === 'all') {
+        selectAll(true);
+      } else {
+        updateExportButtons();
+      }
     }
 
     function onHunkClick(i, e) {
@@ -2890,12 +2924,14 @@
       e.stopPropagation();
       if (e.target.checked) state.selected.add(i);
       else state.selected.delete(i);
+      state.selectionMode = 'custom';
       updateExportButtons();
     }
 
     function selectAll(flag) {
       // 表示中のhunkのみを全選択/全解除
       const indices = Array.isArray(state.visibleIndices) ? state.visibleIndices : Array.from(state.hunks.keys());
+      state.selectionMode = flag ? 'all' : 'custom';
       indices.forEach(i => flag ? state.selected.add(i) : state.selected.delete(i));
       indices.forEach(i => {
         const chk = document.getElementById(`chk-${i}`);
@@ -3810,7 +3846,11 @@
           changedKeys.includes('output_dir');
 
         if (needsFullAnalyze) {
-          await analyze({ preserveActive: true, preserveSelection: true });
+          await analyze({
+            preserveActive: true,
+            preserveSelection: true,
+            preserveAllSelection: shouldPreserveAllVisibleSelection(),
+          });
         } else if (needsSessionConfigUpdate) {
           await reconfigureCurrentAnalysis();
         }

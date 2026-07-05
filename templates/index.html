@@ -395,6 +395,63 @@
       font-size: 12px;
     }
 
+    .repo-restore-prompt {
+      margin-top: 8px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: rgba(91, 138, 240, 0.08);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }
+
+    .repo-restore-main {
+      min-width: 0;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .repo-restore-main .icon {
+      color: var(--accent);
+      margin-top: 1px;
+    }
+
+    .repo-restore-copy {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+
+    .repo-restore-label {
+      color: var(--text);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .repo-restore-path {
+      min-width: 0;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .repo-restore-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    .repo-restore-actions .btn {
+      height: 26px;
+      padding: 0 8px;
+      font-size: 11px;
+    }
+
     .hidden {
       display: none !important;
     }
@@ -1558,6 +1615,11 @@
       <circle cx="11" cy="11" r="7" />
       <path d="m20 20-3.5-3.5" />
     </symbol>
+    <symbol id="icon-history" viewBox="0 0 24 24">
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <path d="M3 4v5h5" />
+      <path d="M12 7v5l3 2" />
+    </symbol>
     <symbol id="icon-check-circle" viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="9" />
       <path d="m8 12 3 3 5-6" />
@@ -1774,6 +1836,21 @@
           </svg>
           <span>参照</span>
         </button>
+      </div>
+      <div class="repo-restore-prompt hidden" id="repoRestorePrompt" role="group" aria-label="前回のリポジトリ">
+        <div class="repo-restore-main">
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-history"></use>
+          </svg>
+          <div class="repo-restore-copy">
+            <div class="repo-restore-label">前回のリポジトリを使いますか</div>
+            <div class="repo-restore-path" id="repoRestorePath"></div>
+          </div>
+        </div>
+        <div class="repo-restore-actions">
+          <button class="btn btn-primary" onclick="analyzeCachedRepo()">使用して解析</button>
+          <button class="btn btn-ghost" onclick="browseInsteadOfCachedRepo()">選び直す</button>
+        </div>
       </div>
       <div class="source-summary">
         <span class="source-summary-text" id="sourceSummary">取得元: 作業ツリーの差分</span>
@@ -2176,6 +2253,21 @@
       updateSourceDisplayButton();
     }
 
+    function hideRepoRestorePrompt() {
+      const prompt = document.getElementById('repoRestorePrompt');
+      if (!prompt) return;
+      prompt.classList.add('hidden');
+    }
+
+    function showRepoRestorePrompt(repoPath) {
+      const prompt = document.getElementById('repoRestorePrompt');
+      const pathEl = document.getElementById('repoRestorePath');
+      if (!prompt || !pathEl) return;
+      pathEl.textContent = repoPath;
+      pathEl.title = repoPath;
+      prompt.classList.remove('hidden');
+    }
+
     function updateSourceDisplayButton() {
       const btn = document.getElementById('sourceDisplayBtn');
       if (!btn) return;
@@ -2231,12 +2323,18 @@
       saveSessionCache(cache);
     }
 
-    function applySessionCacheToControls() {
+    function getCachedRepoPath() {
       const cache = loadSessionCache();
-      const cachedRepo = normalizeRepoPath(cache.repoPath);
+      return normalizeRepoPath(cache.repoPath);
+    }
+
+    function applySessionCacheToControls() {
+      const cachedRepo = getCachedRepoPath();
       const repoInput = document.getElementById('repoPath');
       if (cachedRepo && repoInput && !repoInput.value.trim()) {
-        repoInput.value = cachedRepo;
+        showRepoRestorePrompt(cachedRepo);
+      } else {
+        hideRepoRestorePrompt();
       }
     }
 
@@ -2743,6 +2841,7 @@
         }
         document.getElementById('repoPath').value = data.repo_path;
         cacheRepoPath(data.repo_path);
+        hideRepoRestorePrompt();
         updateAnalyzeButtonLabel();
         return true;
       } catch (e) {
@@ -2755,6 +2854,31 @@
         }
         updateAnalyzeButtonLabel();
       }
+    }
+
+    async function analyzeCachedRepo() {
+      const cachedRepo = getCachedRepoPath();
+      if (!cachedRepo) {
+        hideRepoRestorePrompt();
+        showToast('前回のリポジトリが見つかりません', 'error');
+        return;
+      }
+
+      document.getElementById('repoPath').value = cachedRepo;
+      hideRepoRestorePrompt();
+      updateAnalyzeButtonLabel();
+      await onAnalyzeButtonClick();
+    }
+
+    async function browseInsteadOfCachedRepo() {
+      hideRepoRestorePrompt();
+      const selected = await browseRepo();
+      if (!selected) {
+        applySessionCacheToControls();
+        updateAnalyzeButtonLabel();
+        return;
+      }
+      await onAnalyzeButtonClick();
     }
 
     async function onAnalyzeButtonClick() {
@@ -2814,6 +2938,7 @@
 
         state.repoPath = repoPath;
         cacheRepoPath(repoPath);
+        hideRepoRestorePrompt();
         state.analysisId = data.analysis_id || '';
         state.hunks = data.hunks;
         state.inlineAddedMutePicking = false;
@@ -3943,6 +4068,7 @@
     });
 
     document.getElementById('repoPath').addEventListener('input', () => {
+      hideRepoRestorePrompt();
       updateAnalyzeButtonLabel();
     });
 

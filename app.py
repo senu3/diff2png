@@ -43,7 +43,7 @@ INLINE_DIFF_MAX_CHANGED_CHARS = 120
 INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
 INLINE_DIFF_MIN_SIMILARITY = 0.62
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
-INLINE_DIFF_MODES = {"full", "new", "off"}
+INLINE_DIFF_MODES = {"full", "new", "old", "off"}
 INLINE_ADDED_MUTES_LIMIT = 200
 INLINE_ADDED_MUTE_KEY_LIMIT = 1000
 _OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
@@ -253,7 +253,7 @@ def hunk_inline_diff_mode(hunk: dict) -> str:
 def normalize_inline_diff_mode(value: str | None, default: str = "full") -> str:
     mode = str(value or default).strip().lower()
     if mode not in INLINE_DIFF_MODES:
-        raise ValueError("inline_diff_default_mode は full, new, off のいずれかを指定してください")
+        raise ValueError("inline_diff_default_mode は full, new, old, off のいずれかを指定してください")
     return mode
 
 
@@ -1067,7 +1067,8 @@ def _inline_diff_html(
     added_key_prefix: str = "",
 ) -> str | None:
     parts = []
-    show_old = mode == "full"
+    show_old = mode in {"full", "old"}
+    show_new_highlight = mode != "old"
     added_index = 0
     muted_added_keys = muted_added_keys or set()
     changed_chars_limit = (
@@ -1092,6 +1093,8 @@ def _inline_diff_html(
         nonlocal added_index
         key = f"{added_key_prefix}:{added_index}:{text}"
         added_index += 1
+        if not show_new_highlight:
+            return escape(text)
         class_name = "inline-added inline-added-muted" if key in muted_added_keys else "inline-added"
         return f'<span class="{class_name}">{escape(text)}</span>'
 
@@ -1772,7 +1775,7 @@ def update_hunk_inline_diff(hunk_index: int):
     if "mode" in data:
         mode = str(data.get("mode", "")).strip().lower()
         if mode not in INLINE_DIFF_MODES:
-            return jsonify({"error": "mode は full, new, off のいずれかを指定してください"}), 400
+            return jsonify({"error": "mode は full, new, old, off のいずれかを指定してください"}), 400
     else:
         enabled = data.get("enabled")
         if not isinstance(enabled, bool):

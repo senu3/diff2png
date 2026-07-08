@@ -47,12 +47,12 @@ class HunkMergeTests(unittest.TestCase):
         original = diff2png.INLINE_DIFF_DEFAULT_MODE
         try:
             client = diff2png.app.test_client()
-            response = client.post("/api/config", json={"inline_diff_default_mode": "new"})
+            response = client.post("/api/config", json={"inline_diff_default_mode": "old"})
             self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 
             get_response = client.get("/api/config")
             self.assertEqual(get_response.status_code, 200, get_response.get_data(as_text=True))
-            self.assertEqual(get_response.get_json()["inline_diff_default_mode"], "new")
+            self.assertEqual(get_response.get_json()["inline_diff_default_mode"], "old")
 
             invalid_response = client.post("/api/config", json={"inline_diff_default_mode": "invalid"})
             self.assertEqual(invalid_response.status_code, 400)
@@ -488,6 +488,39 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn('draft', html)
         self.assertIn('published', html)
 
+    def test_normal_view_inline_diff_old_only_mode_shows_deleted_highlight_only(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": ['-status = "draft"', '+status = "published"'],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+            "inline_diff_mode": "old",
+        }
+        source_lines = ['status = "published"']
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('class="inline-deleted"', html)
+        self.assertNotIn('class="inline-added"', html)
+        self.assertIn('draft', html)
+        self.assertIn('published', html)
+
     def test_hunk_inline_diff_endpoint_updates_target_hunk(self):
         if shutil.which("git") is None:
             self.skipTest("git is not available")
@@ -598,6 +631,54 @@ class HunkMergeTests(unittest.TestCase):
         self.assertTrue(data["hunk"]["inline_diff_enabled"])
         self.assertEqual(data["hunk"]["inline_diff_mode"], "new")
         self.assertEqual(hunks[0]["inline_diff_mode"], "new")
+
+    def test_hunk_inline_diff_endpoint_accepts_old_only_mode(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not available")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+            hunks = [
+                {
+                    "filepath": "sample.py",
+                    "start": 1,
+                    "end": 1,
+                    "default_start": 1,
+                    "default_end": 1,
+                    "old_start": 1,
+                    "changed_lines": [1],
+                    "diff_lines": ['-a = "old"', '+a = "new"'],
+                    "added_count": 1,
+                    "deleted_count": 1,
+                    "changed_count": 2,
+                    "inline_diff_mode": "full",
+                    "inline_diff_enabled": True,
+                },
+            ]
+
+            try:
+                diff2png.ANALYSIS_SESSIONS.clear()
+                analysis_id = diff2png.create_analysis_session(
+                    str(repo),
+                    hunks,
+                    hunks,
+                    {"type": "worktree"},
+                    {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+                )
+                client = diff2png.app.test_client()
+                response = client.post(
+                    "/api/hunk-inline-diff/0",
+                    json={"repo_path": str(repo), "analysis_id": analysis_id, "mode": "old"},
+                )
+            finally:
+                diff2png.ANALYSIS_SESSIONS.clear()
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = response.get_json()
+        self.assertTrue(data["hunk"]["inline_diff_enabled"])
+        self.assertEqual(data["hunk"]["inline_diff_mode"], "old")
+        self.assertEqual(hunks[0]["inline_diff_mode"], "old")
 
     def test_hunk_inline_added_mute_endpoint_updates_target_hunk(self):
         if shutil.which("git") is None:

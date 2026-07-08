@@ -1257,6 +1257,11 @@
       background: rgba(62, 207, 110, 0.08);
     }
 
+    .inline-diff-mode-btn.active[data-inline-diff-mode="old"] {
+      color: var(--danger);
+      background: rgba(224, 92, 92, 0.08);
+    }
+
     .inline-diff-mode-btn:disabled {
       cursor: not-allowed;
       opacity: 0.45;
@@ -1745,6 +1750,7 @@
             <select id="cfg-inline-default">
               <option value="full">ON（両方表示）</option>
               <option value="new">緑のみ</option>
+              <option value="old">赤のみ</option>
               <option value="off">OFF</option>
             </select>
           </div>
@@ -2072,6 +2078,8 @@
             onclick="setActiveInlineDiffMode('full')" disabled aria-pressed="true">両方</button>
           <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="new"
             onclick="setActiveInlineDiffMode('new')" disabled aria-pressed="false">緑のみ</button>
+          <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="old"
+            onclick="setActiveInlineDiffMode('old')" disabled aria-pressed="false">赤のみ</button>
           <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="off"
             onclick="setActiveInlineDiffMode('off')" disabled aria-pressed="false">OFF</button>
         </div>
@@ -2377,7 +2385,12 @@
       if (prefs.diff_mode === 'file' || prefs.diff_mode === 'patch') {
         document.getElementById('sourceDiffMode').value = prefs.diff_mode;
       }
-      if (prefs.inline_diff_default_mode === 'full' || prefs.inline_diff_default_mode === 'new' || prefs.inline_diff_default_mode === 'off') {
+      if (
+        prefs.inline_diff_default_mode === 'full' ||
+        prefs.inline_diff_default_mode === 'new' ||
+        prefs.inline_diff_default_mode === 'old' ||
+        prefs.inline_diff_default_mode === 'off'
+      ) {
         document.getElementById('cfg-inline-default').value = prefs.inline_diff_default_mode;
       } else if (prefs.inline_diff_default_mode === 'same') {
         document.getElementById('cfg-inline-default').value = 'full';
@@ -3372,7 +3385,7 @@
       const h = state.hunks[index];
       const isPatch = currentDiffMode === 'patch';
       const mode = getInlineDiffMode(h);
-      const titleByMode = { full: 'ON（両方表示）', new: '緑のみ', off: 'OFF' };
+      const titleByMode = { full: 'ON（両方表示）', new: '緑のみ', old: '赤のみ', off: 'OFF' };
       const title = isPatch
         ? 'パッチ表示では行内差分は使用しません'
         : `このhunkの行内差分: ${titleByMode[mode]}`;
@@ -3420,7 +3433,7 @@
     function getInlineDiffMode(hunk) {
       if (!hunk) return 'full';
       const mode = String(hunk.inline_diff_mode || '').toLowerCase();
-      if (mode === 'full' || mode === 'new' || mode === 'off') return mode;
+      if (mode === 'full' || mode === 'new' || mode === 'old' || mode === 'off') return mode;
       return hunk.inline_diff_enabled === false ? 'off' : 'full';
     }
 
@@ -3654,7 +3667,7 @@
 
       const h = state.hunks[index];
       if (!h) return;
-      if (mode !== 'full' && mode !== 'new' && mode !== 'off') return;
+      if (mode !== 'full' && mode !== 'new' && mode !== 'old' && mode !== 'off') return;
       if (getInlineDiffMode(h) === mode) return;
       state.inlineDiffUpdating = true;
 
@@ -4089,9 +4102,11 @@
         setSlider('cfg-width', 'cfg-width-val', cfg.html_width);
         document.getElementById('cfg-outdir').value = cfg.output_dir;
         document.getElementById('cfg-background').value = cfg.background_mode || (cfg.transparent_background ? 'transparent_no_footer' : 'normal');
-        document.getElementById('cfg-inline-default').value = cfg.inline_diff_default_mode === 'same'
-          ? 'full'
-          : (cfg.inline_diff_default_mode || 'full');
+        const inlineDefault = String(cfg.inline_diff_default_mode || 'full').toLowerCase();
+        document.getElementById('cfg-inline-default').value =
+          (inlineDefault === 'full' || inlineDefault === 'new' || inlineDefault === 'old' || inlineDefault === 'off')
+            ? inlineDefault
+            : 'full';
 
         const prefs = loadUiPrefs();
         applyUiPrefsToControls(prefs);

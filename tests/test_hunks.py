@@ -764,6 +764,102 @@ class HunkMergeTests(unittest.TestCase):
 
         self.assertIn('<span class="inline-added inline-added-muted">new</span>', html)
 
+    def test_normal_view_renders_manual_row_highlights(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 2,
+            "default_start": 1,
+            "default_end": 2,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": ['+value = "new"'],
+            "added_count": 1,
+            "deleted_count": 0,
+            "changed_count": 1,
+            "inline_diff_mode": "full",
+            "inline_diff_enabled": True,
+            "manual_row_highlights": {"1": "yellow", "2": "green"},
+        }
+        source_lines = ['value = "new"', "unchanged"]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('<tr class="added manual-row-yellow"><td class="lineno">1</td>', html)
+        self.assertIn('<tr class="manual-row-green"><td class="lineno">2</td>', html)
+
+    def test_hunk_row_highlight_endpoint_sets_and_clears_target_hunk(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not available")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+            hunks = [
+                {
+                    "filepath": "sample.py",
+                    "start": 1,
+                    "end": 2,
+                    "default_start": 1,
+                    "default_end": 2,
+                    "old_start": 1,
+                    "changed_lines": [1],
+                    "diff_lines": ['+value = "new"'],
+                    "added_count": 1,
+                    "deleted_count": 0,
+                    "changed_count": 1,
+                    "inline_diff_mode": "full",
+                    "inline_diff_enabled": True,
+                    "manual_row_highlights": {},
+                },
+            ]
+
+            try:
+                diff2png.ANALYSIS_SESSIONS.clear()
+                analysis_id = diff2png.create_analysis_session(
+                    str(repo),
+                    hunks,
+                    hunks,
+                    {"type": "worktree"},
+                    {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+                )
+                client = diff2png.app.test_client()
+                set_response = client.post(
+                    "/api/hunk-row-highlight/0",
+                    json={
+                        "repo_path": str(repo),
+                        "analysis_id": analysis_id,
+                        "lineno": 2,
+                        "color": "green",
+                    },
+                )
+                clear_response = client.post(
+                    "/api/hunk-row-highlight/0",
+                    json={
+                        "repo_path": str(repo),
+                        "analysis_id": analysis_id,
+                        "lineno": 2,
+                        "color": "none",
+                    },
+                )
+            finally:
+                diff2png.ANALYSIS_SESSIONS.clear()
+
+        self.assertEqual(set_response.status_code, 200, set_response.get_data(as_text=True))
+        self.assertEqual(set_response.get_json()["hunk"]["manual_row_highlights"], {"2": "green"})
+        self.assertEqual(clear_response.status_code, 200, clear_response.get_data(as_text=True))
+        self.assertEqual(clear_response.get_json()["hunk"]["manual_row_highlights"], {})
+        self.assertEqual(hunks[0]["manual_row_highlights"], {})
+
     def test_normal_view_inline_diff_uses_changed_line_after_context_expansion(self):
         hunk = {
             "filepath": "sample.html",

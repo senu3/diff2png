@@ -46,6 +46,8 @@ INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 INLINE_DIFF_MODES = {"full", "new", "old", "off"}
 INLINE_ADDED_MUTES_LIMIT = 200
 INLINE_ADDED_MUTE_KEY_LIMIT = 1000
+MANUAL_ROW_HIGHLIGHTS_LIMIT = 500
+MANUAL_ROW_HIGHLIGHT_COLORS = {"green", "yellow"}
 _OLD_RE = re.compile(r"^--- (?:a/(.+)|/dev/null)$")
 _NEW_RE = re.compile(r"^\+\+\+ (?:b/(.+)|/dev/null)$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -279,6 +281,35 @@ def hunk_inline_added_mutes(hunk: dict) -> set[str]:
     }
 
 
+def normalize_manual_row_highlight_color(value: str | None) -> str:
+    color = str(value or "").strip().lower()
+    if color in ("", "none", "off", "clear"):
+        return ""
+    if color not in MANUAL_ROW_HIGHLIGHT_COLORS:
+        raise ValueError("color は green, yellow, none のいずれかを指定してください")
+    return color
+
+
+def hunk_manual_row_highlights(hunk: dict) -> dict[int, str]:
+    values = hunk.get("manual_row_highlights", {})
+    if not isinstance(values, dict):
+        return {}
+
+    highlights: dict[int, str] = {}
+    for raw_lineno, raw_color in list(values.items())[:MANUAL_ROW_HIGHLIGHTS_LIMIT]:
+        try:
+            lineno = int(raw_lineno)
+        except (TypeError, ValueError):
+            continue
+        try:
+            color = normalize_manual_row_highlight_color(str(raw_color))
+        except ValueError:
+            continue
+        if lineno > 0 and color:
+            highlights[lineno] = color
+    return highlights
+
+
 def make_hunk_summary(hunk: dict) -> dict:
     start = int(hunk.get("start", 1))
     end = int(hunk.get("end", start))
@@ -300,6 +331,10 @@ def make_hunk_summary(hunk: dict) -> dict:
         "added_count": hunk.get("added_count", 0),
         "deleted_count": hunk.get("deleted_count", 0),
         "inline_added_mutes": sorted(hunk_inline_added_mutes(hunk)),
+        "manual_row_highlights": {
+            str(lineno): color
+            for lineno, color in sorted(hunk_manual_row_highlights(hunk).items())
+        },
     }
 
 
@@ -351,6 +386,7 @@ def finalize_hunks(raw_hunks: list[dict], repo_path: str, content_source: dict, 
         h["inline_diff_enabled"] = inline_diff_mode != "off"
         h["inline_diff_mode"] = inline_diff_mode
         h["inline_added_mutes"] = []
+        h["manual_row_highlights"] = {}
     return hunks
 
 
@@ -771,6 +807,10 @@ span.inline-added.inline-added-muted{{background:transparent;color:inherit}}
 span.inline-deleted{{background:#fecaca;color:#991b1b;border-radius:3px;padding:0 2px;text-decoration:line-through}}
 tr.changed.inline-rendered{{background:#f8fafc}}
 tr.changed.inline-rendered td.lineno{{background:#f8fafc;color:#64748b}}
+tr.manual-row-green{{background:#ecfdf5}}
+tr.manual-row-green td.lineno{{background:#dcfce7;color:#64748b}}
+tr.manual-row-yellow{{background:#fefce8}}
+tr.manual-row-yellow td.lineno{{background:#fef9c3;color:#78716c}}
 .footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
 </style></head><body>
 <div class=\"header\">
@@ -1218,6 +1258,7 @@ def build_code_html(
         render_config.get("inline_diff_max_changed_chars", INLINE_DIFF_MAX_CHANGED_CHARS)
     )
     inline_added_mutes = hunk_inline_added_mutes(hunk)
+    manual_row_highlights = hunk_manual_row_highlights(hunk)
     replacement_texts = [text for _, text in replacements.values()]
     stripped_combined, _ = _strip_common_indent_from_lines(raw_texts + replacement_texts)
     stripped_texts = stripped_combined[:len(raw_texts)]
@@ -1261,6 +1302,9 @@ def build_code_html(
             row_classes.append("added")
         if inline_rendered:
             row_classes.append("inline-rendered")
+        manual_row_highlight = manual_row_highlights.get(int(lineno))
+        if manual_row_highlight:
+            row_classes.append(f"manual-row-{manual_row_highlight}")
         row_class = f' class="{" ".join(row_classes)}"' if row_classes else ""
         marker = "+" if is_changed else " "
         rows.append(
@@ -1306,6 +1350,7 @@ def build_deleted_context_html(
 
     lang = detect_language(hunk["filepath"])
     deletion_anchor = int(hunk.get("orig_start", hunk.get("start", 1)))
+    manual_row_highlights = hunk_manual_row_highlights(hunk)
     rows = []
     deleted_inserted = False
 
@@ -1315,8 +1360,12 @@ def build_deleted_context_html(
             return
         old_ln = int(hunk.get("old_start", deletion_anchor))
         for text in stripped_deleted:
+            row_classes = ["deleted"]
+            manual_row_highlight = manual_row_highlights.get(old_ln)
+            if manual_row_highlight:
+                row_classes.append(f"manual-row-{manual_row_highlight}")
             rows.append(
-                '<tr class="deleted">'
+                f'<tr class="{" ".join(row_classes)}">'
                 f'<td class="lineno">{old_ln}</td>'
                 '<td class="marker">-</td>'
                 f'<td class="code">{escape(text)}</td>'
@@ -1333,8 +1382,10 @@ def build_deleted_context_html(
             append_deleted_rows()
 
         escaped = escape(stripped_lines[idx])
+        manual_row_highlight = manual_row_highlights.get(int(lineno))
+        row_class = f' class="manual-row-{manual_row_highlight}"' if manual_row_highlight else ""
         rows.append(
-            '<tr>'
+            f'<tr{row_class}>'
             f'<td class="lineno">{lineno}</td>'
             '<td class="marker"> </td>'
             f'<td class="code">{escaped}</td>'
@@ -1827,6 +1878,50 @@ def update_hunk_inline_added_mute(hunk_index: int):
     else:
         mutes.discard(key)
     hunk["inline_added_mutes"] = sorted(mutes)
+    return jsonify({"hunk": make_hunk_summary(hunk)})
+
+
+@app.route("/api/hunk-row-highlight/<int:hunk_index>", methods=["POST"])
+def update_hunk_row_highlight(hunk_index: int):
+    data = request.get_json(silent=True) or {}
+    repo_path = str(data.get("repo_path", "")).strip()
+    analysis_id = str(data.get("analysis_id", "")).strip()
+    if not repo_path:
+        return jsonify({"error": "リポジトリパスが無効です"}), 400
+    if not analysis_id:
+        return jsonify({"error": "analysis_id が不正です"}), 400
+
+    try:
+        lineno = int(data.get("lineno"))
+        color = normalize_manual_row_highlight_color(data.get("color"))
+        repo = resolve_repo_path(repo_path)
+        session = get_analysis_session(analysis_id, str(repo))
+    except (TypeError, ValueError) as e:
+        return jsonify({"error": str(e) if str(e) else "lineno が不正です"}), 400
+
+    if session_config(session).get("diff_mode") == "patch":
+        return jsonify({"error": "行背景の編集は通常表示でのみ使用できます"}), 400
+
+    hunks = session["hunks"]
+    if hunk_index < 0 or hunk_index >= len(hunks):
+        return jsonify({"error": "無効なインデックス"}), 400
+
+    hunk = hunks[hunk_index]
+    if lineno <= 0:
+        return jsonify({"error": "lineno が不正です"}), 400
+
+    highlights = hunk_manual_row_highlights(hunk)
+    if color:
+        if len(highlights) >= MANUAL_ROW_HIGHLIGHTS_LIMIT and lineno not in highlights:
+            return jsonify({"error": "行背景の編集数が上限に達しました"}), 400
+        highlights[lineno] = color
+    else:
+        highlights.pop(lineno, None)
+
+    hunk["manual_row_highlights"] = {
+        str(line): row_color
+        for line, row_color in sorted(highlights.items())
+    }
     return jsonify({"hunk": make_hunk_summary(hunk)})
 
 

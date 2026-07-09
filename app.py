@@ -43,7 +43,9 @@ INLINE_DIFF_MAX_CHANGED_CHARS = 120
 INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
 INLINE_DIFF_MIN_SIMILARITY = 0.62
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
-INLINE_DIFF_MODES = {"full", "new", "old", "off"}
+DIFF_MODES = {"file", "patch", "deleted"}
+PATCH_LIKE_DIFF_MODES = {"patch", "deleted"}
+INLINE_DIFF_MODES = {"full", "new", "off"}
 INLINE_ADDED_MUTES_LIMIT = 200
 INLINE_ADDED_MUTE_KEY_LIMIT = 1000
 MANUAL_ROW_HIGHLIGHTS_LIMIT = 500
@@ -255,7 +257,7 @@ def hunk_inline_diff_mode(hunk: dict) -> str:
 def normalize_inline_diff_mode(value: str | None, default: str = "full") -> str:
     mode = str(value or default).strip().lower()
     if mode not in INLINE_DIFF_MODES:
-        raise ValueError("inline_diff_default_mode は full, new, old, off のいずれかを指定してください")
+        raise ValueError("inline_diff_default_mode は full, new, off のいずれかを指定してください")
     return mode
 
 
@@ -1107,8 +1109,7 @@ def _inline_diff_html(
     added_key_prefix: str = "",
 ) -> str | None:
     parts = []
-    show_old = mode in {"full", "old"}
-    show_new_highlight = mode != "old"
+    show_old = mode == "full"
     added_index = 0
     muted_added_keys = muted_added_keys or set()
     changed_chars_limit = (
@@ -1133,8 +1134,6 @@ def _inline_diff_html(
         nonlocal added_index
         key = f"{added_key_prefix}:{added_index}:{text}"
         added_index += 1
-        if not show_new_highlight:
-            return ""
         class_name = "inline-added inline-added-muted" if key in muted_added_keys else "inline-added"
         return f'<span class="{class_name}">{escape(text)}</span>'
 
@@ -1149,23 +1148,21 @@ def _inline_diff_html(
         if tag == "equal":
             parts.append(escape(new_part))
         elif tag == "insert":
-            if show_new_highlight:
-                parts.append(
-                    escape(new_part)
-                    if is_leading_indent
-                    else added_span(new_part)
-                )
+            parts.append(
+                escape(new_part)
+                if is_leading_indent
+                else added_span(new_part)
+            )
         elif tag == "delete":
             if show_old and not is_leading_indent:
                 parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
         elif tag == "replace":
             if is_leading_indent:
-                parts.append(escape(old_part if mode == "old" else new_part))
+                parts.append(escape(new_part))
             else:
                 if show_old:
                     parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
-                if show_new_highlight:
-                    parts.append(added_span(new_part))
+                parts.append(added_span(new_part))
     return "".join(parts)
 
 
@@ -1239,6 +1236,8 @@ def build_code_html(
     render_config = config or current_config_snapshot()
     if render_config.get("diff_mode") == "patch":
         return build_patch_html(hunk, hunk_index, total, timestamp, render_config)
+    if render_config.get("diff_mode") == "deleted":
+        return build_deleted_patch_html(hunk, hunk_index, total, timestamp, render_config)
 
     if len(hunk.get("changed_lines", [])) == 0 and int(hunk.get("deleted_count", 0)) > 0 and hunk.get("diff_lines"):
         return build_deleted_context_html(
@@ -1300,7 +1299,7 @@ def build_code_html(
         row_classes = []
         if inline_missed or inline_rendered:
             row_classes.append("changed")
-        elif is_changed and inline_diff_mode != "old":
+        elif is_changed:
             row_classes.append("added")
         if inline_rendered:
             row_classes.append("inline-rendered")
@@ -1507,6 +1506,92 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, co
     return html
 
 
+def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, config: dict | None = None) -> str:
+    render_config = config or current_config_snapshot()
+    lang = detect_language(hunk["filepath"])
+    old_ln = int(hunk.get("old_start", hunk["start"]))
+    new_ln = int(hunk.get("start", 1))
+    rows = []
+
+    texts_for_indent = []
+    for raw in hunk.get("diff_lines", []):
+        if not raw or raw.startswith("\\") or raw.startswith("+"):
+            continue
+        part = raw[1:]
+        if part.strip() == "":
+            continue
+        texts_for_indent.append(part)
+
+    stripped_texts_by_index: dict[int, str] = {}
+    if texts_for_indent:
+        new_texts, _ = _strip_common_indent_from_lines(texts_for_indent)
+        it = iter(new_texts)
+        for idx, raw in enumerate(hunk.get("diff_lines", [])):
+            if not raw or raw.startswith("\\") or raw.startswith("+"):
+                continue
+            part = raw[1:]
+            if part.strip() == "":
+                stripped_texts_by_index[idx] = part
+                continue
+            stripped_texts_by_index[idx] = next(it)
+
+    for idx, raw in enumerate(hunk.get("diff_lines", [])):
+        if not raw:
+            continue
+        if raw.startswith("\\"):
+            note = escape(raw)
+            rows.append(
+                '<tr class="note">'
+                '<td class="lineno old"></td>'
+                '<td class="lineno new"></td>'
+                '<td class="marker">\\</td>'
+                f'<td class="code">{note}</td>'
+                '</tr>'
+            )
+            continue
+
+        prefix = raw[0]
+        if prefix == "+":
+            new_ln += 1
+            continue
+
+        text = stripped_texts_by_index.get(idx, raw[1:])
+        escaped = escape(text)
+
+        if prefix == "-":
+            rows.append(
+                '<tr class="deleted">'
+                f'<td class="lineno old">{old_ln}</td>'
+                '<td class="lineno new"></td>'
+                '<td class="marker">-</td>'
+                f'<td class="code">{escaped}</td>'
+                '</tr>'
+            )
+            old_ln += 1
+        else:
+            rows.append(
+                '<tr>'
+                f'<td class="lineno old">{old_ln}</td>'
+                f'<td class="lineno new">{new_ln}</td>'
+                '<td class="marker"> </td>'
+                f'<td class="code">{escaped}</td>'
+                '</tr>'
+            )
+            old_ln += 1
+            new_ln += 1
+
+    diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
+    background_mode = str(render_config.get("background_mode", BACKGROUND_MODE))
+    html_width = int(render_config.get("html_width", HTML_WIDTH))
+    bg_color = 'transparent' if background_mode != 'normal' else '#fff'
+    show_footer = False if background_mode == 'transparent_no_footer' else True
+
+    meta = f"-{hunk.get('old_start', hunk['start'])} +{hunk['start']} | {hunk_index}/{total} | {lang} | 削除"
+    html = _compose_html(''.join(rows), hunk['filepath'], meta, lang, bg_color,
+                         html_width, show_footer, timestamp, diff_cmd)
+    return html
+
+
 # ================================================================
 # PNG 出力
 # ================================================================
@@ -1586,8 +1671,8 @@ def config():
             OUTPUT_DIR_NAME, OUTPUT_DIR = parse_output_dir(str(data["output_dir"]))
         if "diff_mode" in data:
             mode = str(data["diff_mode"]).strip().lower()
-            if mode not in ("file", "patch"):
-                raise ValueError("diff_mode は file または patch を指定してください")
+            if mode not in DIFF_MODES:
+                raise ValueError("diff_mode は file, patch, deleted のいずれかを指定してください")
             DIFF_MODE = mode
         if "inline_diff_default_mode" in data:
             INLINE_DIFF_DEFAULT_MODE = normalize_inline_diff_mode(str(data["inline_diff_default_mode"]))
@@ -1661,7 +1746,7 @@ def analyze():
         else:
             diff_cmd_label = f"git diff {base_ref} {target_ref}"
 
-        if config_snapshot.get("diff_mode") == "patch":
+        if config_snapshot.get("diff_mode") in PATCH_LIKE_DIFF_MODES:
             diff_text = get_diff(
                 str(repo),
                 context_lines=int(config_snapshot.get("context_lines", CONTEXT_LINES)),
@@ -1724,7 +1809,7 @@ def reconfigure_analysis():
     if not isinstance(raw_hunks, list):
         return jsonify({"requires_reanalyze": True})
 
-    if config_snapshot.get("diff_mode") == "patch":
+    if config_snapshot.get("diff_mode") in PATCH_LIKE_DIFF_MODES:
         context_changed = (
             int(previous_config.get("context_lines", CONTEXT_LINES))
             != int(config_snapshot.get("context_lines", CONTEXT_LINES))
@@ -1789,7 +1874,7 @@ def update_hunk_range(hunk_index: int):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    if session_config(session).get("diff_mode") == "patch":
+    if session_config(session).get("diff_mode") != "file":
         return jsonify({"error": "行範囲の調整は通常表示でのみ使用できます"}), 400
 
     hunks = session["hunks"]
@@ -1821,6 +1906,9 @@ def update_hunk_inline_diff(hunk_index: int):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
+    if session_config(session).get("diff_mode") != "file":
+        return jsonify({"error": "行内差分は通常表示でのみ使用できます"}), 400
+
     hunks = session["hunks"]
     if hunk_index < 0 or hunk_index >= len(hunks):
         return jsonify({"error": "無効なインデックス"}), 400
@@ -1828,7 +1916,7 @@ def update_hunk_inline_diff(hunk_index: int):
     if "mode" in data:
         mode = str(data.get("mode", "")).strip().lower()
         if mode not in INLINE_DIFF_MODES:
-            return jsonify({"error": "mode は full, new, old, off のいずれかを指定してください"}), 400
+            return jsonify({"error": "mode は full, new, off のいずれかを指定してください"}), 400
     else:
         enabled = data.get("enabled")
         if not isinstance(enabled, bool):
@@ -1861,7 +1949,7 @@ def update_hunk_inline_added_mute(hunk_index: int):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    if session_config(session).get("diff_mode") == "patch":
+    if session_config(session).get("diff_mode") != "file":
         return jsonify({"error": "追加ハイライトのミュートは通常表示でのみ使用できます"}), 400
 
     hunks = session["hunks"]
@@ -1901,7 +1989,7 @@ def update_hunk_row_highlight(hunk_index: int):
     except (TypeError, ValueError) as e:
         return jsonify({"error": str(e) if str(e) else "lineno が不正です"}), 400
 
-    if session_config(session).get("diff_mode") == "patch":
+    if session_config(session).get("diff_mode") != "file":
         return jsonify({"error": "行背景の編集は通常表示でのみ使用できます"}), 400
 
     hunks = session["hunks"]

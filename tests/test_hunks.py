@@ -517,9 +517,49 @@ class HunkMergeTests(unittest.TestCase):
             )
 
         self.assertIn('class="inline-deleted"', html)
+        self.assertNotIn('class="deleted"', html)
         self.assertNotIn('class="inline-added"', html)
         self.assertIn('draft', html)
-        self.assertIn('published', html)
+        self.assertNotIn('published', html)
+
+    def test_normal_view_inline_diff_old_only_mode_suppresses_added_rows(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 2,
+            "default_start": 1,
+            "default_end": 2,
+            "old_start": 1,
+            "changed_lines": [1, 2],
+            "diff_lines": [
+                "-value = config.name",
+                "+inserted = config.extra",
+                "+value = config.title",
+            ],
+            "added_count": 2,
+            "deleted_count": 1,
+            "changed_count": 3,
+            "inline_diff_mode": "old",
+        }
+        source_lines = ["inserted = config.extra", "value = config.title"]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        inserted_row_start = html.index("inserted = config.extra")
+        inserted_row = html[html.rfind("<tr", 0, inserted_row_start):html.index("</tr>", inserted_row_start)]
+        self.assertNotIn('class="added"', inserted_row)
+        self.assertIn('class="inline-deleted"', html)
+        self.assertNotIn('class="inline-added"', html)
+        self.assertNotIn("title", html)
 
     def test_hunk_inline_diff_endpoint_updates_target_hunk(self):
         if shutil.which("git") is None:

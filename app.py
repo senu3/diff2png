@@ -1134,7 +1134,7 @@ def _inline_diff_html(
         key = f"{added_key_prefix}:{added_index}:{text}"
         added_index += 1
         if not show_new_highlight:
-            return escape(text)
+            return ""
         class_name = "inline-added inline-added-muted" if key in muted_added_keys else "inline-added"
         return f'<span class="{class_name}">{escape(text)}</span>'
 
@@ -1149,21 +1149,23 @@ def _inline_diff_html(
         if tag == "equal":
             parts.append(escape(new_part))
         elif tag == "insert":
-            parts.append(
-                escape(new_part)
-                if is_leading_indent
-                else added_span(new_part)
-            )
+            if show_new_highlight:
+                parts.append(
+                    escape(new_part)
+                    if is_leading_indent
+                    else added_span(new_part)
+                )
         elif tag == "delete":
             if show_old and not is_leading_indent:
                 parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
         elif tag == "replace":
             if is_leading_indent:
-                parts.append(escape(new_part))
+                parts.append(escape(old_part if mode == "old" else new_part))
             else:
                 if show_old:
                     parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
-                parts.append(added_span(new_part))
+                if show_new_highlight:
+                    parts.append(added_span(new_part))
     return "".join(parts)
 
 
@@ -1298,7 +1300,7 @@ def build_code_html(
         row_classes = []
         if inline_missed or inline_rendered:
             row_classes.append("changed")
-        elif is_changed:
+        elif is_changed and inline_diff_mode != "old":
             row_classes.append("added")
         if inline_rendered:
             row_classes.append("inline-rendered")

@@ -45,6 +45,8 @@ INLINE_DIFF_MIN_SIMILARITY = 0.62
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 DIFF_MODES = {"file", "patch", "deleted"}
 PATCH_LIKE_DIFF_MODES = {"patch", "deleted"}
+SOURCE_MODES = {"worktree", "staged", "commit", "range"}
+BACKGROUND_MODES = {"normal", "no_bg_footer", "transparent_no_footer"}
 INLINE_DIFF_MODES = {"full", "new", "off"}
 INLINE_ADDED_MUTES_LIMIT = 200
 INLINE_ADDED_MUTE_KEY_LIMIT = 1000
@@ -351,6 +353,106 @@ def current_config_snapshot() -> dict:
         "inline_diff_default_mode": INLINE_DIFF_DEFAULT_MODE,
         "inline_diff_max_changed_chars": INLINE_DIFF_MAX_CHANGED_CHARS,
     }
+
+
+def request_json_data() -> dict:
+    data = request.get_json(silent=True) or {}
+    return data if isinstance(data, dict) else {}
+
+
+def error_response(message: str, status: int = 400):
+    return jsonify({"error": message}), status
+
+
+def require_payload_text(data: dict, key: str, error_message: str) -> str:
+    value = str(data.get(key, "")).strip()
+    if not value:
+        raise ValueError(error_message)
+    return value
+
+
+def resolve_repo_from_payload(data: dict) -> Path:
+    repo_path = require_payload_text(data, "repo_path", "リポジトリパスが無効です")
+    return resolve_repo_path(repo_path)
+
+
+def resolve_analysis_context(data: dict) -> tuple[Path, dict]:
+    repo = resolve_repo_from_payload(data)
+    analysis_id = require_payload_text(data, "analysis_id", "analysis_id が不正です")
+    return repo, get_analysis_session(analysis_id, str(repo))
+
+
+def require_file_mode(session: dict, message: str) -> None:
+    if session_config(session).get("diff_mode") != "file":
+        raise ValueError(message)
+
+
+def hunk_at(session: dict, hunk_index: int) -> dict:
+    hunks = session["hunks"]
+    if hunk_index < 0 or hunk_index >= len(hunks):
+        raise ValueError("無効なインデックス")
+    return hunks[hunk_index]
+
+
+def hunks_payload(analysis_id: str, hunks: list[dict]) -> dict:
+    return {
+        "analysis_id": analysis_id,
+        "hunks": [make_hunk_summary(h) for h in hunks],
+        "total": len(hunks),
+    }
+
+
+def diff_command_label(source_mode: str, base_ref: str, target_ref: str) -> str:
+    if source_mode == "worktree":
+        return "git diff HEAD"
+    if source_mode == "staged":
+        return "git diff --staged"
+    if source_mode == "commit":
+        return f"git diff {target_ref}^ {target_ref}"
+    return f"git diff {base_ref} {target_ref}"
+
+
+def get_analysis_diff_text(
+    repo_path: str,
+    source_mode: str,
+    base_ref: str,
+    target_ref: str,
+    config: dict,
+) -> str:
+    diff_kwargs = {
+        "source_mode": source_mode,
+        "base_ref": base_ref,
+        "target_ref": target_ref,
+    }
+    if config.get("diff_mode") in PATCH_LIKE_DIFF_MODES:
+        return get_diff(
+            repo_path,
+            context_lines=int(config.get("context_lines", CONTEXT_LINES)),
+            merge_threshold=int(config.get("merge_threshold", MERGE_THRESHOLD)),
+            **diff_kwargs,
+        )
+    return get_diff(repo_path, context_lines=0, **diff_kwargs)
+
+
+def normalize_export_indices(raw_indices, hunk_count: int) -> list[int]:
+    if raw_indices is None:
+        indices = list(range(hunk_count))
+    elif isinstance(raw_indices, list):
+        indices = raw_indices
+    else:
+        raise ValueError("indices は配列で指定してください")
+
+    normalized_indices: list[int] = []
+    for idx in indices:
+        if not isinstance(idx, int):
+            raise ValueError("indices は整数配列で指定してください")
+        if idx < 0 or idx >= hunk_count:
+            raise ValueError(f"indices に範囲外の値があります: {idx}")
+        normalized_indices.append(idx)
+
+    if not normalized_indices:
+        raise ValueError("出力対象がありません")
+    return normalized_indices
 
 
 def session_config(session: dict) -> dict:
@@ -839,6 +941,63 @@ tr.manual-row-yellow td.lineno{{background:#fef9c3;color:#78716c}}
     return html
 
 
+def _html_render_options(config: dict) -> tuple[int, str, bool]:
+    background_mode = str(config.get("background_mode", BACKGROUND_MODE))
+    html_width = int(config.get("html_width", HTML_WIDTH))
+    bg_color = "transparent" if background_mode != "normal" else "#fff"
+    show_footer = background_mode != "transparent_no_footer"
+    return html_width, bg_color, show_footer
+
+
+def _compose_hunk_html(
+    rows: list[str],
+    hunk: dict,
+    meta: str,
+    lang: str,
+    timestamp: str,
+    config: dict,
+) -> str:
+    html_width, bg_color, show_footer = _html_render_options(config)
+    return _compose_html(
+        "".join(rows),
+        hunk["filepath"],
+        meta,
+        lang,
+        bg_color,
+        html_width,
+        show_footer,
+        timestamp,
+        hunk.get("diff_cmd", "git diff HEAD"),
+    )
+
+
+def _stripped_diff_texts_by_index(diff_lines: list[str], include_raw) -> dict[int, str]:
+    texts_for_indent = []
+    for raw in diff_lines:
+        if not raw or not include_raw(raw):
+            continue
+        part = raw[1:]
+        if part.strip() == "":
+            continue
+        texts_for_indent.append(part)
+
+    if not texts_for_indent:
+        return {}
+
+    stripped_texts, _ = _strip_common_indent_from_lines(texts_for_indent)
+    stripped_by_index: dict[int, str] = {}
+    text_iter = iter(stripped_texts)
+    for idx, raw in enumerate(diff_lines):
+        if not raw or not include_raw(raw):
+            continue
+        part = raw[1:]
+        if part.strip() == "":
+            stripped_by_index[idx] = part
+        else:
+            stripped_by_index[idx] = next(text_iter)
+    return stripped_by_index
+
+
 def _line_replacements_for_diff_lines(
     old_start: int,
     new_start: int,
@@ -1316,16 +1475,8 @@ def build_code_html(
             f'</tr>'
         )
 
-    diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
-    background_mode = str(render_config.get("background_mode", BACKGROUND_MODE))
-    html_width = int(render_config.get("html_width", HTML_WIDTH))
-    bg_color = 'transparent' if background_mode != 'normal' else '#fff'
-    show_footer = False if background_mode == 'transparent_no_footer' else True
-
     meta = f"L{hunk['start']}–{hunk['end']} | {hunk_index}/{total} | {lang}"
-    html = _compose_html(''.join(rows), hunk['filepath'], meta, lang, bg_color,
-                         html_width, show_footer, timestamp, diff_cmd)
-    return html
+    return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
 
 
 def build_deleted_context_html(
@@ -1396,16 +1547,8 @@ def build_deleted_context_html(
     if not deleted_inserted:
         append_deleted_rows()
 
-    diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
-    background_mode = str(render_config.get("background_mode", BACKGROUND_MODE))
-    html_width = int(render_config.get("html_width", HTML_WIDTH))
-    bg_color = 'transparent' if background_mode != 'normal' else '#fff'
-    show_footer = False if background_mode == 'transparent_no_footer' else True
-
     meta = f"L{hunk['start']}–{hunk['end']} | {hunk_index}/{total} | {lang}"
-    html = _compose_html(''.join(rows), hunk['filepath'], meta, lang, bg_color,
-                         html_width, show_footer, timestamp, diff_cmd)
-    return html
+    return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
 
 
 def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, config: dict | None = None) -> str:
@@ -1415,29 +1558,10 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, co
     new_ln = int(hunk.get("start", 1))
     rows = []
 
-    # diff_lines の各行から先頭の記号を除いたテキスト部分を収集し、共通インデントを削除する
-    texts_for_indent = []
-    for raw in hunk.get("diff_lines", []):
-        if not raw or raw.startswith("\\"):
-            continue
-        part = raw[1:]
-        if part.strip() == "":
-            continue
-        texts_for_indent.append(part)
-
-    stripped_texts_by_index: dict[int, str] = {}
-    if texts_for_indent:
-        new_texts, _ = _strip_common_indent_from_lines(texts_for_indent)
-        # assign stripped texts back to corresponding indices in diff_lines
-        it = iter(new_texts)
-        for idx, raw in enumerate(hunk.get("diff_lines", [])):
-            if not raw or raw.startswith("\\"):
-                continue
-            part = raw[1:]
-            if part.strip() == "":
-                stripped_texts_by_index[idx] = part
-                continue
-            stripped_texts_by_index[idx] = next(it)
+    stripped_texts_by_index = _stripped_diff_texts_by_index(
+        hunk.get("diff_lines", []),
+        lambda raw: not raw.startswith("\\"),
+    )
 
     for idx, raw in enumerate(hunk.get("diff_lines", [])):
         if not raw:
@@ -1494,16 +1618,8 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, co
             old_ln += 1
             new_ln += 1
 
-    diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
-    background_mode = str(render_config.get("background_mode", BACKGROUND_MODE))
-    html_width = int(render_config.get("html_width", HTML_WIDTH))
-    bg_color = 'transparent' if background_mode != 'normal' else '#fff'
-    show_footer = False if background_mode == 'transparent_no_footer' else True
-
     meta = f"-{hunk.get('old_start', hunk['start'])} +{hunk['start']} | {hunk_index}/{total} | {lang} | patch"
-    html = _compose_html(''.join(rows), hunk['filepath'], meta, lang, bg_color,
-                         html_width, show_footer, timestamp, diff_cmd)
-    return html
+    return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
 
 
 def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, config: dict | None = None) -> str:
@@ -1513,27 +1629,10 @@ def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp:
     new_ln = int(hunk.get("start", 1))
     rows = []
 
-    texts_for_indent = []
-    for raw in hunk.get("diff_lines", []):
-        if not raw or raw.startswith("\\") or raw.startswith("+"):
-            continue
-        part = raw[1:]
-        if part.strip() == "":
-            continue
-        texts_for_indent.append(part)
-
-    stripped_texts_by_index: dict[int, str] = {}
-    if texts_for_indent:
-        new_texts, _ = _strip_common_indent_from_lines(texts_for_indent)
-        it = iter(new_texts)
-        for idx, raw in enumerate(hunk.get("diff_lines", [])):
-            if not raw or raw.startswith("\\") or raw.startswith("+"):
-                continue
-            part = raw[1:]
-            if part.strip() == "":
-                stripped_texts_by_index[idx] = part
-                continue
-            stripped_texts_by_index[idx] = next(it)
+    stripped_texts_by_index = _stripped_diff_texts_by_index(
+        hunk.get("diff_lines", []),
+        lambda raw: not raw.startswith("\\") and not raw.startswith("+"),
+    )
 
     for idx, raw in enumerate(hunk.get("diff_lines", [])):
         if not raw:
@@ -1580,16 +1679,8 @@ def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp:
             old_ln += 1
             new_ln += 1
 
-    diff_cmd = hunk.get("diff_cmd", "git diff HEAD")
-    background_mode = str(render_config.get("background_mode", BACKGROUND_MODE))
-    html_width = int(render_config.get("html_width", HTML_WIDTH))
-    bg_color = 'transparent' if background_mode != 'normal' else '#fff'
-    show_footer = False if background_mode == 'transparent_no_footer' else True
-
     meta = f"-{hunk.get('old_start', hunk['start'])} +{hunk['start']} | {hunk_index}/{total} | {lang} | 削除"
-    html = _compose_html(''.join(rows), hunk['filepath'], meta, lang, bg_color,
-                         html_width, show_footer, timestamp, diff_cmd)
-    return html
+    return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
 
 
 # ================================================================
@@ -1638,7 +1729,7 @@ def browse_repo():
     try:
         selected = choose_directory("リポジトリフォルダを選択", APP_ROOT)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return error_response(str(e), 500)
 
     if not selected:
         return jsonify({"cancelled": True})
@@ -1649,17 +1740,8 @@ def browse_repo():
 def config():
     global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME, DIFF_MODE, BACKGROUND_MODE, INLINE_DIFF_DEFAULT_MODE, INLINE_DIFF_MAX_CHANGED_CHARS
     if request.method == "GET":
-        return jsonify({
-            "context_lines": CONTEXT_LINES,
-            "merge_threshold": MERGE_THRESHOLD,
-            "html_width": HTML_WIDTH,
-            "output_dir": OUTPUT_DIR_NAME,
-            "diff_mode": DIFF_MODE,
-            "background_mode": BACKGROUND_MODE,
-            "inline_diff_default_mode": INLINE_DIFF_DEFAULT_MODE,
-            "inline_diff_max_changed_chars": INLINE_DIFF_MAX_CHANGED_CHARS,
-        })
-    data = request.get_json(silent=True) or {}
+        return jsonify(current_config_snapshot())
+    data = request_json_data()
     try:
         if "context_lines" in data:
             CONTEXT_LINES = max(0, int(data["context_lines"]))
@@ -1681,7 +1763,7 @@ def config():
         # New setting: background_mode
         if "background_mode" in data:
             bm = str(data["background_mode"]).strip()
-            if bm not in ("normal", "no_bg_footer", "transparent_no_footer"):
+            if bm not in BACKGROUND_MODES:
                 raise ValueError("background_mode が不正です")
             BACKGROUND_MODE = bm
         # Backward compatibility: accept transparent_background boolean
@@ -1689,82 +1771,53 @@ def config():
             TRANSPARENT = bool(data["transparent_background"])
             BACKGROUND_MODE = "transparent_no_footer" if TRANSPARENT else "normal"
     except (ValueError, TypeError) as e:
-        return jsonify({"error": f"不正な値: {e}"}), 400
+        return error_response(f"不正な値: {e}")
     return jsonify({"ok": True})
 
 
 @app.route("/api/commits", methods=["POST"])
 def commits():
-    data = request.get_json(silent=True) or {}
-    repo_path = str(data.get("repo_path", "")).strip()
-    if not repo_path:
-        return jsonify({"error": "リポジトリパスが無効です"}), 400
-
+    data = request_json_data()
     try:
-        repo = resolve_repo_path(repo_path)
+        repo = resolve_repo_from_payload(data)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
 
     try:
         items = list_commits(str(repo))
     except RuntimeError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
 
     return jsonify({"commits": items})
 
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
-    data = request.get_json(silent=True) or {}
+    data = request_json_data()
     repo_path = str(data.get("repo_path", "")).strip()
     source_mode = str(data.get("source_mode", "worktree")).strip().lower() or "worktree"
     base_ref = str(data.get("base_ref", "")).strip()
     target_ref = str(data.get("target_ref", "")).strip()
 
-    if source_mode not in ("worktree", "staged", "commit", "range"):
-        return jsonify({"error": "不正なです"}), 400
+    if source_mode not in SOURCE_MODES:
+        return error_response("不正なです")
 
     if not repo_path:
-        return jsonify({"error": "リポジトリパスが無効です"}), 400
+        return error_response("リポジトリパスが無効です")
 
     try:
         repo = resolve_repo_path(repo_path)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
 
     try:
         clear_repo_file_cache(str(repo))
         config_snapshot = current_config_snapshot()
         content_source = content_source_for_diff(source_mode, target_ref)
-        # 人間向けの差分コマンド文字列を作成
-        if source_mode == "worktree":
-            diff_cmd_label = "git diff HEAD"
-        elif source_mode == "staged":
-            diff_cmd_label = "git diff --staged"
-        elif source_mode == "commit":
-            diff_cmd_label = f"git diff {target_ref}^ {target_ref}"
-        else:
-            diff_cmd_label = f"git diff {base_ref} {target_ref}"
-
-        if config_snapshot.get("diff_mode") in PATCH_LIKE_DIFF_MODES:
-            diff_text = get_diff(
-                str(repo),
-                context_lines=int(config_snapshot.get("context_lines", CONTEXT_LINES)),
-                merge_threshold=int(config_snapshot.get("merge_threshold", MERGE_THRESHOLD)),
-                source_mode=source_mode,
-                base_ref=base_ref,
-                target_ref=target_ref,
-            )
-        else:
-            diff_text = get_diff(
-                str(repo),
-                context_lines=0,
-                source_mode=source_mode,
-                base_ref=base_ref,
-                target_ref=target_ref,
-            )
+        diff_cmd_label = diff_command_label(source_mode, base_ref, target_ref)
+        diff_text = get_analysis_diff_text(str(repo), source_mode, base_ref, target_ref, config_snapshot)
     except RuntimeError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
 
     if not diff_text.strip():
         return jsonify({"hunks": [], "message": "差分がありません"})
@@ -1777,28 +1830,20 @@ def analyze():
     hunks = finalize_hunks(raw_hunks, str(repo), content_source, config_snapshot)
 
     analysis_id = create_analysis_session(str(repo), raw_hunks, hunks, content_source, config_snapshot)
-    return jsonify({
-        "analysis_id": analysis_id,
-        "hunks": [make_hunk_summary(h) for h in hunks],
-        "total": len(hunks),
-    })
+    return jsonify(hunks_payload(analysis_id, hunks))
 
 
 @app.route("/api/reconfigure-analysis", methods=["POST"])
 def reconfigure_analysis():
-    data = request.get_json(silent=True) or {}
-    repo_path = str(data.get("repo_path", "")).strip()
+    data = request_json_data()
     analysis_id = str(data.get("analysis_id", "")).strip()
-    if not repo_path:
-        return jsonify({"error": "リポジトリパスが無効です"}), 400
     if not analysis_id:
-        return jsonify({"error": "analysis_id が不正です"}), 400
+        return error_response("analysis_id が不正です")
 
     try:
-        repo = resolve_repo_path(repo_path)
-        session = get_analysis_session(analysis_id, str(repo))
+        repo, session = resolve_analysis_context(data)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
 
     previous_config = session_config(session)
     config_snapshot = current_config_snapshot()
@@ -1821,11 +1866,7 @@ def reconfigure_analysis():
 
         session["config"] = deepcopy(config_snapshot)
         session["diff_mode"] = config_snapshot.get("diff_mode", DIFF_MODE)
-        return jsonify({
-            "analysis_id": analysis_id,
-            "hunks": [make_hunk_summary(h) for h in session["hunks"]],
-            "total": len(session["hunks"]),
-        })
+        return jsonify(hunks_payload(analysis_id, session["hunks"]))
 
     context_changed = (
         int(previous_config.get("context_lines", CONTEXT_LINES))
@@ -1840,90 +1881,56 @@ def reconfigure_analysis():
     if not context_changed and not inline_default_changed:
         session["config"] = deepcopy(config_snapshot)
         session["diff_mode"] = config_snapshot.get("diff_mode", DIFF_MODE)
-        return jsonify({
-            "analysis_id": analysis_id,
-            "hunks": [make_hunk_summary(h) for h in session["hunks"]],
-            "total": len(session["hunks"]),
-        })
+        return jsonify(hunks_payload(analysis_id, session["hunks"]))
 
     hunks = finalize_hunks(raw_hunks, str(repo), session["content_source"], config_snapshot)
     session["hunks"] = hunks
     session["config"] = deepcopy(config_snapshot)
     session["diff_mode"] = config_snapshot.get("diff_mode", DIFF_MODE)
-    return jsonify({
-        "analysis_id": analysis_id,
-        "hunks": [make_hunk_summary(h) for h in hunks],
-        "total": len(hunks),
-    })
+    return jsonify(hunks_payload(analysis_id, hunks))
 
 
 @app.route("/api/hunk-range/<int:hunk_index>", methods=["POST"])
 def update_hunk_range(hunk_index: int):
-    data = request.get_json(silent=True) or {}
-    repo_path = str(data.get("repo_path", "")).strip()
-    analysis_id = str(data.get("analysis_id", "")).strip()
+    data = request_json_data()
     action = str(data.get("action", "")).strip()
-    if not repo_path:
-        return jsonify({"error": "リポジトリパスが無効です"}), 400
-    if not analysis_id:
-        return jsonify({"error": "analysis_id が不正です"}), 400
 
     try:
-        repo = resolve_repo_path(repo_path)
-        session = get_analysis_session(analysis_id, str(repo))
+        repo, session = resolve_analysis_context(data)
+        require_file_mode(session, "行範囲の調整は通常表示でのみ使用できます")
+        hunk = hunk_at(session, hunk_index)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
 
-    if session_config(session).get("diff_mode") != "file":
-        return jsonify({"error": "行範囲の調整は通常表示でのみ使用できます"}), 400
-
-    hunks = session["hunks"]
-    if hunk_index < 0 or hunk_index >= len(hunks):
-        return jsonify({"error": "無効なインデックス"}), 400
-
-    hunk = hunks[hunk_index]
     try:
         summary = adjust_hunk_range(hunk, str(repo), session["content_source"], action)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
 
     return jsonify({"hunk": summary})
 
 
 @app.route("/api/hunk-inline-diff/<int:hunk_index>", methods=["POST"])
 def update_hunk_inline_diff(hunk_index: int):
-    data = request.get_json(silent=True) or {}
-    repo_path = str(data.get("repo_path", "")).strip()
-    analysis_id = str(data.get("analysis_id", "")).strip()
-    if not repo_path:
-        return jsonify({"error": "リポジトリパスが無効です"}), 400
-    if not analysis_id:
-        return jsonify({"error": "analysis_id が不正です"}), 400
+    data = request_json_data()
 
     try:
-        repo = resolve_repo_path(repo_path)
-        session = get_analysis_session(analysis_id, str(repo))
+        _, session = resolve_analysis_context(data)
+        require_file_mode(session, "行内差分は通常表示でのみ使用できます")
+        hunk = hunk_at(session, hunk_index)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-
-    if session_config(session).get("diff_mode") != "file":
-        return jsonify({"error": "行内差分は通常表示でのみ使用できます"}), 400
-
-    hunks = session["hunks"]
-    if hunk_index < 0 or hunk_index >= len(hunks):
-        return jsonify({"error": "無効なインデックス"}), 400
+        return error_response(str(e))
 
     if "mode" in data:
         mode = str(data.get("mode", "")).strip().lower()
         if mode not in INLINE_DIFF_MODES:
-            return jsonify({"error": "mode は full, new, off のいずれかを指定してください"}), 400
+            return error_response("mode は full, new, off のいずれかを指定してください")
     else:
         enabled = data.get("enabled")
         if not isinstance(enabled, bool):
-            return jsonify({"error": "enabled は真偽値で指定してください"}), 400
+            return error_response("enabled は真偽値で指定してください")
         mode = "full" if enabled else "off"
 
-    hunk = hunks[hunk_index]
     hunk["inline_diff_mode"] = mode
     hunk["inline_diff_enabled"] = mode != "off"
     return jsonify({"hunk": make_hunk_summary(hunk)})
@@ -1931,39 +1938,32 @@ def update_hunk_inline_diff(hunk_index: int):
 
 @app.route("/api/hunk-inline-added-mute/<int:hunk_index>", methods=["POST"])
 def update_hunk_inline_added_mute(hunk_index: int):
-    data = request.get_json(silent=True) or {}
-    repo_path = str(data.get("repo_path", "")).strip()
-    analysis_id = str(data.get("analysis_id", "")).strip()
+    data = request_json_data()
     muted = data.get("muted")
-    if not repo_path:
-        return jsonify({"error": "リポジトリパスが無効です"}), 400
-    if not analysis_id:
-        return jsonify({"error": "analysis_id が不正です"}), 400
+    try:
+        require_payload_text(data, "repo_path", "リポジトリパスが無効です")
+        require_payload_text(data, "analysis_id", "analysis_id が不正です")
+    except ValueError as e:
+        return error_response(str(e))
+
     if not isinstance(muted, bool):
-        return jsonify({"error": "muted は真偽値で指定してください"}), 400
+        return error_response("muted は真偽値で指定してください")
 
     try:
         key = normalize_inline_added_mute_key(data.get("key"))
-        repo = resolve_repo_path(repo_path)
-        session = get_analysis_session(analysis_id, str(repo))
+        _, session = resolve_analysis_context(data)
+        require_file_mode(session, "追加ハイライトのミュートは通常表示でのみ使用できます")
+        hunk = hunk_at(session, hunk_index)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
 
-    if session_config(session).get("diff_mode") != "file":
-        return jsonify({"error": "追加ハイライトのミュートは通常表示でのみ使用できます"}), 400
-
-    hunks = session["hunks"]
-    if hunk_index < 0 or hunk_index >= len(hunks):
-        return jsonify({"error": "無効なインデックス"}), 400
-
-    hunk = hunks[hunk_index]
     if hunk_inline_diff_mode(hunk) == "off":
-        return jsonify({"error": "行内差分が非表示のhunkでは使用できません"}), 400
+        return error_response("行内差分が非表示のhunkでは使用できません")
 
     mutes = hunk_inline_added_mutes(hunk)
     if muted:
         if len(mutes) >= INLINE_ADDED_MUTES_LIMIT and key not in mutes:
-            return jsonify({"error": "ミュート数が上限に達しました"}), 400
+            return error_response("ミュート数が上限に達しました")
         mutes.add(key)
     else:
         mutes.discard(key)
@@ -1973,37 +1973,29 @@ def update_hunk_inline_added_mute(hunk_index: int):
 
 @app.route("/api/hunk-row-highlight/<int:hunk_index>", methods=["POST"])
 def update_hunk_row_highlight(hunk_index: int):
-    data = request.get_json(silent=True) or {}
-    repo_path = str(data.get("repo_path", "")).strip()
-    analysis_id = str(data.get("analysis_id", "")).strip()
-    if not repo_path:
-        return jsonify({"error": "リポジトリパスが無効です"}), 400
-    if not analysis_id:
-        return jsonify({"error": "analysis_id が不正です"}), 400
+    data = request_json_data()
+    try:
+        require_payload_text(data, "repo_path", "リポジトリパスが無効です")
+        require_payload_text(data, "analysis_id", "analysis_id が不正です")
+    except ValueError as e:
+        return error_response(str(e))
 
     try:
         lineno = int(data.get("lineno"))
         color = normalize_manual_row_highlight_color(data.get("color"))
-        repo = resolve_repo_path(repo_path)
-        session = get_analysis_session(analysis_id, str(repo))
+        _, session = resolve_analysis_context(data)
+        require_file_mode(session, "行背景の編集は通常表示でのみ使用できます")
+        hunk = hunk_at(session, hunk_index)
     except (TypeError, ValueError) as e:
-        return jsonify({"error": str(e) if str(e) else "lineno が不正です"}), 400
+        return error_response(str(e) if str(e) else "lineno が不正です")
 
-    if session_config(session).get("diff_mode") != "file":
-        return jsonify({"error": "行背景の編集は通常表示でのみ使用できます"}), 400
-
-    hunks = session["hunks"]
-    if hunk_index < 0 or hunk_index >= len(hunks):
-        return jsonify({"error": "無効なインデックス"}), 400
-
-    hunk = hunks[hunk_index]
     if lineno <= 0:
-        return jsonify({"error": "lineno が不正です"}), 400
+        return error_response("lineno が不正です")
 
     highlights = hunk_manual_row_highlights(hunk)
     if color:
         if len(highlights) >= MANUAL_ROW_HIGHLIGHTS_LIMIT and lineno not in highlights:
-            return jsonify({"error": "行背景の編集数が上限に達しました"}), 400
+            return error_response("行背景の編集数が上限に達しました")
         highlights[lineno] = color
     else:
         highlights.pop(lineno, None)
@@ -2017,30 +2009,15 @@ def update_hunk_row_highlight(hunk_index: int):
 
 @app.route("/api/preview/<int:hunk_index>", methods=["POST"])
 def preview(hunk_index: int):
-    data = request.get_json(silent=True) or {}
-    repo_path = str(data.get("repo_path", "")).strip()
-    analysis_id = str(data.get("analysis_id", "")).strip()
-    if not repo_path:
-        return jsonify({"error": "リポジトリパスが無効です"}), 400
-    if not analysis_id:
-        return jsonify({"error": "analysis_id が不正です"}), 400
-
+    data = request_json_data()
     try:
-        repo = resolve_repo_path(repo_path)
+        repo, session = resolve_analysis_context(data)
+        hunk = hunk_at(session, hunk_index)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    try:
-        session = get_analysis_session(analysis_id, str(repo))
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
 
     hunks = session["hunks"]
     total = len(hunks)
-
-    if hunk_index < 0 or hunk_index >= total:
-        return jsonify({"error": "無効なインデックス"}), 400
-
-    hunk = hunks[hunk_index]
     hunk["changed_lines"] = hunk.get("changed_lines", [])
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     html = build_code_html(
@@ -2057,51 +2034,27 @@ def preview(hunk_index: int):
 
 @app.route("/api/export", methods=["POST"])
 def export():
-    data = request.get_json(silent=True) or {}
-    repo_path = str(data.get("repo_path", "")).strip()
-    analysis_id = str(data.get("analysis_id", "")).strip()
-    if not repo_path:
-        return jsonify({"error": "リポジトリパスが無効です"}), 400
-    if not analysis_id:
-        return jsonify({"error": "analysis_id が不正です"}), 400
+    data = request_json_data()
+    try:
+        repo, session = resolve_analysis_context(data)
+    except ValueError as e:
+        return error_response(str(e))
 
-    try:
-        repo = resolve_repo_path(repo_path)
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    try:
-        session = get_analysis_session(analysis_id, str(repo))
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
     config_snapshot = session_config(session)
     hunks = session["hunks"]
 
-    raw_indices = data.get("indices")
-    if raw_indices is None:
-        indices = list(range(len(hunks)))
-    elif isinstance(raw_indices, list):
-        indices = raw_indices
-    else:
-        return jsonify({"error": "indices は配列で指定してください"}), 400
-
-    normalized_indices: list[int] = []
-    for idx in indices:
-        if not isinstance(idx, int):
-            return jsonify({"error": "indices は整数配列で指定してください"}), 400
-        if idx < 0 or idx >= len(hunks):
-            return jsonify({"error": f"indices に範囲外の値があります: {idx}"}), 400
-        normalized_indices.append(idx)
-
-    if not normalized_indices:
-        return jsonify({"error": "出力対象がありません"}), 400
+    try:
+        normalized_indices = normalize_export_indices(data.get("indices"), len(hunks))
+    except ValueError as e:
+        return error_response(str(e))
 
     try:
         output_dir_name, output_dir = parse_output_dir(str(config_snapshot.get("output_dir", OUTPUT_DIR_NAME)))
         output_dir.mkdir(parents=True, exist_ok=True)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
     except OSError as e:
-        return jsonify({"error": f"出力ディレクトリを作成できませんでした: {e}"}), 500
+        return error_response(f"出力ディレクトリを作成できませんでした: {e}", 500)
 
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     timestamp_disp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2129,22 +2082,22 @@ def export():
     try:
         render_png_batch(render_items, config_snapshot)
     except Exception as e:
-        return jsonify({"error": f"PNG出力に失敗しました: {e}"}), 500
+        return error_response(f"PNG出力に失敗しました: {e}", 500)
 
     return jsonify({"saved": saved, "count": len(saved), "output_dir": output_dir_name})
 
 
 @app.route("/api/open-output-dir", methods=["POST"])
 def open_output_dir():
-    data = request.get_json(silent=True) or {}
+    data = request_json_data()
     try:
         output_dir_name, output_dir = output_dir_from_request(data)
         output_dir.mkdir(parents=True, exist_ok=True)
         open_directory(output_dir)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
     except OSError as e:
-        return jsonify({"error": f"保存先を開けませんでした: {e}"}), 500
+        return error_response(f"保存先を開けませんでした: {e}", 500)
 
     return jsonify({"ok": True, "output_dir": output_dir_name})
 
@@ -2154,7 +2107,7 @@ def browse_output_dir():
     try:
         selected = choose_directory("出力フォルダを選択", OUTPUT_DIR if OUTPUT_DIR.exists() else APP_ROOT)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return error_response(str(e), 500)
 
     if not selected:
         return jsonify({"cancelled": True})
@@ -2167,27 +2120,27 @@ def browse_output_dir():
             output_dir_name = str(selected_path)
         parse_output_dir(output_dir_name)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
     except OSError as e:
-        return jsonify({"error": f"フォルダ選択に失敗しました: {e}"}), 500
+        return error_response(f"フォルダ選択に失敗しました: {e}", 500)
 
     return jsonify({"output_dir": output_dir_name})
 
 
 @app.route("/api/clear-output-dir", methods=["POST"])
 def clear_output_dir():
-    data = request.get_json(silent=True) or {}
+    data = request_json_data()
     try:
         output_dir_name, output_dir = output_dir_from_request(data)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
 
     if output_dir == APP_ROOT:
-        return jsonify({"error": "アプリルートはクリア対象にできません"}), 400
+        return error_response("アプリルートはクリア対象にできません")
     if not output_dir.exists():
         return jsonify({"deleted": 0, "output_dir": output_dir_name})
     if not output_dir.is_dir():
-        return jsonify({"error": "出力先がディレクトリではありません"}), 400
+        return error_response("出力先がディレクトリではありません")
 
     deleted = 0
     try:
@@ -2196,7 +2149,7 @@ def clear_output_dir():
                 item.unlink()
                 deleted += 1
     except OSError as e:
-        return jsonify({"error": f"PNGのクリアに失敗しました: {e}"}), 500
+        return error_response(f"PNGのクリアに失敗しました: {e}", 500)
 
     return jsonify({"deleted": deleted, "output_dir": output_dir_name})
 

@@ -1,0 +1,993 @@
+"""Render parsed diff hunks as standalone HTML."""
+
+import difflib
+import re
+from collections.abc import Callable
+from html import escape
+from pathlib import Path
+
+HTML_WIDTH = 960
+BACKGROUND_MODE = "normal"
+DIFF_MODE = "file"
+INLINE_DIFF_DEFAULT_MODE = "full"
+INLINE_DIFF_MAX_CHANGED_CHARS = 120
+INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
+INLINE_DIFF_MIN_SIMILARITY = 0.62
+INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
+INLINE_DIFF_MODES = {"full", "new", "off"}
+INLINE_ADDED_MUTES_LIMIT = 200
+INLINE_ADDED_MUTE_KEY_LIMIT = 1000
+MANUAL_ROW_HIGHLIGHTS_LIMIT = 500
+MANUAL_ROW_HIGHLIGHT_COLORS = {"green", "yellow"}
+_INDENT_RE = re.compile(r"^[ \t]*")
+_INLINE_DIFF_TOKEN_RE = re.compile(r"\w+|\s+|[^\w\s]+", re.UNICODE)
+_INLINE_DIFF_JOINER_RE = re.compile(r"^[^\w\s]{1,3}$", re.UNICODE)
+_HTML_TAG_NAME_RE = re.compile(r"(</?\s*)[A-Za-z][\w:-]*")
+
+def hunk_inline_diff_mode(hunk: dict) -> str:
+    mode = str(hunk.get("inline_diff_mode", "")).strip().lower()
+    if mode in INLINE_DIFF_MODES:
+        return mode
+    return "full" if bool(hunk.get("inline_diff_enabled", True)) else "off"
+
+
+def normalize_inline_diff_mode(value: str | None, default: str = "full") -> str:
+    mode = str(value or default).strip().lower()
+    if mode not in INLINE_DIFF_MODES:
+        raise ValueError("inline_diff_default_mode は full, new, off のいずれかを指定してください")
+    return mode
+
+
+def normalize_inline_diff_max_changed_chars(value: int | str | None) -> int:
+    return max(0, min(INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT, int(value)))
+
+
+def normalize_inline_added_mute_key(value: str | None) -> str:
+    key = str(value or "")
+    if not key or len(key) > INLINE_ADDED_MUTE_KEY_LIMIT:
+        raise ValueError("key が不正です")
+    return key
+
+
+def hunk_inline_added_mutes(hunk: dict) -> set[str]:
+    values = hunk.get("inline_added_mutes", [])
+    if not isinstance(values, list):
+        return set()
+    return {
+        str(value)
+        for value in values[:INLINE_ADDED_MUTES_LIMIT]
+        if isinstance(value, str) and value
+    }
+
+
+def normalize_manual_row_highlight_color(value: str | None) -> str:
+    color = str(value or "").strip().lower()
+    if color in ("", "none", "off", "clear"):
+        return ""
+    if color not in MANUAL_ROW_HIGHLIGHT_COLORS:
+        raise ValueError("color は green, yellow, none のいずれかを指定してください")
+    return color
+
+
+def hunk_manual_row_highlights(hunk: dict) -> dict[int, str]:
+    values = hunk.get("manual_row_highlights", {})
+    if not isinstance(values, dict):
+        return {}
+
+    highlights: dict[int, str] = {}
+    for raw_lineno, raw_color in list(values.items())[:MANUAL_ROW_HIGHLIGHTS_LIMIT]:
+        try:
+            lineno = int(raw_lineno)
+        except (TypeError, ValueError):
+            continue
+        try:
+            color = normalize_manual_row_highlight_color(str(raw_color))
+        except ValueError:
+            continue
+        if lineno > 0 and color:
+            highlights[lineno] = color
+    return highlights
+def _strip_common_indent_from_lines(lines: list[str]) -> tuple[list[str], int]:
+    """与えられたテキスト行リストから共通の先頭インデントを除去して返す。
+    改行が空白のみの行は無視して最小インデント幅を決定する。
+    戻り値は (新しい行リスト, 削除したインデント幅) 。
+    """
+    min_indent = None
+    for t in lines:
+        if t is None:
+            continue
+        if t.strip() == "":
+            continue
+        m = _INDENT_RE.match(t)
+        if not m:
+            continue
+        indent_len = len(m.group(0))
+        if min_indent is None or indent_len < min_indent:
+            min_indent = indent_len
+
+    if min_indent is None or min_indent == 0:
+        return lines, 0
+
+    new = [(s[min_indent:] if s is not None and len(s) >= min_indent else (s or "")) for s in lines]
+    return new, min_indent
+
+def read_lines(
+    repo_path: str,
+    filepath: str,
+    start: int,
+    end: int,
+    content_source: dict | None = None,
+    read_source_lines: Callable[[str, str, dict], list[str]] | None = None,
+) -> list[tuple[int, str]]:
+    if read_source_lines is None:
+        raise ValueError("read_source_lines is required")
+    try:
+        lines = read_source_lines(repo_path, filepath, content_source or {"type": "worktree"})
+    except Exception as e:
+        return [(start, f"# 読み込みエラー: {e}")]
+    return [(i + 1, lines[i]) for i in range(start - 1, min(end, len(lines)))]
+
+
+def _default_render_config() -> dict:
+    return {
+        "html_width": HTML_WIDTH,
+        "background_mode": BACKGROUND_MODE,
+        "diff_mode": DIFF_MODE,
+        "inline_diff_max_changed_chars": INLINE_DIFF_MAX_CHANGED_CHARS,
+    }
+
+
+def detect_language(filepath: str) -> str:
+    ext_map = {
+        ".py": "python", ".js": "javascript", ".ts": "typescript",
+        ".jsx": "javascript", ".tsx": "typescript", ".rb": "ruby",
+        ".java": "java", ".cs": "csharp", ".go": "go", ".rs": "rust",
+        ".cpp": "cpp", ".c": "c", ".php": "php", ".swift": "swift",
+        ".kt": "kotlin", ".sh": "bash", ".html": "html", ".css": "css",
+        ".json": "json", ".yaml": "yaml", ".yml": "yaml", ".toml": "toml",
+        ".sql": "sql", ".md": "markdown",
+    }
+    return ext_map.get(Path(filepath).suffix.lower(), "plaintext")
+
+
+# ================================================================
+# HTML 生成（PNG出力用・プレビュー共用）
+# ================================================================
+
+
+def _compose_html(rows_html: str, filepath: str, meta: str, lang: str, bg_color: str,
+                  html_width: int, show_footer: bool, timestamp: str, diff_cmd: str) -> str:
+    head_template = """<!DOCTYPE html>
+<html lang=\"ja\"><head><meta charset=\"UTF-8\">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+html{{background:{bg_color};width:{HTML_WIDTH}px}}
+body{{background:{bg_color};font-family:'Consolas','Menlo','Monaco',monospace;font-size:13px;
+        color:#1a1a1a;width:{HTML_WIDTH}px;padding:16px}}
+.header{{background:#1e1e2e;color:#cdd6f4;padding:10px 14px;border-radius:6px 6px 0 0;
+    display:flex;justify-content:space-between;align-items:center;font-size:12px}}
+.filepath{{color:#89dceb;font-weight:bold;word-break:break-all}}
+.meta{{color:#6c7086;white-space:nowrap;margin-left:12px;flex-shrink:0}}
+.code-block{{background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;overflow:hidden}}
+table{{width:100%;border-collapse:collapse}}
+tr{{border-bottom:1px solid #f1f5f9}}
+tr:last-child{{border-bottom:none}}
+tr.changed{{background:#fefce8}}
+tr.added{{background:#ecfdf5}}
+tr.deleted{{background:#fef2f2}}
+tr.note td{{color:#64748b;font-style:italic}}
+td{{vertical-align:top;padding:2px 0;line-height:1.6}}
+td.lineno{{width:52px;text-align:right;color:#94a3b8;padding:2px 10px 2px 6px;
+    border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
+tr.changed td.lineno{{background:#fef9c3;color:#78716c}}
+tr.added td.lineno{{background:#ecfdf5;color:#64748b}}
+td.lineno.new{{border-right:none}}
+td.marker{{width:18px;text-align:center;color:#64748b;font-weight:bold}}
+tr.added td.marker{{color:#16a34a}}
+tr.deleted td.marker{{color:#dc2626}}
+td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
+span.inline-added{{background:#bbf7d0;color:#14532d;border-radius:3px;padding:0 2px}}
+span.inline-added.inline-added-muted{{background:transparent;color:inherit}}
+span.inline-deleted{{background:#fecaca;color:#991b1b;border-radius:3px;padding:0 2px;text-decoration:line-through}}
+tr.changed.inline-rendered{{background:#f8fafc}}
+tr.changed.inline-rendered td.lineno{{background:#f8fafc;color:#64748b}}
+tr.manual-row-green{{background:#ecfdf5}}
+tr.manual-row-green td.lineno{{background:#dcfce7;color:#64748b}}
+tr.manual-row-yellow{{background:#fefce8}}
+tr.manual-row-yellow td.lineno{{background:#fef9c3;color:#78716c}}
+.footer{{margin-top:8px;font-size:11px;color:#94a3b8;text-align:right}}
+</style></head><body>
+<div class=\"header\">
+    <span class=\"filepath\">{filepath}</span>
+    <span class=\"meta\">{meta}</span>
+</div>
+<div class=\"code-block\"><table>
+{rows}
+</table></div>
+"""
+
+    footer_template = "<div class=\"footer\">{timestamp} | {diff_cmd}</div>"
+
+    html = head_template.format(
+        bg_color=bg_color,
+        HTML_WIDTH=html_width,
+        filepath=escape(filepath),
+        meta=escape(meta),
+        rows=rows_html,
+    )
+    if show_footer:
+        html += footer_template.format(timestamp=escape(timestamp), diff_cmd=escape(diff_cmd))
+    html += "</body></html>"
+    return html
+
+
+def _html_render_options(config: dict) -> tuple[int, str, bool]:
+    background_mode = str(config.get("background_mode", BACKGROUND_MODE))
+    html_width = int(config.get("html_width", HTML_WIDTH))
+    bg_color = "transparent" if background_mode != "normal" else "#fff"
+    show_footer = background_mode != "transparent_no_footer"
+    return html_width, bg_color, show_footer
+
+
+def _compose_hunk_html(
+    rows: list[str],
+    hunk: dict,
+    meta: str,
+    lang: str,
+    timestamp: str,
+    config: dict,
+) -> str:
+    html_width, bg_color, show_footer = _html_render_options(config)
+    return _compose_html(
+        "".join(rows),
+        hunk["filepath"],
+        meta,
+        lang,
+        bg_color,
+        html_width,
+        show_footer,
+        timestamp,
+        hunk.get("diff_cmd", "git diff HEAD"),
+    )
+
+
+def _stripped_diff_texts_by_index(diff_lines: list[str], include_raw) -> dict[int, str]:
+    texts_for_indent = []
+    for raw in diff_lines:
+        if not raw or not include_raw(raw):
+            continue
+        part = raw[1:]
+        if part.strip() == "":
+            continue
+        texts_for_indent.append(part)
+
+    if not texts_for_indent:
+        return {}
+
+    stripped_texts, _ = _strip_common_indent_from_lines(texts_for_indent)
+    stripped_by_index: dict[int, str] = {}
+    text_iter = iter(stripped_texts)
+    for idx, raw in enumerate(diff_lines):
+        if not raw or not include_raw(raw):
+            continue
+        part = raw[1:]
+        if part.strip() == "":
+            stripped_by_index[idx] = part
+        else:
+            stripped_by_index[idx] = next(text_iter)
+    return stripped_by_index
+
+
+def _line_replacements_for_diff_lines(
+    old_start: int,
+    new_start: int,
+    changed_lines: list[int],
+    diff_lines: list[str],
+) -> dict[int, tuple[int | None, str]]:
+    replacements: dict[int, tuple[int | None, str]] = {}
+    try:
+        old_ln = int(old_start)
+    except (TypeError, ValueError):
+        old_ln = 1
+    try:
+        new_ln = int(new_start)
+    except (TypeError, ValueError):
+        new_ln = 1
+    changed_line_numbers: list[int] = []
+    for lineno in changed_lines:
+        try:
+            changed_line_numbers.append(int(lineno))
+        except (TypeError, ValueError):
+            continue
+    changed_line_numbers.sort()
+    added_line_index = 0
+
+    def similarity(old_text: str, new_text: str) -> float:
+        old_stripped = old_text.strip()
+        new_stripped = new_text.strip()
+        if not old_stripped or not new_stripped:
+            return 0.0
+        if not re.search(r"\w", old_stripped) or not re.search(r"\w", new_stripped):
+            return 0.0
+        if old_stripped == new_stripped and old_text != new_text:
+            return 0.0
+
+        old_tokens = _INLINE_DIFF_TOKEN_RE.findall(old_text)
+        new_tokens = _INLINE_DIFF_TOKEN_RE.findall(new_text)
+        token_score = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False).ratio()
+        char_score = difflib.SequenceMatcher(None, old_text, new_text, autojunk=False).ratio()
+        matching_chars = sum(
+            block.size
+            for block in difflib.SequenceMatcher(None, old_text, new_text, autojunk=False).get_matching_blocks()
+        )
+        preserved_shorter_score = matching_chars / max(1, min(len(old_text), len(new_text)))
+        length_ratio = min(len(old_text), len(new_text)) / max(1, max(len(old_text), len(new_text)))
+        insertion_score = preserved_shorter_score * (0.55 + 0.45 * length_ratio)
+        return max(min(token_score, char_score), insertion_score)
+
+    def html_tag_shape(text: str) -> str:
+        return _HTML_TAG_NAME_RE.sub(r"\1#", text)
+
+    def html_tag_shape_similarity(old_text: str, new_text: str) -> float:
+        if not _HTML_TAG_NAME_RE.search(old_text) or not _HTML_TAG_NAME_RE.search(new_text):
+            return 0.0
+        return difflib.SequenceMatcher(
+            None,
+            html_tag_shape(old_text),
+            html_tag_shape(new_text),
+            autojunk=False,
+        ).ratio()
+
+    def simple_html_tag_name(text: str) -> str | None:
+        match = re.fullmatch(r"</?\s*([A-Za-z][\w:-]*)\s*/?\s*>", text.strip())
+        return match.group(1).lower() if match else None
+
+    def directly_pairable(old_text: str, new_text: str) -> bool:
+        old_stripped = old_text.strip()
+        new_stripped = new_text.strip()
+        if not old_stripped or not new_stripped:
+            return False
+        if not re.search(r"\w", old_stripped) or not re.search(r"\w", new_stripped):
+            return False
+        if old_stripped == new_stripped and old_text != new_text:
+            return False
+        old_tag = simple_html_tag_name(old_text)
+        new_tag = simple_html_tag_name(new_text)
+        if old_tag and new_tag and old_tag != new_tag:
+            return False
+        return True
+
+    def block_allows_html_tag_pairing(
+        deleted_block: list[tuple[int, str]],
+        added_block: list[tuple[int, str]],
+    ) -> bool:
+        if len(deleted_block) < 2 or len(added_block) < 2:
+            return False
+        old_text = "\n".join(text for _, text in deleted_block)
+        new_text = "\n".join(text for _, text in added_block)
+        if len(_HTML_TAG_NAME_RE.findall(old_text)) < 2 or len(_HTML_TAG_NAME_RE.findall(new_text)) < 2:
+            return False
+        score = difflib.SequenceMatcher(
+            None,
+            html_tag_shape(old_text),
+            html_tag_shape(new_text),
+            autojunk=False,
+        ).ratio()
+        return score >= INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY
+
+    def pair_replace_block(
+        deleted_block: list[tuple[int, str]],
+        added_block: list[tuple[int, str]],
+    ) -> None:
+        allow_html_tag_pairing = block_allows_html_tag_pairing(deleted_block, added_block)
+
+        def candidate_score(old_text: str, new_text: str) -> float:
+            score = similarity(old_text, new_text)
+            if allow_html_tag_pairing:
+                score = max(score, html_tag_shape_similarity(old_text, new_text))
+            return score
+
+        deleted_count = len(deleted_block)
+        added_count = len(added_block)
+        score_matrix = [
+            [candidate_score(old_text, new_text) for _, new_text in added_block]
+            for _, old_text in deleted_block
+        ]
+
+        def add_direct_pairs() -> None:
+            for (old_lineno, old_text), (new_lineno, _) in zip(deleted_block, added_block):
+                replacements[new_lineno] = (old_lineno, old_text)
+
+        if deleted_count == 1 and added_count == 1:
+            old_text = deleted_block[0][1]
+            new_text = added_block[0][1]
+            if directly_pairable(old_text, new_text):
+                add_direct_pairs()
+            return
+
+        if deleted_count == added_count and deleted_count > 1:
+            shifted = False
+            for idx in range(deleted_count):
+                direct_score = score_matrix[idx][idx]
+                off_axis_score = max(
+                    [
+                        score_matrix[idx][new_idx]
+                        for new_idx in range(added_count)
+                        if new_idx != idx
+                    ] + [
+                        score_matrix[old_idx][idx]
+                        for old_idx in range(deleted_count)
+                        if old_idx != idx
+                    ],
+                    default=0.0,
+                )
+                if direct_score < INLINE_DIFF_MIN_SIMILARITY and off_axis_score >= INLINE_DIFF_MIN_SIMILARITY:
+                    shifted = True
+                    break
+            if not shifted and all(
+                directly_pairable(old_text, new_text)
+                for (_, old_text), (_, new_text) in zip(deleted_block, added_block)
+            ):
+                add_direct_pairs()
+                return
+
+        # Keep line order like an editor diff alignment. This avoids crossed matches
+        # that can look plausible by score but highlight the wrong added line.
+        dp: list[list[tuple[float, int, int, list[tuple[int, int]]]]] = [
+            [(0.0, 0, 0, []) for _ in range(added_count + 1)]
+            for _ in range(deleted_count + 1)
+        ]
+
+        def better(
+            current: tuple[float, int, int, list[tuple[int, int]]],
+            candidate: tuple[float, int, int, list[tuple[int, int]]],
+        ) -> tuple[float, int, int, list[tuple[int, int]]]:
+            if (
+                candidate[0] > current[0]
+                or (candidate[0] == current[0] and candidate[1] > current[1])
+                or (candidate[0] == current[0] and candidate[1] == current[1] and candidate[2] < current[2])
+            ):
+                return candidate
+            return current
+
+        for deleted_idx in range(1, deleted_count + 1):
+            for added_idx in range(1, added_count + 1):
+                best = better(dp[deleted_idx - 1][added_idx], dp[deleted_idx][added_idx - 1])
+                score = score_matrix[deleted_idx - 1][added_idx - 1]
+                if score >= INLINE_DIFF_MIN_SIMILARITY:
+                    previous_score, previous_pairs, previous_distance, previous_matches = dp[deleted_idx - 1][added_idx - 1]
+                    best = better(best, (
+                        previous_score + score,
+                        previous_pairs + 1,
+                        previous_distance + abs((deleted_idx - 1) - (added_idx - 1)),
+                        previous_matches + [(deleted_idx - 1, added_idx - 1)],
+                    ))
+                dp[deleted_idx][added_idx] = best
+
+        for deleted_idx, added_idx in dp[deleted_count][added_count][3]:
+            old_lineno, old_text = deleted_block[deleted_idx]
+            new_lineno, _ = added_block[added_idx]
+            replacements[new_lineno] = (old_lineno, old_text)
+
+    old_items: list[tuple[int, str]] = []
+    new_items: list[tuple[int, str]] = []
+
+    for raw in diff_lines:
+        if not raw or raw.startswith("\\"):
+            continue
+
+        if raw.startswith("-") and not raw.startswith("---"):
+            old_items.append((old_ln, raw[1:]))
+            old_ln += 1
+        elif raw.startswith("+") and not raw.startswith("+++"):
+            if added_line_index < len(changed_line_numbers):
+                added_lineno = changed_line_numbers[added_line_index]
+            else:
+                added_lineno = new_ln
+            added_line_index += 1
+            new_items.append((added_lineno, raw[1:]))
+            new_ln = added_lineno + 1
+        elif raw.startswith(" "):
+            text = raw[1:]
+            old_items.append((old_ln, text))
+            new_items.append((new_ln, text))
+            old_ln += 1
+            new_ln += 1
+
+    matcher = difflib.SequenceMatcher(
+        None,
+        [text for _, text in old_items],
+        [text for _, text in new_items],
+        autojunk=False,
+    )
+    for tag, old_start_idx, old_end_idx, new_start_idx, new_end_idx in matcher.get_opcodes():
+        if tag == "replace":
+            pair_replace_block(
+                old_items[old_start_idx:old_end_idx],
+                new_items[new_start_idx:new_end_idx],
+            )
+    return replacements
+
+
+def _line_replacements_by_new_lineno(hunk: dict) -> dict[int, tuple[int | None, str]]:
+    replacements: dict[int, tuple[int | None, str]] = {}
+    diff_blocks = hunk.get("diff_blocks")
+    if isinstance(diff_blocks, list) and diff_blocks:
+        for block in diff_blocks:
+            if not isinstance(block, dict):
+                continue
+            replacements.update(_line_replacements_for_diff_lines(
+                int(block.get("old_start", hunk.get("old_start", hunk.get("start", 1)))),
+                int(block.get("start", hunk.get("start", 1))),
+                list(block.get("changed_lines", [])),
+                list(block.get("diff_lines", [])),
+            ))
+    else:
+        replacements = _line_replacements_for_diff_lines(
+            int(hunk.get("old_start", hunk.get("start", 1))),
+            int(hunk.get("start", 1)),
+            list(hunk.get("changed_lines", [])),
+            list(hunk.get("diff_lines", [])),
+        )
+
+    changed_set = set()
+    for lineno in hunk.get("changed_lines", []):
+        try:
+            changed_set.add(int(lineno))
+        except (TypeError, ValueError):
+            continue
+    return {lineno: value for lineno, value in replacements.items() if lineno in changed_set}
+
+
+def _inline_diff_html(
+    old_text: str,
+    new_text: str,
+    mode: str = "full",
+    max_changed_chars: int | None = None,
+    muted_added_keys: set[str] | None = None,
+    added_key_prefix: str = "",
+) -> str | None:
+    parts = []
+    show_old = mode == "full"
+    added_index = 0
+    muted_added_keys = muted_added_keys or set()
+    changed_chars_limit = (
+        INLINE_DIFF_MAX_CHANGED_CHARS
+        if max_changed_chars is None
+        else normalize_inline_diff_max_changed_chars(max_changed_chars)
+    )
+    old_tokens = _INLINE_DIFF_TOKEN_RE.findall(old_text)
+    new_tokens = _INLINE_DIFF_TOKEN_RE.findall(new_text)
+    matcher = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False)
+    changed_chars = 0
+    opcodes = matcher.get_opcodes()
+    opcodes = _merge_inline_punctuation_fragments(opcodes, old_tokens, new_tokens)
+    for tag, i1, i2, j1, j2 in opcodes:
+        if tag == "equal":
+            continue
+        changed_chars += len("".join(old_tokens[i1:i2])) + len("".join(new_tokens[j1:j2]))
+    if changed_chars > changed_chars_limit:
+        return None
+
+    def added_span(text: str) -> str:
+        nonlocal added_index
+        key = f"{added_key_prefix}:{added_index}:{text}"
+        added_index += 1
+        class_name = "inline-added inline-added-muted" if key in muted_added_keys else "inline-added"
+        return f'<span class="{class_name}">{escape(text)}</span>'
+
+    for tag, i1, i2, j1, j2 in opcodes:
+        old_part = "".join(old_tokens[i1:i2])
+        new_part = "".join(new_tokens[j1:j2])
+        is_leading_indent = (
+            not parts
+            and old_part.strip(" \t") == ""
+            and new_part.strip(" \t") == ""
+        )
+        if tag == "equal":
+            parts.append(escape(new_part))
+        elif tag == "insert":
+            parts.append(
+                escape(new_part)
+                if is_leading_indent
+                else added_span(new_part)
+            )
+        elif tag == "delete":
+            if show_old and not is_leading_indent:
+                parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
+        elif tag == "replace":
+            if is_leading_indent:
+                parts.append(escape(new_part))
+            else:
+                if show_old:
+                    parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
+                parts.append(added_span(new_part))
+    return "".join(parts)
+
+
+def _merge_inline_punctuation_fragments(
+    opcodes: list[tuple[str, int, int, int, int]],
+    old_tokens: list[str],
+    new_tokens: list[str],
+) -> list[tuple[str, int, int, int, int]]:
+    merged: list[tuple[str, int, int, int, int]] = []
+    idx = 0
+
+    def is_change(tag: str) -> bool:
+        return tag in {"insert", "delete", "replace"}
+
+    def is_short_punctuation_equal(opcode: tuple[str, int, int, int, int]) -> bool:
+        tag, i1, i2, j1, j2 = opcode
+        if tag != "equal":
+            return False
+        old_part = "".join(old_tokens[i1:i2])
+        new_part = "".join(new_tokens[j1:j2])
+        return old_part == new_part and bool(_INLINE_DIFF_JOINER_RE.fullmatch(old_part))
+
+    def merged_tag(i1: int, i2: int, j1: int, j2: int) -> str:
+        old_empty = i1 == i2
+        new_empty = j1 == j2
+        if old_empty:
+            return "insert"
+        if new_empty:
+            return "delete"
+        return "replace"
+
+    while idx < len(opcodes):
+        tag, i1, i2, j1, j2 = opcodes[idx]
+        if not is_change(tag):
+            merged.append(opcodes[idx])
+            idx += 1
+            continue
+
+        end_idx = idx
+        end_i2 = i2
+        end_j2 = j2
+        while (
+            end_idx + 2 < len(opcodes)
+            and is_short_punctuation_equal(opcodes[end_idx + 1])
+            and is_change(opcodes[end_idx + 2][0])
+        ):
+            _, _, equal_i2, _, equal_j2 = opcodes[end_idx + 1]
+            _, _, next_i2, _, next_j2 = opcodes[end_idx + 2]
+            end_i2 = next_i2 if next_i2 != equal_i2 else equal_i2
+            end_j2 = next_j2 if next_j2 != equal_j2 else equal_j2
+            end_idx += 2
+
+        if end_idx == idx:
+            merged.append(opcodes[idx])
+        else:
+            merged.append((merged_tag(i1, end_i2, j1, end_j2), i1, end_i2, j1, end_j2))
+        idx = end_idx + 1
+
+    return merged
+
+
+def build_code_html(
+    hunk: dict,
+    repo_path: str,
+    hunk_index: int,
+    total: int,
+    timestamp: str,
+    content_source: dict | None = None,
+    config: dict | None = None,
+    read_source_lines: Callable[[str, str, dict], list[str]] | None = None,
+) -> str:
+    render_config = config or _default_render_config()
+    if render_config.get("diff_mode") == "patch":
+        return build_patch_html(hunk, hunk_index, total, timestamp, render_config)
+    if render_config.get("diff_mode") == "deleted":
+        return build_deleted_patch_html(hunk, hunk_index, total, timestamp, render_config)
+
+    if len(hunk.get("changed_lines", [])) == 0 and int(hunk.get("deleted_count", 0)) > 0 and hunk.get("diff_lines"):
+        return build_deleted_context_html(
+            hunk,
+            repo_path,
+            hunk_index,
+            total,
+            timestamp,
+            content_source,
+            render_config,
+            read_source_lines,
+        )
+
+    lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source, read_source_lines)
+    # 共通インデントを除去（Codesnap風）
+    raw_texts = [t for (_, t) in lines]
+    inline_diff_mode = hunk_inline_diff_mode(hunk)
+    replacements = _line_replacements_by_new_lineno(hunk) if inline_diff_mode != "off" else {}
+    inline_diff_max_changed_chars = normalize_inline_diff_max_changed_chars(
+        render_config.get("inline_diff_max_changed_chars", INLINE_DIFF_MAX_CHANGED_CHARS)
+    )
+    inline_added_mutes = hunk_inline_added_mutes(hunk)
+    manual_row_highlights = hunk_manual_row_highlights(hunk)
+    replacement_texts = [text for _, text in replacements.values()]
+    stripped_combined, _ = _strip_common_indent_from_lines(raw_texts + replacement_texts)
+    stripped_texts = stripped_combined[:len(raw_texts)]
+    stripped_replacements = stripped_combined[len(raw_texts):]
+    replacement_by_lineno = {
+        lineno: (old_lineno, stripped_replacements[idx])
+        for idx, (lineno, (old_lineno, _)) in enumerate(replacements.items())
+    }
+    lang = detect_language(hunk["filepath"])
+    changed_set = set(hunk["changed_lines"])
+
+    rows = []
+    for idx, (lineno, text) in enumerate(lines):
+        # text は共通インデントを削除したものを使う
+        text = stripped_texts[idx]
+        is_changed = lineno in changed_set
+        inline_rendered = False
+        inline_missed = False
+        if is_changed and lineno in replacement_by_lineno:
+            _, old_text = replacement_by_lineno[lineno]
+            inline_html = _inline_diff_html(
+                old_text,
+                text,
+                inline_diff_mode,
+                inline_diff_max_changed_chars,
+                inline_added_mutes,
+                str(lineno),
+            )
+            if inline_html is not None:
+                code_html = inline_html
+                inline_rendered = "inline-" in inline_html
+            else:
+                code_html = escape(text)
+                inline_missed = True
+        else:
+            code_html = escape(text)
+        row_classes = []
+        if inline_missed or inline_rendered:
+            row_classes.append("changed")
+        elif is_changed:
+            row_classes.append("added")
+        if inline_rendered:
+            row_classes.append("inline-rendered")
+        manual_row_highlight = manual_row_highlights.get(int(lineno))
+        if manual_row_highlight:
+            row_classes.append(f"manual-row-{manual_row_highlight}")
+        row_class = f' class="{" ".join(row_classes)}"' if row_classes else ""
+        marker = "+" if is_changed else " "
+        rows.append(
+            f'<tr{row_class}>'
+            f'<td class="lineno">{lineno}</td>'
+            f'<td class="marker">{marker}</td>'
+            f'<td class="code">{code_html}</td>'
+            f'</tr>'
+        )
+
+    meta = f"L{hunk['start']}–{hunk['end']} | {hunk_index}/{total} | {lang}"
+    return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
+
+
+def _deleted_diff_blocks(hunk: dict) -> list[dict]:
+    raw_blocks = hunk.get("diff_blocks")
+    if not isinstance(raw_blocks, list) or not raw_blocks:
+        raw_blocks = [hunk]
+
+    blocks = []
+    for block in raw_blocks:
+        if not isinstance(block, dict):
+            continue
+        deleted_texts = [
+            raw[1:]
+            for raw in block.get("diff_lines", [])
+            if raw.startswith("-") and not raw.startswith("---")
+        ]
+        if deleted_texts:
+            blocks.append({
+                "anchor": int(block.get("start", hunk.get("orig_start", hunk.get("start", 1)))),
+                "old_start": int(block.get("old_start", hunk.get("old_start", hunk.get("start", 1)))),
+                "texts": deleted_texts,
+            })
+    return sorted(blocks, key=lambda block: (block["anchor"], block["old_start"]))
+
+
+def build_deleted_context_html(
+    hunk: dict,
+    repo_path: str,
+    hunk_index: int,
+    total: int,
+    timestamp: str,
+    content_source: dict | None = None,
+    config: dict | None = None,
+    read_source_lines: Callable[[str, str, dict], list[str]] | None = None,
+) -> str:
+    render_config = config or _default_render_config()
+    lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source, read_source_lines)
+    deleted_blocks = _deleted_diff_blocks(hunk)
+    deleted_texts = [text for block in deleted_blocks for text in block["texts"]]
+    combined_texts = [t for (_, t) in lines] + deleted_texts
+    stripped_combined, _ = _strip_common_indent_from_lines(combined_texts)
+    stripped_lines = stripped_combined[:len(lines)]
+    stripped_deleted = stripped_combined[len(lines):]
+
+    text_offset = 0
+    for block in deleted_blocks:
+        text_count = len(block["texts"])
+        block["texts"] = stripped_deleted[text_offset:text_offset + text_count]
+        text_offset += text_count
+
+    lang = detect_language(hunk["filepath"])
+    manual_row_highlights = hunk_manual_row_highlights(hunk)
+    rows = []
+    next_deleted_block = 0
+
+    def append_deleted_rows(block: dict) -> None:
+        old_ln = block["old_start"]
+        for text in block["texts"]:
+            row_classes = ["deleted"]
+            manual_row_highlight = manual_row_highlights.get(old_ln)
+            if manual_row_highlight:
+                row_classes.append(f"manual-row-{manual_row_highlight}")
+            rows.append(
+                f'<tr class="{" ".join(row_classes)}">'
+                f'<td class="lineno">{old_ln}</td>'
+                '<td class="marker">-</td>'
+                f'<td class="code">{escape(text)}</td>'
+                '</tr>'
+            )
+            old_ln += 1
+
+    for idx, (lineno, text) in enumerate(lines):
+        while (
+            next_deleted_block < len(deleted_blocks)
+            and deleted_blocks[next_deleted_block]["anchor"] < lineno
+        ):
+            append_deleted_rows(deleted_blocks[next_deleted_block])
+            next_deleted_block += 1
+
+        escaped = escape(stripped_lines[idx])
+        manual_row_highlight = manual_row_highlights.get(int(lineno))
+        row_class = f' class="manual-row-{manual_row_highlight}"' if manual_row_highlight else ""
+        rows.append(
+            f'<tr{row_class}>'
+            f'<td class="lineno">{lineno}</td>'
+            '<td class="marker"> </td>'
+            f'<td class="code">{escaped}</td>'
+            '</tr>'
+        )
+
+    for block in deleted_blocks[next_deleted_block:]:
+        append_deleted_rows(block)
+
+    meta = f"L{hunk['start']}–{hunk['end']} | {hunk_index}/{total} | {lang}"
+    return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
+
+
+def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, config: dict | None = None) -> str:
+    render_config = config or _default_render_config()
+    lang = detect_language(hunk["filepath"])
+    old_ln = int(hunk.get("old_start", hunk["start"]))
+    new_ln = int(hunk.get("start", 1))
+    rows = []
+
+    stripped_texts_by_index = _stripped_diff_texts_by_index(
+        hunk.get("diff_lines", []),
+        lambda raw: not raw.startswith("\\"),
+    )
+
+    for idx, raw in enumerate(hunk.get("diff_lines", [])):
+        if not raw:
+            continue
+        if raw.startswith("\\"):
+            note = escape(raw)
+            rows.append(
+                '<tr class="note">'
+                '<td class="lineno old"></td>'
+                '<td class="lineno new"></td>'
+                '<td class="marker">\\</td>'
+                f'<td class="code">{note}</td>'
+                '</tr>'
+            )
+            continue
+
+        prefix = raw[0]
+        # 可能であれば共通インデントを削除したテキストを使う
+        text = raw[1:]
+        stripped = stripped_texts_by_index.get(idx)
+        if stripped is not None:
+            text = stripped
+        escaped = escape(text)
+
+        if prefix == "+":
+            rows.append(
+                '<tr class="added">'
+                '<td class="lineno old"></td>'
+                f'<td class="lineno new">{new_ln}</td>'
+                '<td class="marker">+</td>'
+                f'<td class="code">{escaped}</td>'
+                '</tr>'
+            )
+            new_ln += 1
+        elif prefix == "-":
+            rows.append(
+                '<tr class="deleted">'
+                f'<td class="lineno old">{old_ln}</td>'
+                '<td class="lineno new"></td>'
+                '<td class="marker">-</td>'
+                f'<td class="code">{escaped}</td>'
+                '</tr>'
+            )
+            old_ln += 1
+        else:
+            rows.append(
+                '<tr>'
+                f'<td class="lineno old">{old_ln}</td>'
+                f'<td class="lineno new">{new_ln}</td>'
+                '<td class="marker"> </td>'
+                f'<td class="code">{escaped}</td>'
+                '</tr>'
+            )
+            old_ln += 1
+            new_ln += 1
+
+    meta = f"-{hunk.get('old_start', hunk['start'])} +{hunk['start']} | {hunk_index}/{total} | {lang} | patch"
+    return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
+
+
+def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, config: dict | None = None) -> str:
+    render_config = config or _default_render_config()
+    lang = detect_language(hunk["filepath"])
+    old_ln = int(hunk.get("old_start", hunk["start"]))
+    new_ln = int(hunk.get("start", 1))
+    rows = []
+
+    stripped_texts_by_index = _stripped_diff_texts_by_index(
+        hunk.get("diff_lines", []),
+        lambda raw: not raw.startswith("\\") and not raw.startswith("+"),
+    )
+
+    for idx, raw in enumerate(hunk.get("diff_lines", [])):
+        if not raw:
+            continue
+        if raw.startswith("\\"):
+            note = escape(raw)
+            rows.append(
+                '<tr class="note">'
+                '<td class="lineno old"></td>'
+                '<td class="lineno new"></td>'
+                '<td class="marker">\\</td>'
+                f'<td class="code">{note}</td>'
+                '</tr>'
+            )
+            continue
+
+        prefix = raw[0]
+        if prefix == "+":
+            new_ln += 1
+            continue
+
+        text = stripped_texts_by_index.get(idx, raw[1:])
+        escaped = escape(text)
+
+        if prefix == "-":
+            rows.append(
+                '<tr class="deleted">'
+                f'<td class="lineno old">{old_ln}</td>'
+                '<td class="lineno new"></td>'
+                '<td class="marker">-</td>'
+                f'<td class="code">{escaped}</td>'
+                '</tr>'
+            )
+            old_ln += 1
+        else:
+            rows.append(
+                '<tr>'
+                f'<td class="lineno old">{old_ln}</td>'
+                f'<td class="lineno new">{new_ln}</td>'
+                '<td class="marker"> </td>'
+                f'<td class="code">{escaped}</td>'
+                '</tr>'
+            )
+            old_ln += 1
+            new_ln += 1
+
+    meta = f"-{hunk.get('old_start', hunk['start'])} +{hunk['start']} | {hunk_index}/{total} | {lang} | 削除"
+    return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
+
+
+# ================================================================
+# PNG 出力
+# ================================================================

@@ -1479,6 +1479,29 @@ def build_code_html(
     return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
 
 
+def _deleted_diff_blocks(hunk: dict) -> list[dict]:
+    raw_blocks = hunk.get("diff_blocks")
+    if not isinstance(raw_blocks, list) or not raw_blocks:
+        raw_blocks = [hunk]
+
+    blocks = []
+    for block in raw_blocks:
+        if not isinstance(block, dict):
+            continue
+        deleted_texts = [
+            raw[1:]
+            for raw in block.get("diff_lines", [])
+            if raw.startswith("-") and not raw.startswith("---")
+        ]
+        if deleted_texts:
+            blocks.append({
+                "anchor": int(block.get("start", hunk.get("orig_start", hunk.get("start", 1)))),
+                "old_start": int(block.get("old_start", hunk.get("old_start", hunk.get("start", 1)))),
+                "texts": deleted_texts,
+            })
+    return sorted(blocks, key=lambda block: (block["anchor"], block["old_start"]))
+
+
 def build_deleted_context_html(
     hunk: dict,
     repo_path: str,
@@ -1490,28 +1513,27 @@ def build_deleted_context_html(
 ) -> str:
     render_config = config or current_config_snapshot()
     lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source)
-    deleted_texts = [
-        raw[1:]
-        for raw in hunk.get("diff_lines", [])
-        if raw.startswith("-") and not raw.startswith("---")
-    ]
+    deleted_blocks = _deleted_diff_blocks(hunk)
+    deleted_texts = [text for block in deleted_blocks for text in block["texts"]]
     combined_texts = [t for (_, t) in lines] + deleted_texts
     stripped_combined, _ = _strip_common_indent_from_lines(combined_texts)
     stripped_lines = stripped_combined[:len(lines)]
     stripped_deleted = stripped_combined[len(lines):]
 
+    text_offset = 0
+    for block in deleted_blocks:
+        text_count = len(block["texts"])
+        block["texts"] = stripped_deleted[text_offset:text_offset + text_count]
+        text_offset += text_count
+
     lang = detect_language(hunk["filepath"])
-    deletion_anchor = int(hunk.get("orig_start", hunk.get("start", 1)))
     manual_row_highlights = hunk_manual_row_highlights(hunk)
     rows = []
-    deleted_inserted = False
+    next_deleted_block = 0
 
-    def append_deleted_rows() -> None:
-        nonlocal deleted_inserted
-        if deleted_inserted:
-            return
-        old_ln = int(hunk.get("old_start", deletion_anchor))
-        for text in stripped_deleted:
+    def append_deleted_rows(block: dict) -> None:
+        old_ln = block["old_start"]
+        for text in block["texts"]:
             row_classes = ["deleted"]
             manual_row_highlight = manual_row_highlights.get(old_ln)
             if manual_row_highlight:
@@ -1524,14 +1546,14 @@ def build_deleted_context_html(
                 '</tr>'
             )
             old_ln += 1
-        deleted_inserted = True
-
-    if deletion_anchor < int(hunk["start"]):
-        append_deleted_rows()
 
     for idx, (lineno, text) in enumerate(lines):
-        if not deleted_inserted and lineno > deletion_anchor:
-            append_deleted_rows()
+        while (
+            next_deleted_block < len(deleted_blocks)
+            and deleted_blocks[next_deleted_block]["anchor"] < lineno
+        ):
+            append_deleted_rows(deleted_blocks[next_deleted_block])
+            next_deleted_block += 1
 
         escaped = escape(stripped_lines[idx])
         manual_row_highlight = manual_row_highlights.get(int(lineno))
@@ -1544,8 +1566,8 @@ def build_deleted_context_html(
             '</tr>'
         )
 
-    if not deleted_inserted:
-        append_deleted_rows()
+    for block in deleted_blocks[next_deleted_block:]:
+        append_deleted_rows(block)
 
     meta = f"L{hunk['start']}–{hunk['end']} | {hunk_index}/{total} | {lang}"
     return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)

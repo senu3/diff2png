@@ -271,6 +271,43 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('class="deleted"', html)
         self.assertIn("removed line", html)
 
+    def test_deleted_only_merged_hunks_keep_each_deletion_at_its_anchor(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 8,
+            "orig_start": 2,
+            "orig_end": 7,
+            "old_start": 3,
+            "changed_lines": [],
+            "diff_lines": ["-first removed", "-second removed"],
+            "diff_blocks": [
+                {"start": 2, "old_start": 3, "diff_lines": ["-first removed"]},
+                {"start": 7, "old_start": 9, "diff_lines": ["-second removed"]},
+            ],
+            "added_count": 0,
+            "deleted_count": 2,
+        }
+        source_lines = [f"line {i}" for i in range(1, 9)]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertLess(html.index("line 2"), html.index("first removed"))
+        self.assertLess(html.index("first removed"), html.index("line 3"))
+        self.assertLess(html.index("line 7"), html.index("second removed"))
+        self.assertLess(html.index("second removed"), html.index("line 8"))
+        self.assertIn('<td class="lineno">3</td>', html)
+        self.assertIn('<td class="lineno">9</td>', html)
+
     def test_normal_view_shows_inline_added_span_for_single_line_replacement(self):
         hunk = {
             "filepath": "sample.html",

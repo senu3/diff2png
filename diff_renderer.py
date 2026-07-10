@@ -12,6 +12,8 @@ DIFF_MODE = "file"
 INLINE_DIFF_DEFAULT_MODE = "full"
 INLINE_DIFF_MAX_CHANGED_CHARS = 120
 INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
+INLINE_DIFF_MERGE_EQUAL_MAX_CHARS = 8
+INLINE_DIFF_MAX_FULL_FRAGMENTS = 1
 INLINE_DIFF_MIN_SIMILARITY = 0.62
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 INLINE_DIFF_MODES = {"full", "new", "off"}
@@ -21,7 +23,6 @@ MANUAL_ROW_HIGHLIGHTS_LIMIT = 500
 MANUAL_ROW_HIGHLIGHT_COLORS = {"green", "yellow"}
 _INDENT_RE = re.compile(r"^[ \t]*")
 _INLINE_DIFF_TOKEN_RE = re.compile(r"\w+|\s+|[^\w\s]+", re.UNICODE)
-_INLINE_DIFF_JOINER_RE = re.compile(r"^[^\w\s]{1,3}$", re.UNICODE)
 _HTML_TAG_NAME_RE = re.compile(r"(</?\s*)[A-Za-z][\w:-]*")
 
 def hunk_inline_diff_mode(hunk: dict) -> str:
@@ -548,7 +549,6 @@ def _inline_diff_html(
     added_key_prefix: str = "",
 ) -> str | None:
     parts = []
-    show_old = mode == "full"
     added_index = 0
     muted_added_keys = muted_added_keys or set()
     changed_chars_limit = (
@@ -561,7 +561,13 @@ def _inline_diff_html(
     matcher = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False)
     changed_chars = 0
     opcodes = matcher.get_opcodes()
-    opcodes = _merge_inline_punctuation_fragments(opcodes, old_tokens, new_tokens)
+    opcodes = _merge_nearby_inline_fragments(opcodes, old_tokens, new_tokens)
+    visible_change_count = sum(
+        1
+        for index, opcode in enumerate(opcodes)
+        if _is_visible_inline_change(index, opcode, old_tokens, new_tokens)
+    )
+    show_old = mode == "full" and visible_change_count <= INLINE_DIFF_MAX_FULL_FRAGMENTS
     for tag, i1, i2, j1, j2 in opcodes:
         if tag == "equal":
             continue
@@ -605,7 +611,25 @@ def _inline_diff_html(
     return "".join(parts)
 
 
-def _merge_inline_punctuation_fragments(
+def _is_visible_inline_change(
+    index: int,
+    opcode: tuple[str, int, int, int, int],
+    old_tokens: list[str],
+    new_tokens: list[str],
+) -> bool:
+    tag, i1, i2, j1, j2 = opcode
+    if tag == "equal":
+        return False
+    old_part = "".join(old_tokens[i1:i2])
+    new_part = "".join(new_tokens[j1:j2])
+    return not (
+        index == 0
+        and old_part.strip(" \t") == ""
+        and new_part.strip(" \t") == ""
+    )
+
+
+def _merge_nearby_inline_fragments(
     opcodes: list[tuple[str, int, int, int, int]],
     old_tokens: list[str],
     new_tokens: list[str],
@@ -616,13 +640,13 @@ def _merge_inline_punctuation_fragments(
     def is_change(tag: str) -> bool:
         return tag in {"insert", "delete", "replace"}
 
-    def is_short_punctuation_equal(opcode: tuple[str, int, int, int, int]) -> bool:
+    def is_short_equal(opcode: tuple[str, int, int, int, int]) -> bool:
         tag, i1, i2, j1, j2 = opcode
         if tag != "equal":
             return False
         old_part = "".join(old_tokens[i1:i2])
         new_part = "".join(new_tokens[j1:j2])
-        return old_part == new_part and bool(_INLINE_DIFF_JOINER_RE.fullmatch(old_part))
+        return old_part == new_part and len(old_part) <= INLINE_DIFF_MERGE_EQUAL_MAX_CHARS
 
     def merged_tag(i1: int, i2: int, j1: int, j2: int) -> str:
         old_empty = i1 == i2
@@ -645,7 +669,7 @@ def _merge_inline_punctuation_fragments(
         end_j2 = j2
         while (
             end_idx + 2 < len(opcodes)
-            and is_short_punctuation_equal(opcodes[end_idx + 1])
+            and is_short_equal(opcodes[end_idx + 1])
             and is_change(opcodes[end_idx + 2][0])
         ):
             _, _, equal_i2, _, equal_j2 = opcodes[end_idx + 1]
@@ -661,6 +685,14 @@ def _merge_inline_punctuation_fragments(
         idx = end_idx + 1
 
     return merged
+
+
+def _merge_inline_punctuation_fragments(
+    opcodes: list[tuple[str, int, int, int, int]],
+    old_tokens: list[str],
+    new_tokens: list[str],
+) -> list[tuple[str, int, int, int, int]]:
+    return _merge_nearby_inline_fragments(opcodes, old_tokens, new_tokens)
 
 
 def build_code_html(

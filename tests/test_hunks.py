@@ -23,6 +23,30 @@ def _raw_hunk(start: int, end: int | None = None) -> dict:
 
 
 class HunkMergeTests(unittest.TestCase):
+    def test_configured_server_port_uses_default_and_validates_override(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(diff2png.configured_server_port(), 5127)
+
+        self.assertEqual(diff2png.configured_server_port("6200"), 6200)
+        for invalid in ("invalid", "0", "65536"):
+            with self.assertRaises(ValueError):
+                diff2png.configured_server_port(invalid)
+
+    def test_find_available_server_port_uses_next_port_when_preferred_is_busy(self):
+        with patch.object(
+            diff2png,
+            "can_bind_server_port",
+            side_effect=lambda _host, port: port == 5129,
+        ):
+            port = diff2png.find_available_server_port("127.0.0.1", 5127, 5)
+
+        self.assertEqual(port, 5129)
+
+    def test_find_available_server_port_fails_when_scan_range_is_busy(self):
+        with patch.object(diff2png, "can_bind_server_port", return_value=False):
+            with self.assertRaises(RuntimeError):
+                diff2png.find_available_server_port("127.0.0.1", 5127, 3)
+
     def test_common_indent_matches_tabs_and_spaces_by_visual_width(self):
         lines = ["\t\tchanged()", "        context()"]
 

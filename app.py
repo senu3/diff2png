@@ -7,6 +7,7 @@ Flask + Playwright によるエビデンス用 git diff スクリーンショッ
 import hashlib
 import os
 import re
+import socket
 import subprocess
 import sys
 import webbrowser
@@ -41,6 +42,9 @@ DIFF_MODE = "file"
 # 背景モード: 'normal' | 'no_bg_footer' | 'transparent_no_footer'
 BACKGROUND_MODE = 'normal'
 INLINE_DIFF_DEFAULT_MODE = "full"
+SERVER_HOST = "127.0.0.1"
+DEFAULT_SERVER_PORT = 5127
+SERVER_PORT_SCAN_LIMIT = 100
 
 app = Flask(__name__)
 
@@ -655,6 +659,41 @@ def choose_directory(title: str, initialdir: Path | None = None) -> str:
             root.destroy()
 
 
+def configured_server_port(value: str | None = None) -> int:
+    raw = value if value is not None else os.environ.get("DIFF2PNG_PORT", str(DEFAULT_SERVER_PORT))
+    try:
+        port = int(raw)
+    except (TypeError, ValueError) as e:
+        raise ValueError("DIFF2PNG_PORT は1〜65535の整数で指定してください") from e
+    if not 1 <= port <= 65535:
+        raise ValueError("DIFF2PNG_PORT は1〜65535の整数で指定してください")
+    return port
+
+
+def can_bind_server_port(host: str, port: int) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind((host, port))
+    except OSError:
+        return False
+    return True
+
+
+def find_available_server_port(
+    host: str = SERVER_HOST,
+    preferred_port: int = DEFAULT_SERVER_PORT,
+    scan_limit: int = SERVER_PORT_SCAN_LIMIT,
+) -> int:
+    if not 1 <= preferred_port <= 65535:
+        raise ValueError("preferred_port は1〜65535で指定してください")
+
+    stop = min(65536, preferred_port + max(1, int(scan_limit)))
+    for port in range(preferred_port, stop):
+        if can_bind_server_port(host, port):
+            return port
+    raise RuntimeError(f"利用可能なポートが見つかりません: {preferred_port}〜{stop - 1}")
+
+
 def parse_hunks(diff_text: str) -> list[dict]:
     return diff_parser.parse_hunks(diff_text)
 
@@ -1232,7 +1271,11 @@ def screenshot_file(filename):
 # ================================================================
 
 if __name__ == "__main__":
-    url = "http://127.0.0.1:5000"
+    preferred_port = configured_server_port()
+    port = find_available_server_port(SERVER_HOST, preferred_port)
+    url = f"http://{SERVER_HOST}:{port}"
+    if port != preferred_port:
+        print(f"ポート {preferred_port} は使用中のため {port} を使用します")
     Timer(1.0, lambda: webbrowser.open(url)).start()
     print(f"起動しました → {url}")
-    app.run(debug=False)
+    app.run(host=SERVER_HOST, port=port, debug=False, use_reloader=False)

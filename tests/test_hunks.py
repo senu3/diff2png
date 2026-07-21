@@ -23,6 +23,49 @@ def _raw_hunk(start: int, end: int | None = None) -> dict:
 
 
 class HunkMergeTests(unittest.TestCase):
+    def test_common_indent_preserves_tabs_when_indentation_styles_differ(self):
+        lines = ["\t\tchanged()", "        context()"]
+
+        stripped, width = diff2png._strip_common_indent_from_lines(lines)
+
+        self.assertEqual(stripped, lines)
+        self.assertEqual(width, 0)
+
+    def test_common_indent_removes_only_exact_shared_tab_prefix(self):
+        stripped, width = diff2png._strip_common_indent_from_lines([
+            "\t\tchanged()",
+            "\t    context()",
+        ])
+
+        self.assertEqual(stripped, ["\tchanged()", "    context()"])
+        self.assertEqual(width, 1)
+
+    def test_normal_view_keeps_changed_line_tabs_with_space_indented_context(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 2,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": ["-\t\told_value()", "+\t\tnew_value()", "         context()"],
+            "added_count": 1,
+            "deleted_count": 1,
+        }
+        source_lines = ["\t\tnew_value()", "        context()"]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-07-21 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('<td class="code">\t\t', html)
+
     def test_browse_repo_uses_directory_picker(self):
         with patch.object(diff2png, "choose_directory", return_value=r"C:\work\repo") as picker:
             client = diff2png.app.test_client()
@@ -606,6 +649,106 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn('class="inline-added"', html)
         self.assertNotIn('published', html)
         self.assertIn('| 削除', html)
+
+    def test_patch_modes_shrink_context_and_reset_without_hiding_changes(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 5,
+            "default_start": 1,
+            "default_end": 5,
+            "old_start": 1,
+            "changed_lines": [3],
+            "diff_lines": [
+                " context top",
+                " context near top",
+                '-status = "draft"',
+                '+status = "published"',
+                " context near bottom",
+                " context bottom",
+            ],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+
+        with patch.object(diff2png, "read_source_lines", return_value=["line"] * 5):
+            diff2png.adjust_hunk_range(
+                hunk, ".", {"type": "worktree"}, "shrink_up", include_diff_anchors=True
+            )
+            diff2png.adjust_hunk_range(
+                hunk, ".", {"type": "worktree"}, "shrink_down", include_diff_anchors=True
+            )
+
+        self.assertEqual((hunk["start"], hunk["end"]), (2, 4))
+        for mode in ("patch", "deleted"):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-06-11 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": mode, "html_width": 960, "background_mode": "normal"},
+            )
+            self.assertNotIn("context top", html)
+            self.assertNotIn("context bottom", html)
+            self.assertIn("context near top", html)
+            self.assertIn("context near bottom", html)
+            self.assertIn("draft", html)
+            if mode == "patch":
+                self.assertIn("published", html)
+            else:
+                self.assertNotIn("published", html)
+
+        with patch.object(diff2png, "read_source_lines", return_value=["line"] * 5):
+            diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "reset")
+        self.assertEqual((hunk["start"], hunk["end"]), (1, 5))
+
+    def test_patch_mode_range_endpoint_allows_shrink_and_reset_but_rejects_expand(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not available")
+
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 5,
+            "default_start": 1,
+            "default_end": 5,
+            "old_start": 1,
+            "changed_lines": [3],
+            "diff_lines": [" top", " near", "-old", "+new", " near bottom", " bottom"],
+            "added_count": 1,
+            "deleted_count": 1,
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+            (repo / "sample.py").write_text("\n".join(["top", "near", "new", "near bottom", "bottom"]), encoding="utf-8")
+            try:
+                diff2png.ANALYSIS_SESSIONS.clear()
+                analysis_id = diff2png.create_analysis_session(
+                    str(repo),
+                    [hunk],
+                    [hunk],
+                    {"type": "worktree"},
+                    {"diff_mode": "patch", "html_width": 960, "background_mode": "normal"},
+                )
+                client = diff2png.app.test_client()
+                payload = {"repo_path": str(repo), "analysis_id": analysis_id}
+                shrink = client.post("/api/hunk-range/0", json={**payload, "action": "shrink_up"})
+                expand = client.post("/api/hunk-range/0", json={**payload, "action": "expand_up"})
+                reset = client.post("/api/hunk-range/0", json={**payload, "action": "reset"})
+            finally:
+                diff2png.ANALYSIS_SESSIONS.clear()
+
+        self.assertEqual(shrink.status_code, 200)
+        self.assertEqual(shrink.get_json()["hunk"]["start"], 2)
+        self.assertEqual(expand.status_code, 400)
+        self.assertIn("拡大できません", expand.get_json()["error"])
+        self.assertEqual(reset.status_code, 200)
+        self.assertEqual(reset.get_json()["hunk"]["start"], 1)
 
     def test_hunk_inline_diff_endpoint_updates_target_hunk(self):
         if shutil.which("git") is None:

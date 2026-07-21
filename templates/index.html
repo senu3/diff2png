@@ -2134,7 +2134,6 @@
           <div class="empty-label">hunkを選択すると右側にプレビューを表示します</div>
         </div>
       </div>
-      <span class="range-disabled-note" id="rangeDisabledNote">通常表示以外では範囲調整なし</span>
       <div class="range-overlay range-overlay-bottom hidden" id="rangeOverlayBottom">
         <span class="range-overlay-label">下端</span>
         <span class="range-overlay-line" id="rangeOverlayEnd">—</span>
@@ -3371,8 +3370,7 @@
 
     function isRangeAdjustable(index) {
       const h = state.hunks[index];
-      if (!h || currentDiffMode !== 'file') return false;
-      return true;
+      return Boolean(h);
     }
 
     function updateInlineDiffControls(index) {
@@ -3434,13 +3432,14 @@
       const h = state.hunks[index] || {};
       const isPatch = currentDiffMode !== 'file';
       document.querySelectorAll('.range-overlay').forEach(el => {
-        el.classList.toggle('hidden', !adjustable || isPatch);
+        el.classList.toggle('hidden', !adjustable);
       });
-      document.getElementById('rangeDisabledNote')?.classList.toggle('show', isPatch && index >= 0);
+      document.getElementById('rangeExpandUpBtn').classList.toggle('hidden', isPatch);
+      document.getElementById('rangeExpandDownBtn').classList.toggle('hidden', isPatch);
       document.getElementById('rangeShrinkUpBtn').disabled = !adjustable;
-      document.getElementById('rangeExpandUpBtn').disabled = !adjustable;
+      document.getElementById('rangeExpandUpBtn').disabled = !adjustable || isPatch;
       document.getElementById('rangeShrinkDownBtn').disabled = !adjustable;
-      document.getElementById('rangeExpandDownBtn').disabled = !adjustable;
+      document.getElementById('rangeExpandDownBtn').disabled = !adjustable || isPatch;
       document.getElementById('rangeResetBtn').disabled = !adjustable || !h.range_adjusted;
       updateInlineDiffControls(index);
       updateInlineAddedMuteButton(index);
@@ -3717,6 +3716,7 @@
       const index = state.activeIndex;
       if (state.rangeAdjusting) return;
       if (index < 0 || !state.analysisId || !isRangeAdjustable(index)) return;
+      if (currentDiffMode !== 'file' && (action === 'expand_up' || action === 'expand_down')) return;
 
       state.rangeAdjusting = true;
 

@@ -89,11 +89,8 @@ def hunk_manual_row_highlights(hunk: dict) -> dict[int, str]:
             highlights[lineno] = color
     return highlights
 def _strip_common_indent_from_lines(lines: list[str]) -> tuple[list[str], int]:
-    """与えられたテキスト行リストから共通の先頭インデントを除去して返す。
-    改行が空白のみの行は無視して最小インデント幅を決定する。
-    戻り値は (新しい行リスト, 削除したインデント幅) 。
-    """
-    min_indent = None
+    """Remove only the exact whitespace prefix shared by every nonblank line."""
+    common_indent: str | None = None
     for t in lines:
         if t is None:
             continue
@@ -102,15 +99,24 @@ def _strip_common_indent_from_lines(lines: list[str]) -> tuple[list[str], int]:
         m = _INDENT_RE.match(t)
         if not m:
             continue
-        indent_len = len(m.group(0))
-        if min_indent is None or indent_len < min_indent:
-            min_indent = indent_len
+        indent = m.group(0)
+        if common_indent is None:
+            common_indent = indent
+            continue
+        while common_indent and not indent.startswith(common_indent):
+            common_indent = common_indent[:-1]
+        if not common_indent:
+            break
 
-    if min_indent is None or min_indent == 0:
+    if not common_indent:
         return lines, 0
 
-    new = [(s[min_indent:] if s is not None and len(s) >= min_indent else (s or "")) for s in lines]
-    return new, min_indent
+    indent_len = len(common_indent)
+    stripped = [
+        s[indent_len:] if s is not None and s.startswith(common_indent) else (s or "")
+        for s in lines
+    ]
+    return stripped, indent_len
 
 def read_lines(
     repo_path: str,
@@ -888,21 +894,59 @@ def build_deleted_context_html(
     return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
 
 
+def _visible_diff_rows(hunk: dict) -> list[tuple[str, int | None, int | None]]:
+    old_ln = int(hunk.get("old_start", hunk.get("default_start", hunk.get("start", 1))))
+    new_ln = int(hunk.get("default_start", hunk.get("start", 1)))
+    original_end = int(hunk.get("default_end", hunk.get("end", new_ln)))
+    visible_start = int(hunk.get("start", new_ln))
+    visible_end = int(hunk.get("end", original_end))
+    rows: list[tuple[str, int | None, int | None]] = []
+    previous_visible = False
+
+    for raw in hunk.get("diff_lines", []):
+        if not raw:
+            continue
+        if raw.startswith("\\"):
+            if previous_visible:
+                rows.append((raw, None, None))
+            continue
+
+        prefix = raw[0]
+        if prefix == "+":
+            visible = visible_start <= new_ln <= visible_end
+            if visible:
+                rows.append((raw, None, new_ln))
+            new_ln += 1
+        elif prefix == "-":
+            anchor = min(new_ln, original_end)
+            visible = visible_start <= anchor <= visible_end
+            if visible:
+                rows.append((raw, old_ln, None))
+            old_ln += 1
+        else:
+            visible = visible_start <= new_ln <= visible_end
+            if visible:
+                rows.append((raw, old_ln, new_ln))
+            old_ln += 1
+            new_ln += 1
+        previous_visible = visible
+
+    return rows
+
+
 def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, config: dict | None = None) -> str:
     render_config = config or _default_render_config()
     lang = detect_language(hunk["filepath"])
-    old_ln = int(hunk.get("old_start", hunk["start"]))
-    new_ln = int(hunk.get("start", 1))
     rows = []
+    visible_rows = _visible_diff_rows(hunk)
+    visible_diff_lines = [raw for raw, _, _ in visible_rows]
 
     stripped_texts_by_index = _stripped_diff_texts_by_index(
-        hunk.get("diff_lines", []),
+        visible_diff_lines,
         lambda raw: not raw.startswith("\\"),
     )
 
-    for idx, raw in enumerate(hunk.get("diff_lines", [])):
-        if not raw:
-            continue
+    for idx, (raw, old_ln, new_ln) in enumerate(visible_rows):
         if raw.startswith("\\"):
             note = escape(raw)
             rows.append(
@@ -932,7 +976,6 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, co
                 f'<td class="code">{escaped}</td>'
                 '</tr>'
             )
-            new_ln += 1
         elif prefix == "-":
             rows.append(
                 '<tr class="deleted">'
@@ -942,7 +985,6 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, co
                 f'<td class="code">{escaped}</td>'
                 '</tr>'
             )
-            old_ln += 1
         else:
             rows.append(
                 '<tr>'
@@ -952,8 +994,6 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, co
                 f'<td class="code">{escaped}</td>'
                 '</tr>'
             )
-            old_ln += 1
-            new_ln += 1
 
     meta = f"-{hunk.get('old_start', hunk['start'])} +{hunk['start']} | {hunk_index}/{total} | {lang} | patch"
     return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
@@ -962,18 +1002,16 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, co
 def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, config: dict | None = None) -> str:
     render_config = config or _default_render_config()
     lang = detect_language(hunk["filepath"])
-    old_ln = int(hunk.get("old_start", hunk["start"]))
-    new_ln = int(hunk.get("start", 1))
     rows = []
+    visible_rows = _visible_diff_rows(hunk)
+    visible_diff_lines = [raw for raw, _, _ in visible_rows]
 
     stripped_texts_by_index = _stripped_diff_texts_by_index(
-        hunk.get("diff_lines", []),
+        visible_diff_lines,
         lambda raw: not raw.startswith("\\") and not raw.startswith("+"),
     )
 
-    for idx, raw in enumerate(hunk.get("diff_lines", [])):
-        if not raw:
-            continue
+    for idx, (raw, old_ln, new_ln) in enumerate(visible_rows):
         if raw.startswith("\\"):
             note = escape(raw)
             rows.append(
@@ -988,7 +1026,6 @@ def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp:
 
         prefix = raw[0]
         if prefix == "+":
-            new_ln += 1
             continue
 
         text = stripped_texts_by_index.get(idx, raw[1:])
@@ -1003,7 +1040,6 @@ def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp:
                 f'<td class="code">{escaped}</td>'
                 '</tr>'
             )
-            old_ln += 1
         else:
             rows.append(
                 '<tr>'
@@ -1013,8 +1049,6 @@ def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp:
                 f'<td class="code">{escaped}</td>'
                 '</tr>'
             )
-            old_ln += 1
-            new_ln += 1
 
     meta = f"-{hunk.get('old_start', hunk['start'])} +{hunk['start']} | {hunk_index}/{total} | {lang} | 削除"
     return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)

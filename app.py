@@ -441,13 +441,39 @@ def _clamp_hunk_range(start: int, end: int, total_lines: int) -> tuple[int, int]
     return start, end
 
 
-def _required_hunk_range(hunk: dict, total_lines: int) -> tuple[int, int]:
+def _required_hunk_range(
+    hunk: dict,
+    total_lines: int,
+    include_diff_anchors: bool = False,
+) -> tuple[int, int]:
     anchors: list[int] = []
     for lineno in hunk.get("changed_lines", []):
         try:
             anchors.append(int(lineno))
         except (TypeError, ValueError):
             continue
+
+    if include_diff_anchors:
+        raw_blocks = hunk.get("diff_blocks")
+        if not isinstance(raw_blocks, list) or not raw_blocks:
+            raw_blocks = [hunk]
+        for block in raw_blocks:
+            if not isinstance(block, dict):
+                continue
+            try:
+                cursor = int(block.get("start", hunk.get("default_start", hunk.get("start", 1))))
+            except (TypeError, ValueError):
+                cursor = 1
+            for raw in block.get("diff_lines", []):
+                if not raw or raw.startswith("\\"):
+                    continue
+                if raw.startswith("+") and not raw.startswith("+++"):
+                    anchors.append(cursor)
+                    cursor += 1
+                elif raw.startswith("-") and not raw.startswith("---"):
+                    anchors.append(cursor)
+                elif raw.startswith(" "):
+                    cursor += 1
 
     for key in ("orig_start", "orig_end"):
         if key not in hunk:
@@ -472,6 +498,7 @@ def adjust_hunk_range(
     content_source: dict,
     action: str,
     step: int = 1,
+    include_diff_anchors: bool = False,
 ) -> dict:
     try:
         total_lines = len(read_source_lines(repo_path, hunk["filepath"], content_source))
@@ -488,7 +515,7 @@ def adjust_hunk_range(
         int(hunk.get("default_end", end)),
         total_lines,
     )
-    required_start, required_end = _required_hunk_range(hunk, total_lines)
+    required_start, required_end = _required_hunk_range(hunk, total_lines, include_diff_anchors)
     delta = max(1, int(step))
 
     if action == "expand_up":
@@ -930,13 +957,21 @@ def update_hunk_range(hunk_index: int):
 
     try:
         repo, session = resolve_analysis_context(data)
-        require_file_mode(session, "行範囲の調整は通常表示でのみ使用できます")
+        diff_mode = session_config(session).get("diff_mode")
+        if diff_mode in PATCH_LIKE_DIFF_MODES and action in {"expand_up", "expand_down"}:
+            raise ValueError("差分表示と赤のみ表示では範囲を拡大できません")
         hunk = hunk_at(session, hunk_index)
     except ValueError as e:
         return error_response(str(e))
 
     try:
-        summary = adjust_hunk_range(hunk, str(repo), session["content_source"], action)
+        summary = adjust_hunk_range(
+            hunk,
+            str(repo),
+            session["content_source"],
+            action,
+            include_diff_anchors=diff_mode in PATCH_LIKE_DIFF_MODES,
+        )
     except ValueError as e:
         return error_response(str(e))
 

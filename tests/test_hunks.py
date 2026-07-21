@@ -459,16 +459,42 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual(html.count('class="inline-deleted"'), 1)
         self.assertEqual(html.count('class="inline-added"'), 1)
 
-    def test_inline_diff_hides_deletions_when_multiple_distant_changes_remain(self):
+    def test_inline_diff_merges_changes_separated_by_twelve_equal_characters(self):
+        html = diff2png._inline_diff_html(
+            "value = old + middle + left",
+            "value = new + middle + right",
+        )
+
+        self.assertIn(
+            '<span class="inline-deleted">old + middle + left</span>'
+            '<span class="inline-added">new + middle + right</span>',
+            html,
+        )
+        self.assertEqual(html.count('class="inline-deleted"'), 1)
+        self.assertEqual(html.count('class="inline-added"'), 1)
+
+    def test_inline_diff_keeps_deletions_for_two_distant_changes(self):
         html = diff2png._inline_diff_html(
             "old_value = unchanged_middle_section + left",
             "new_value = unchanged_middle_section + right",
         )
 
-        self.assertNotIn('class="inline-deleted"', html)
+        self.assertIn('<span class="inline-deleted">old_value</span>', html)
+        self.assertIn('<span class="inline-deleted">left</span>', html)
         self.assertIn('<span class="inline-added">new_value</span>', html)
         self.assertIn('<span class="inline-added">right</span>', html)
         self.assertIn("unchanged_middle_section", html)
+
+    def test_inline_diff_hides_deletions_when_three_distant_changes_remain(self):
+        html = diff2png._inline_diff_html(
+            "old_head = unchanged_section_one + old_middle + unchanged_section_two + old_tail",
+            "new_head = unchanged_section_one + new_middle + unchanged_section_two + new_tail",
+        )
+
+        self.assertNotIn('class="inline-deleted"', html)
+        self.assertIn('<span class="inline-added">new_head</span>', html)
+        self.assertIn('<span class="inline-added">new_middle</span>', html)
+        self.assertIn('<span class="inline-added">new_tail</span>', html)
 
     def test_inline_diff_keeps_single_character_change(self):
         html = diff2png._inline_diff_html("value = a", "value = b")

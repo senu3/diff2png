@@ -23,24 +23,42 @@ def _raw_hunk(start: int, end: int | None = None) -> dict:
 
 
 class HunkMergeTests(unittest.TestCase):
-    def test_common_indent_preserves_tabs_when_indentation_styles_differ(self):
+    def test_common_indent_matches_tabs_and_spaces_by_visual_width(self):
         lines = ["\t\tchanged()", "        context()"]
 
         stripped, width = diff2png._strip_common_indent_from_lines(lines)
 
-        self.assertEqual(stripped, lines)
-        self.assertEqual(width, 0)
+        self.assertEqual(stripped, ["changed()", "context()"])
+        self.assertEqual(width, 8)
 
-    def test_common_indent_removes_only_exact_shared_tab_prefix(self):
+    def test_common_indent_removes_equivalent_mixed_indentation(self):
         stripped, width = diff2png._strip_common_indent_from_lines([
             "\t\tchanged()",
             "\t    context()",
         ])
 
-        self.assertEqual(stripped, ["\tchanged()", "    context()"])
-        self.assertEqual(width, 1)
+        self.assertEqual(stripped, ["changed()", "context()"])
+        self.assertEqual(width, 8)
 
-    def test_normal_view_keeps_changed_line_tabs_with_space_indented_context(self):
+    def test_common_indent_preserves_visual_remainder_when_cutting_through_tab(self):
+        stripped, width = diff2png._strip_common_indent_from_lines([
+            "\tchanged()",
+            "  context()",
+        ])
+
+        self.assertEqual(stripped, ["  changed()", "context()"])
+        self.assertEqual(width, 2)
+
+    def test_common_indent_normalizes_remaining_multiple_tabs_by_visual_width(self):
+        stripped, width = diff2png._strip_common_indent_from_lines([
+            "\t\tchanged()",
+            "  context()",
+        ])
+
+        self.assertEqual(stripped, ["      changed()", "context()"])
+        self.assertEqual(width, 2)
+
+    def test_normal_view_strips_visually_equal_mixed_indentation(self):
         hunk = {
             "filepath": "sample.py",
             "start": 1,
@@ -64,7 +82,9 @@ class HunkMergeTests(unittest.TestCase):
                 {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
             )
 
-        self.assertIn('<td class="code">\t\t', html)
+        self.assertNotIn('<td class="code">\t', html)
+        self.assertIn("new_value", html)
+        self.assertIn("context()", html)
 
     def test_browse_repo_uses_directory_picker(self):
         with patch.object(diff2png, "choose_directory", return_value=r"C:\work\repo") as picker:

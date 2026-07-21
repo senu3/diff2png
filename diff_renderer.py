@@ -21,7 +21,7 @@ INLINE_ADDED_MUTES_LIMIT = 200
 INLINE_ADDED_MUTE_KEY_LIMIT = 1000
 MANUAL_ROW_HIGHLIGHTS_LIMIT = 500
 MANUAL_ROW_HIGHLIGHT_COLORS = {"green", "yellow"}
-_INDENT_RE = re.compile(r"^[ \t]*")
+CODE_TAB_SIZE = 4
 _INLINE_DIFF_TOKEN_RE = re.compile(r"\w+|\s+|[^\w\s]+", re.UNICODE)
 _HTML_TAG_NAME_RE = re.compile(r"(</?\s*)[A-Za-z][\w:-]*")
 
@@ -88,35 +88,54 @@ def hunk_manual_row_highlights(hunk: dict) -> dict[int, str]:
         if lineno > 0 and color:
             highlights[lineno] = color
     return highlights
-def _strip_common_indent_from_lines(lines: list[str]) -> tuple[list[str], int]:
-    """Remove only the exact whitespace prefix shared by every nonblank line."""
-    common_indent: str | None = None
-    for t in lines:
-        if t is None:
-            continue
-        if t.strip() == "":
-            continue
-        m = _INDENT_RE.match(t)
-        if not m:
-            continue
-        indent = m.group(0)
-        if common_indent is None:
-            common_indent = indent
-            continue
-        while common_indent and not indent.startswith(common_indent):
-            common_indent = common_indent[:-1]
-        if not common_indent:
-            break
 
-    if not common_indent:
+
+def _visual_indent_width(text: str, tab_size: int = CODE_TAB_SIZE) -> int:
+    column = 0
+    for char in text:
+        if char == " ":
+            column += 1
+        elif char == "\t":
+            column += tab_size - (column % tab_size)
+        else:
+            break
+    return column
+
+
+def _remove_visual_indent(text: str, width: int, tab_size: int = CODE_TAB_SIZE) -> str:
+    if width <= 0:
+        return text
+
+    index = 0
+    while index < len(text) and text[index] in {" ", "\t"}:
+        index += 1
+    indent_width = _visual_indent_width(text[:index], tab_size)
+    remaining_width = max(0, indent_width - width)
+    return (" " * remaining_width) + text[index:]
+
+
+def _strip_common_indent_from_lines(lines: list[str]) -> tuple[list[str], int]:
+    """Remove the common leading indentation measured in rendered columns."""
+    indent_widths = []
+    for text in lines:
+        if text is None:
+            continue
+        if text.strip() == "":
+            continue
+        indent_widths.append(_visual_indent_width(text))
+
+    if not indent_widths:
         return lines, 0
 
-    indent_len = len(common_indent)
+    common_width = min(indent_widths)
+    if common_width == 0:
+        return lines, 0
+
     stripped = [
-        s[indent_len:] if s is not None and s.startswith(common_indent) else (s or "")
-        for s in lines
+        _remove_visual_indent(text or "", common_width)
+        for text in lines
     ]
-    return stripped, indent_len
+    return stripped, common_width
 
 def read_lines(
     repo_path: str,
@@ -192,7 +211,7 @@ td.lineno.new{{border-right:none}}
 td.marker{{width:18px;text-align:center;color:#64748b;font-weight:bold}}
 tr.added td.marker{{color:#16a34a}}
 tr.deleted td.marker{{color:#dc2626}}
-td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}}
+td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;tab-size:{CODE_TAB_SIZE}}}
 span.inline-added{{background:#bbf7d0;color:#14532d;border-radius:3px;padding:0 2px}}
 span.inline-added.inline-added-muted{{background:transparent;color:inherit}}
 span.inline-deleted{{background:#fecaca;color:#991b1b;border-radius:3px;padding:0 2px;text-decoration:line-through}}
@@ -218,6 +237,7 @@ tr.manual-row-yellow td.lineno{{background:#fef9c3;color:#78716c}}
     html = head_template.format(
         bg_color=bg_color,
         HTML_WIDTH=html_width,
+        CODE_TAB_SIZE=CODE_TAB_SIZE,
         filepath=escape(filepath),
         meta=escape(meta),
         rows=rows_html,

@@ -13,6 +13,9 @@ INLINE_DIFF_DEFAULT_MODE = "full"
 INLINE_DIFF_MAX_CHANGED_CHARS = 120
 INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
 INLINE_DIFF_MERGE_EQUAL_MAX_CHARS = 12
+INLINE_DIFF_ABSORB_EQUAL_MAX_CHARS = 32
+INLINE_DIFF_SMALL_FRAGMENT_MAX_CHARS = 2
+INLINE_DIFF_LARGE_FRAGMENT_MIN_CHARS = 6
 INLINE_DIFF_MAX_FULL_FRAGMENTS = 2
 INLINE_DIFF_MIN_SIMILARITY = 0.62
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
@@ -674,6 +677,31 @@ def _merge_nearby_inline_fragments(
         new_part = "".join(new_tokens[j1:j2])
         return old_part == new_part and len(old_part) <= INLINE_DIFF_MERGE_EQUAL_MAX_CHARS
 
+    def change_size(opcode: tuple[str, int, int, int, int]) -> int:
+        tag, i1, i2, j1, j2 = opcode
+        if not is_change(tag):
+            return 0
+        return len("".join(old_tokens[i1:i2])) + len("".join(new_tokens[j1:j2]))
+
+    def should_absorb_small_change(
+        equal_opcode: tuple[str, int, int, int, int],
+        current_change_size: int,
+        next_change_size: int,
+    ) -> bool:
+        tag, i1, i2, j1, j2 = equal_opcode
+        if tag != "equal":
+            return False
+        old_part = "".join(old_tokens[i1:i2])
+        new_part = "".join(new_tokens[j1:j2])
+        if old_part != new_part or len(old_part) > INLINE_DIFF_ABSORB_EQUAL_MAX_CHARS:
+            return False
+        smaller = min(current_change_size, next_change_size)
+        larger = max(current_change_size, next_change_size)
+        return (
+            smaller <= INLINE_DIFF_SMALL_FRAGMENT_MAX_CHARS
+            and larger >= INLINE_DIFF_LARGE_FRAGMENT_MIN_CHARS
+        )
+
     def merged_tag(i1: int, i2: int, j1: int, j2: int) -> str:
         old_empty = i1 == i2
         new_empty = j1 == j2
@@ -693,15 +721,28 @@ def _merge_nearby_inline_fragments(
         end_idx = idx
         end_i2 = i2
         end_j2 = j2
+        accumulated_change_size = change_size(opcodes[idx])
         while (
             end_idx + 2 < len(opcodes)
-            and is_short_equal(opcodes[end_idx + 1])
             and is_change(opcodes[end_idx + 2][0])
         ):
+            equal_opcode = opcodes[end_idx + 1]
+            next_opcode = opcodes[end_idx + 2]
+            next_change_size = change_size(next_opcode)
+            if not (
+                is_short_equal(equal_opcode)
+                or should_absorb_small_change(
+                    equal_opcode,
+                    accumulated_change_size,
+                    next_change_size,
+                )
+            ):
+                break
             _, _, equal_i2, _, equal_j2 = opcodes[end_idx + 1]
             _, _, next_i2, _, next_j2 = opcodes[end_idx + 2]
             end_i2 = next_i2 if next_i2 != equal_i2 else equal_i2
             end_j2 = next_j2 if next_j2 != equal_j2 else equal_j2
+            accumulated_change_size += next_change_size
             end_idx += 2
 
         if end_idx == idx:

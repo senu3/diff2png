@@ -497,6 +497,29 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual(html.count('class="inline-deleted"'), 1)
         self.assertEqual(html.count('class="inline-added"'), 1)
 
+    def test_inline_diff_absorbs_leading_bang_into_larger_change_across_variable(self):
+        html = diff2png._inline_diff_html(
+            "isFeatureFlagEnabled && oldValue",
+            "!isFeatureFlagEnabled && replacementValue",
+        )
+
+        self.assertIn(
+            '<span class="inline-deleted">isFeatureFlagEnabled &amp;&amp; oldValue</span>'
+            '<span class="inline-added">!isFeatureFlagEnabled &amp;&amp; replacementValue</span>',
+            html,
+        )
+        self.assertEqual(html.count('class="inline-deleted"'), 1)
+        self.assertEqual(html.count('class="inline-added"'), 1)
+
+    def test_inline_diff_does_not_absorb_two_small_changes_across_long_equal_text(self):
+        html = diff2png._inline_diff_html(
+            "a + very_long_variable_name + b",
+            "x + very_long_variable_name + y",
+        )
+
+        self.assertEqual(html.count('class="inline-deleted"'), 2)
+        self.assertEqual(html.count('class="inline-added"'), 2)
+
     def test_inline_diff_keeps_deletions_for_two_distant_changes(self):
         html = diff2png._inline_diff_html(
             "old_value = unchanged_middle_section + left",

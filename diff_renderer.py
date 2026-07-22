@@ -681,7 +681,9 @@ def _merge_nearby_inline_fragments(
         tag, i1, i2, j1, j2 = opcode
         if not is_change(tag):
             return 0
-        return len("".join(old_tokens[i1:i2])) + len("".join(new_tokens[j1:j2]))
+        old_length = len("".join(old_tokens[i1:i2]))
+        new_length = len("".join(new_tokens[j1:j2]))
+        return max(old_length, new_length)
 
     def should_absorb_small_change(
         equal_opcode: tuple[str, int, int, int, int],

@@ -18,6 +18,7 @@ INLINE_DIFF_SMALL_FRAGMENT_MAX_CHARS = 2
 INLINE_DIFF_LARGE_FRAGMENT_MIN_CHARS = 6
 INLINE_DIFF_MAX_FULL_FRAGMENTS = 2
 INLINE_DIFF_MIN_SIMILARITY = 0.62
+INLINE_DIFF_CONTROL_HEADER_PAIR_SCORE = 0.7
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 INLINE_DIFF_MODES = {"full", "new", "off"}
 INLINE_ADDED_MUTES_LIMIT = 200
@@ -28,7 +29,7 @@ CODE_TAB_SIZE = 4
 _INLINE_DIFF_TOKEN_RE = re.compile(r"\w+|\s+|[^\w\s]+", re.UNICODE)
 _HTML_TAG_NAME_RE = re.compile(r"(</?\s*)[A-Za-z][\w:-]*")
 _CONTROL_HEADER_RE = re.compile(
-    r"^\s*(?:}\s*)?(?:(?:else|elseif)\s+)?(?:if|elif|while|for|foreach|switch|case|catch)\b"
+    r"^\s*(?:}\s*)?(?:else\s+)?(if|elif|elseif|while|for|foreach|switch|case|catch)\b"
 )
 _CONTROL_EXIT_RE = re.compile(r"^\s*(?:return|throw|raise|break|continue)\b")
 
@@ -391,8 +392,19 @@ def _line_replacements_for_diff_lines(
             return False
         return True
 
+    def control_header_kind(text: str) -> str | None:
+        match = _CONTROL_HEADER_RE.search(text)
+        if not match:
+            return None
+        keyword = match.group(1)
+        if keyword in {"elif", "elseif"}:
+            return "if"
+        if keyword == "foreach":
+            return "for"
+        return keyword
+
     def structural_line_role(text: str) -> str:
-        if _CONTROL_HEADER_RE.search(text):
+        if control_header_kind(text):
             return "control_header"
         if _CONTROL_EXIT_RE.search(text):
             return "control_exit"
@@ -433,6 +445,10 @@ def _line_replacements_for_diff_lines(
             if not structurally_pairable(old_text, new_text):
                 return 0.0
             score = similarity(old_text, new_text)
+            old_header = control_header_kind(old_text)
+            new_header = control_header_kind(new_text)
+            if old_header and old_header == new_header:
+                score = max(score, INLINE_DIFF_CONTROL_HEADER_PAIR_SCORE)
             if allow_html_tag_pairing:
                 score = max(score, html_tag_shape_similarity(old_text, new_text))
             return score
@@ -451,7 +467,7 @@ def _line_replacements_for_diff_lines(
         if deleted_count == 1 and added_count == 1:
             old_text = deleted_block[0][1]
             new_text = added_block[0][1]
-            if directly_pairable(old_text, new_text):
+            if directly_pairable(old_text, new_text) and structurally_pairable(old_text, new_text):
                 add_direct_pairs()
             return
 
@@ -475,7 +491,7 @@ def _line_replacements_for_diff_lines(
                     shifted = True
                     break
             if not shifted and all(
-                directly_pairable(old_text, new_text)
+                directly_pairable(old_text, new_text) and structurally_pairable(old_text, new_text)
                 for (_, old_text), (_, new_text) in zip(deleted_block, added_block)
             ):
                 add_direct_pairs()

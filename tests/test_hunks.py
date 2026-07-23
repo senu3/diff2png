@@ -1689,6 +1689,7 @@ class HunkMergeTests(unittest.TestCase):
 
         replacements = diff2png._line_replacements_by_new_lineno(hunk)
 
+        self.assertIn(1, replacements)
         self.assertNotIn(2, replacements)
         with patch.object(diff2png, "read_source_lines", return_value=source_lines):
             html = diff2png.build_code_html(
@@ -1707,6 +1708,13 @@ class HunkMergeTests(unittest.TestCase):
         return_row = html[return_row_start:return_row_end]
         self.assertNotIn("inline-deleted", return_row)
         self.assertNotIn("legacyCondition", return_row)
+
+        condition_position = html.index("newCondition")
+        condition_row_start = html.rfind("<tr", 0, condition_position)
+        condition_row_end = html.index("</tr>", condition_position)
+        condition_row = html[condition_row_start:condition_row_end]
+        self.assertIn("inline-deleted", condition_row)
+        self.assertIn("legacyCondition", condition_row)
 
     def test_normal_view_pairs_best_added_line_after_nearby_insertion(self):
         hunk = {

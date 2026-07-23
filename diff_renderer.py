@@ -27,6 +27,10 @@ MANUAL_ROW_HIGHLIGHT_COLORS = {"green", "yellow"}
 CODE_TAB_SIZE = 4
 _INLINE_DIFF_TOKEN_RE = re.compile(r"\w+|\s+|[^\w\s]+", re.UNICODE)
 _HTML_TAG_NAME_RE = re.compile(r"(</?\s*)[A-Za-z][\w:-]*")
+_CONTROL_HEADER_RE = re.compile(
+    r"^\s*(?:}\s*)?(?:(?:else|elseif)\s+)?(?:if|elif|while|for|foreach|switch|case|catch)\b"
+)
+_CONTROL_EXIT_RE = re.compile(r"^\s*(?:return|throw|raise|break|continue)\b")
 
 def hunk_inline_diff_mode(hunk: dict) -> str:
     mode = str(hunk.get("inline_diff_mode", "")).strip().lower()
@@ -387,6 +391,20 @@ def _line_replacements_for_diff_lines(
             return False
         return True
 
+    def structural_line_role(text: str) -> str:
+        if _CONTROL_HEADER_RE.search(text):
+            return "control_header"
+        if _CONTROL_EXIT_RE.search(text):
+            return "control_exit"
+        return "statement"
+
+    def structurally_pairable(old_text: str, new_text: str) -> bool:
+        old_role = structural_line_role(old_text)
+        new_role = structural_line_role(new_text)
+        if old_role == new_role:
+            return True
+        return old_role == "statement" and new_role == "statement"
+
     def block_allows_html_tag_pairing(
         deleted_block: list[tuple[int, str]],
         added_block: list[tuple[int, str]],
@@ -412,6 +430,8 @@ def _line_replacements_for_diff_lines(
         allow_html_tag_pairing = block_allows_html_tag_pairing(deleted_block, added_block)
 
         def candidate_score(old_text: str, new_text: str) -> float:
+            if not structurally_pairable(old_text, new_text):
+                return 0.0
             score = similarity(old_text, new_text)
             if allow_html_tag_pairing:
                 score = max(score, html_tag_shape_similarity(old_text, new_text))

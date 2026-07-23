@@ -1662,6 +1662,52 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn('class="inline-added"', html[:first_row_end])
         self.assertNotIn('class="deleted"', html)
 
+    def test_normal_view_does_not_move_old_condition_diff_into_nested_return(self):
+        hunk = {
+            "filepath": "sample.php",
+            "start": 1,
+            "end": 3,
+            "default_start": 1,
+            "default_end": 3,
+            "old_start": 1,
+            "changed_lines": [1, 2, 3],
+            "diff_lines": [
+                "-if (!$legacyCondition) return;",
+                "+if ($newCondition) {",
+                "+    return;",
+                "+}",
+            ],
+            "added_count": 3,
+            "deleted_count": 1,
+            "changed_count": 4,
+        }
+        source_lines = [
+            "if ($newCondition) {",
+            "    return;",
+            "}",
+        ]
+
+        replacements = diff2png._line_replacements_by_new_lineno(hunk)
+
+        self.assertNotIn(2, replacements)
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-07-23 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        return_position = html.rindex("return;")
+        return_row_start = html.rfind("<tr", 0, return_position)
+        return_row_end = html.index("</tr>", return_position)
+        return_row = html[return_row_start:return_row_end]
+        self.assertNotIn("inline-deleted", return_row)
+        self.assertNotIn("legacyCondition", return_row)
+
     def test_normal_view_pairs_best_added_line_after_nearby_insertion(self):
         hunk = {
             "filepath": "sample.js",

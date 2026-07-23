@@ -26,11 +26,25 @@ MANUAL_ROW_HIGHLIGHTS_LIMIT = 500
 MANUAL_ROW_HIGHLIGHT_COLORS = {"green", "yellow"}
 CODE_TAB_SIZE = 4
 _INLINE_DIFF_TOKEN_RE = re.compile(r"\w+|\s+|[^\w\s]+", re.UNICODE)
+_CONTROL_INLINE_DIFF_TOKEN_RE = re.compile(r"\w+|\s+|[^\w\s]", re.UNICODE)
 _HTML_TAG_NAME_RE = re.compile(r"(</?\s*)[A-Za-z][\w:-]*")
 _CONTROL_HEADER_RE = re.compile(
     r"^\s*(?:}\s*)?(?:else\s+)?(if|elif|elseif|while|for|foreach|switch|case|catch)\b"
 )
 _CONTROL_EXIT_RE = re.compile(r"^\s*(?:return|throw|raise|break|continue)\b")
+
+
+def _control_header_kind(text: str) -> str | None:
+    match = _CONTROL_HEADER_RE.search(text)
+    if not match:
+        return None
+    keyword = match.group(1)
+    if keyword in {"elif", "elseif"}:
+        return "if"
+    if keyword == "foreach":
+        return "for"
+    return keyword
+
 
 def hunk_inline_diff_mode(hunk: dict) -> str:
     mode = str(hunk.get("inline_diff_mode", "")).strip().lower()
@@ -391,19 +405,8 @@ def _line_replacements_for_diff_lines(
             return False
         return True
 
-    def control_header_kind(text: str) -> str | None:
-        match = _CONTROL_HEADER_RE.search(text)
-        if not match:
-            return None
-        keyword = match.group(1)
-        if keyword in {"elif", "elseif"}:
-            return "if"
-        if keyword == "foreach":
-            return "for"
-        return keyword
-
     def structural_line_role(text: str) -> str:
-        if control_header_kind(text):
+        if _control_header_kind(text):
             return "control_header"
         if _CONTROL_EXIT_RE.search(text):
             return "control_exit"
@@ -444,8 +447,8 @@ def _line_replacements_for_diff_lines(
             if not structurally_pairable(old_text, new_text):
                 return 0.0
             score = similarity(old_text, new_text)
-            old_header = control_header_kind(old_text)
-            new_header = control_header_kind(new_text)
+            old_header = _control_header_kind(old_text)
+            new_header = _control_header_kind(new_text)
             if old_header and old_header == new_header:
                 score = max(score, INLINE_DIFF_CONTROL_HEADER_PAIR_SCORE)
             if allow_html_tag_pairing:
@@ -620,12 +623,26 @@ def _inline_diff_html(
         if max_changed_chars is None
         else normalize_inline_diff_max_changed_chars(max_changed_chars)
     )
-    old_tokens = _INLINE_DIFF_TOKEN_RE.findall(old_text)
-    new_tokens = _INLINE_DIFF_TOKEN_RE.findall(new_text)
+    old_header = _control_header_kind(old_text)
+    preserve_control_boundary = bool(
+        old_header and old_header == _control_header_kind(new_text)
+    )
+    token_re = (
+        _CONTROL_INLINE_DIFF_TOKEN_RE
+        if preserve_control_boundary
+        else _INLINE_DIFF_TOKEN_RE
+    )
+    old_tokens = token_re.findall(old_text)
+    new_tokens = token_re.findall(new_text)
     matcher = difflib.SequenceMatcher(None, old_tokens, new_tokens, autojunk=False)
     changed_chars = 0
     opcodes = matcher.get_opcodes()
-    opcodes = _merge_nearby_inline_fragments(opcodes, old_tokens, new_tokens)
+    opcodes = _merge_nearby_inline_fragments(
+        opcodes,
+        old_tokens,
+        new_tokens,
+        preserve_closing_parenthesis_boundary=preserve_control_boundary,
+    )
     show_old = mode == "full"
     for tag, i1, i2, j1, j2 in opcodes:
         if tag == "equal":
@@ -674,6 +691,8 @@ def _merge_nearby_inline_fragments(
     opcodes: list[tuple[str, int, int, int, int]],
     old_tokens: list[str],
     new_tokens: list[str],
+    *,
+    preserve_closing_parenthesis_boundary: bool = False,
 ) -> list[tuple[str, int, int, int, int]]:
     merged: list[tuple[str, int, int, int, int]] = []
     idx = 0
@@ -688,6 +707,16 @@ def _merge_nearby_inline_fragments(
         old_part = "".join(old_tokens[i1:i2])
         new_part = "".join(new_tokens[j1:j2])
         return old_part == new_part and len(old_part) <= INLINE_DIFF_MERGE_EQUAL_MAX_CHARS
+
+    def is_closing_parenthesis_boundary(
+        opcode: tuple[str, int, int, int, int],
+    ) -> bool:
+        tag, i1, i2, j1, j2 = opcode
+        if tag != "equal":
+            return False
+        old_part = "".join(old_tokens[i1:i2])
+        new_part = "".join(new_tokens[j1:j2])
+        return old_part == new_part and ")" in old_part
 
     def change_size(opcode: tuple[str, int, int, int, int]) -> int:
         tag, i1, i2, j1, j2 = opcode
@@ -743,6 +772,11 @@ def _merge_nearby_inline_fragments(
             equal_opcode = opcodes[end_idx + 1]
             next_opcode = opcodes[end_idx + 2]
             next_change_size = change_size(next_opcode)
+            if (
+                preserve_closing_parenthesis_boundary
+                and is_closing_parenthesis_boundary(equal_opcode)
+            ):
+                break
             if not (
                 is_short_equal(equal_opcode)
                 or should_absorb_small_change(

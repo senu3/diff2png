@@ -525,6 +525,38 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual(html.count('class="inline-deleted"'), 1)
         self.assertEqual(html.count('class="inline-added"'), 1)
 
+    def test_inline_diff_keeps_if_condition_and_tail_changes_separate(self):
+        html = diff2png._inline_diff_html(
+            "if (!legacyCondition) return;",
+            "if (newCondition) {",
+        )
+
+        self.assertIn(
+            'if (<span class="inline-deleted">!legacyCondition</span>'
+            '<span class="inline-added">newCondition</span>) ',
+            html,
+        )
+        self.assertIn('<span class="inline-deleted">return;</span>', html)
+        self.assertIn('<span class="inline-added">{</span>', html)
+        self.assertEqual(html.count('class="inline-deleted"'), 2)
+        self.assertEqual(html.count('class="inline-added"'), 2)
+
+    def test_inline_diff_keeps_nested_if_condition_deletion_before_tail_change(self):
+        html = diff2png._inline_diff_html(
+            "if (!(enabled and legacyCondition)) return;",
+            "if (enabled) {",
+        )
+
+        self.assertIn(
+            'if (<span class="inline-deleted">!(enabled and legacyCondition)</span>'
+            '<span class="inline-added">enabled</span>) ',
+            html,
+        )
+        self.assertIn('<span class="inline-deleted">return;</span>', html)
+        self.assertIn('<span class="inline-added">{</span>', html)
+        self.assertEqual(html.count('class="inline-deleted"'), 2)
+        self.assertEqual(html.count('class="inline-added"'), 2)
+
     def test_inline_diff_does_not_absorb_two_small_changes_across_long_equal_text(self):
         html = diff2png._inline_diff_html(
             "a + very_long_variable_name + b",
@@ -1717,6 +1749,13 @@ class HunkMergeTests(unittest.TestCase):
         condition_row = html[condition_row_start:condition_row_end]
         self.assertIn("inline-deleted", condition_row)
         self.assertIn("legacyCondition", condition_row)
+        self.assertIn(
+            'if (<span class="inline-deleted">!$legacyCondition</span>'
+            '<span class="inline-added">$newCondition</span>) ',
+            condition_row,
+        )
+        self.assertIn('<span class="inline-deleted">return;</span>', condition_row)
+        self.assertIn('<span class="inline-added">{</span>', condition_row)
 
     def test_normal_view_pairs_best_added_line_after_nearby_insertion(self):
         hunk = {

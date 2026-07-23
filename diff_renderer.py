@@ -16,7 +16,6 @@ INLINE_DIFF_MERGE_EQUAL_MAX_CHARS = 12
 INLINE_DIFF_ABSORB_EQUAL_MAX_CHARS = 32
 INLINE_DIFF_SMALL_FRAGMENT_MAX_CHARS = 2
 INLINE_DIFF_LARGE_FRAGMENT_MIN_CHARS = 6
-INLINE_DIFF_MAX_FULL_FRAGMENTS = 2
 INLINE_DIFF_MIN_SIMILARITY = 0.62
 INLINE_DIFF_CONTROL_HEADER_PAIR_SCORE = 0.7
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
@@ -627,12 +626,7 @@ def _inline_diff_html(
     changed_chars = 0
     opcodes = matcher.get_opcodes()
     opcodes = _merge_nearby_inline_fragments(opcodes, old_tokens, new_tokens)
-    visible_change_count = sum(
-        1
-        for index, opcode in enumerate(opcodes)
-        if _is_visible_inline_change(index, opcode, old_tokens, new_tokens)
-    )
-    show_old = mode == "full" and visible_change_count <= INLINE_DIFF_MAX_FULL_FRAGMENTS
+    show_old = mode == "full"
     for tag, i1, i2, j1, j2 in opcodes:
         if tag == "equal":
             continue
@@ -674,24 +668,6 @@ def _inline_diff_html(
                     parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
                 parts.append(added_span(new_part))
     return "".join(parts)
-
-
-def _is_visible_inline_change(
-    index: int,
-    opcode: tuple[str, int, int, int, int],
-    old_tokens: list[str],
-    new_tokens: list[str],
-) -> bool:
-    tag, i1, i2, j1, j2 = opcode
-    if tag == "equal":
-        return False
-    old_part = "".join(old_tokens[i1:i2])
-    new_part = "".join(new_tokens[j1:j2])
-    return not (
-        index == 0
-        and old_part.strip(" \t") == ""
-        and new_part.strip(" \t") == ""
-    )
 
 
 def _merge_nearby_inline_fragments(

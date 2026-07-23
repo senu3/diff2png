@@ -546,13 +546,15 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('<span class="inline-added">right</span>', html)
         self.assertIn("unchanged_middle_section", html)
 
-    def test_inline_diff_hides_deletions_when_three_distant_changes_remain(self):
+    def test_inline_diff_keeps_deletions_when_three_distant_changes_remain(self):
         html = diff2png._inline_diff_html(
             "old_head = unchanged_section_one + old_middle + unchanged_section_two + old_tail",
             "new_head = unchanged_section_one + new_middle + unchanged_section_two + new_tail",
         )
 
-        self.assertNotIn('class="inline-deleted"', html)
+        self.assertIn('<span class="inline-deleted">old_head</span>', html)
+        self.assertIn('<span class="inline-deleted">old_middle</span>', html)
+        self.assertIn('<span class="inline-deleted">old_tail</span>', html)
         self.assertIn('<span class="inline-added">new_head</span>', html)
         self.assertIn('<span class="inline-added">new_middle</span>', html)
         self.assertIn('<span class="inline-added">new_tail</span>', html)

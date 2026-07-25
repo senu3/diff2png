@@ -395,6 +395,107 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn('<td class="lineno">3</td>', html)
         self.assertIn('<td class="lineno">9</td>', html)
 
+    def test_normal_view_marks_unpaired_line_deletion_before_following_line(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 4,
+            "default_start": 1,
+            "default_end": 4,
+            "old_start": 1,
+            "changed_lines": [3],
+            "diff_lines": [
+                " first",
+                "-removed",
+                " second",
+                "+added",
+                " third",
+            ],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+        source_lines = ["first", "second", "added", "third"]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-07-26 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('<td class="lineno deletion-before">2</td>', html)
+        self.assertNotIn('<td class="lineno deletion-before">3</td>', html)
+        self.assertIn("td.lineno.deletion-before::after", html)
+
+    def test_normal_view_marks_unpaired_eof_deletion_after_last_line(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 3,
+            "default_start": 1,
+            "default_end": 3,
+            "old_start": 1,
+            "changed_lines": [2],
+            "diff_lines": [
+                " first",
+                "+added",
+                " second",
+                "-removed",
+            ],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+        source_lines = ["first", "added", "second"]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-07-26 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn('<td class="lineno deletion-after">3</td>', html)
+
+    def test_normal_view_does_not_mark_paired_replacement_as_line_deletion(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": ["-old value", "+new value"],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+            "inline_diff_mode": "off",
+        }
+
+        with patch.object(diff2png, "read_source_lines", return_value=["new value"]):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-07-26 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertNotIn('<td class="lineno deletion-before">', html)
+        self.assertNotIn('<td class="lineno deletion-after">', html)
+
     def test_normal_view_shows_inline_added_span_for_single_line_replacement(self):
         hunk = {
             "filepath": "sample.html",

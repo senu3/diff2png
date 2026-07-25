@@ -226,6 +226,12 @@ tr.note td{{color:#64748b;font-style:italic}}
 td{{vertical-align:top;padding:2px 0;line-height:1.6}}
 td.lineno{{width:52px;text-align:right;color:#94a3b8;padding:2px 10px 2px 6px;
     border-right:1px solid #e2e8f0;background:#f8fafc;user-select:none}}
+td.lineno.deletion-before,td.lineno.deletion-after{{position:relative}}
+td.lineno.deletion-before::after,td.lineno.deletion-after::before{{
+    content:"";position:absolute;right:2px;width:6px;height:8px;z-index:2;
+    background:#dc2626;clip-path:polygon(0 0,100% 50%,0 100%)}}
+td.lineno.deletion-before::after{{top:0;transform:translateY(-50%)}}
+td.lineno.deletion-after::before{{bottom:0;transform:translateY(50%)}}
 tr.changed td.lineno{{background:#fef9c3;color:#78716c}}
 tr.added td.lineno{{background:#ecfdf5;color:#64748b}}
 td.lineno.new{{border-right:none}}
@@ -810,6 +816,68 @@ def _merge_inline_punctuation_fragments(
     return _merge_nearby_inline_fragments(opcodes, old_tokens, new_tokens)
 
 
+def _normal_view_deletion_markers(
+    hunk: dict,
+    replacements: dict[int, tuple[int | None, str]],
+) -> tuple[set[int], set[int]]:
+    paired_old_linenos = {
+        int(old_lineno)
+        for old_lineno, _ in replacements.values()
+        if old_lineno is not None
+    }
+    raw_blocks = hunk.get("diff_blocks")
+    if isinstance(raw_blocks, list) and raw_blocks:
+        blocks = [block for block in raw_blocks if isinstance(block, dict)]
+    else:
+        blocks = [{
+            "start": hunk.get("orig_start", hunk.get("start", 1)),
+            "old_start": hunk.get("old_start", hunk.get("start", 1)),
+            "diff_lines": hunk.get("diff_lines", []),
+        }]
+
+    anchors: set[int] = set()
+    for block in blocks:
+        old_lineno = int(block.get("old_start", hunk.get("old_start", 1)))
+        new_lineno = int(block.get("start", hunk.get("orig_start", hunk.get("start", 1))))
+        has_unpaired_deletion = False
+
+        for raw in block.get("diff_lines", []):
+            if not raw or raw.startswith("\\"):
+                continue
+            if raw.startswith("-") and not raw.startswith("---"):
+                if old_lineno not in paired_old_linenos:
+                    has_unpaired_deletion = True
+                old_lineno += 1
+            elif raw.startswith("+") and not raw.startswith("+++"):
+                if has_unpaired_deletion:
+                    anchors.add(new_lineno)
+                    has_unpaired_deletion = False
+                new_lineno += 1
+            elif raw.startswith(" "):
+                if has_unpaired_deletion:
+                    anchors.add(new_lineno)
+                    has_unpaired_deletion = False
+                old_lineno += 1
+                new_lineno += 1
+
+        if has_unpaired_deletion:
+            anchors.add(new_lineno)
+
+    visible_start = int(hunk.get("start", 1))
+    visible_end = int(hunk.get("end", visible_start))
+    before = {
+        max(visible_start, anchor)
+        for anchor in anchors
+        if anchor <= visible_end
+    }
+    after = {
+        visible_end
+        for anchor in anchors
+        if anchor > visible_end
+    }
+    return before, after
+
+
 def build_code_html(
     hunk: dict,
     repo_path: str,
@@ -842,7 +910,12 @@ def build_code_html(
     # 共通インデントを除去（Codesnap風）
     raw_texts = [t for (_, t) in lines]
     inline_diff_mode = hunk_inline_diff_mode(hunk)
-    replacements = _line_replacements_by_new_lineno(hunk) if inline_diff_mode != "off" else {}
+    line_replacements = _line_replacements_by_new_lineno(hunk)
+    replacements = line_replacements if inline_diff_mode != "off" else {}
+    deletion_markers_before, deletion_markers_after = _normal_view_deletion_markers(
+        hunk,
+        line_replacements,
+    )
     inline_diff_max_changed_chars = normalize_inline_diff_max_changed_chars(
         render_config.get("inline_diff_max_changed_chars", INLINE_DIFF_MAX_CHANGED_CHARS)
     )
@@ -895,10 +968,15 @@ def build_code_html(
         if manual_row_highlight:
             row_classes.append(f"manual-row-{manual_row_highlight}")
         row_class = f' class="{" ".join(row_classes)}"' if row_classes else ""
+        lineno_classes = ["lineno"]
+        if lineno in deletion_markers_before:
+            lineno_classes.append("deletion-before")
+        if lineno in deletion_markers_after:
+            lineno_classes.append("deletion-after")
         marker = "+" if is_changed else " "
         rows.append(
             f'<tr{row_class}>'
-            f'<td class="lineno">{lineno}</td>'
+            f'<td class="{" ".join(lineno_classes)}">{lineno}</td>'
             f'<td class="marker">{marker}</td>'
             f'<td class="code">{code_html}</td>'
             f'</tr>'

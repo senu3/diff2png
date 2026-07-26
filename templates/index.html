@@ -601,7 +601,7 @@
     .file-filter-list {
       display: grid;
       grid-auto-rows: max-content;
-      gap: 4px;
+      gap: 2px;
       max-height: min(360px, calc(100vh - 320px));
       overflow-y: auto;
       padding-right: 2px;
@@ -621,13 +621,59 @@
       border-radius: 2px;
     }
 
-    .file-filter-option {
+    .file-filter-tree-row {
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr);
+      align-items: center;
+      padding-left: calc(var(--tree-depth, 0) * 14px);
+    }
+
+    .file-filter-disclosure {
+      width: 22px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+    }
+
+    .file-filter-disclosure:hover {
+      color: var(--text);
+    }
+
+    .file-filter-disclosure:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+      border-radius: 4px;
+    }
+
+    .file-filter-disclosure .icon {
+      width: 14px;
+      height: 14px;
+      transition: transform 0.12s;
+    }
+
+    .file-filter-disclosure.expanded .icon {
+      transform: rotate(90deg);
+    }
+
+    .file-filter-disclosure-placeholder {
+      width: 22px;
+      height: 30px;
+    }
+
+    .file-filter-node {
       width: 100%;
       display: grid;
-      grid-template-columns: 18px minmax(0, 1fr) auto;
+      grid-template-columns: 18px 18px minmax(0, 1fr) auto;
       align-items: center;
       gap: 8px;
-      padding: 8px 10px;
+      min-height: 32px;
+      padding: 5px 8px;
       border-radius: 6px;
       border: 1px solid transparent;
       background: transparent;
@@ -637,16 +683,17 @@
       transition: background 0.12s, border-color 0.12s;
     }
 
-    .file-filter-option:hover {
+    .file-filter-node:hover {
       background: var(--surface2);
     }
 
-    .file-filter-option:focus-visible {
+    .file-filter-node:focus-visible {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
 
-    .file-filter-option.active {
+    .file-filter-node.active,
+    .file-filter-node.mixed {
       background: var(--surface2);
       border-color: var(--accent-dim);
     }
@@ -660,12 +707,13 @@
       justify-self: center;
     }
 
-    .file-filter-option.active .file-filter-check {
+    .file-filter-node.active .file-filter-check,
+    .file-filter-node.mixed .file-filter-check {
       border-color: var(--accent);
       background: var(--accent);
     }
 
-    .file-filter-option.active .file-filter-check::after {
+    .file-filter-node.active .file-filter-check::after {
       content: '';
       position: absolute;
       left: 3px;
@@ -675,6 +723,27 @@
       border: solid #fff;
       border-width: 0 2px 2px 0;
       transform: rotate(45deg);
+    }
+
+    .file-filter-node.mixed .file-filter-check::after {
+      content: '';
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      top: 5px;
+      height: 2px;
+      border-radius: 1px;
+      background: #fff;
+    }
+
+    .file-filter-node-icon {
+      width: 16px;
+      height: 16px;
+      color: var(--text-dim);
+    }
+
+    .file-filter-node.folder .file-filter-node-icon {
+      color: var(--accent);
     }
 
     .file-filter-path {
@@ -687,7 +756,7 @@
     }
 
     .file-filter-count {
-      min-width: 34px;
+      min-width: 38px;
       padding: 2px 6px;
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.04);
@@ -695,6 +764,10 @@
       font-family: var(--mono);
       font-size: 11px;
       text-align: center;
+    }
+
+    .file-filter-scope-label.empty {
+      color: var(--danger);
     }
 
     .source-control {
@@ -1573,6 +1646,10 @@
       <path d="M3 7.5V18a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7.5a2 2 0 0 0-2-2h-7l-2-2H5a2 2 0 0 0-2 2Z" />
       <path d="M3 11h18" />
     </symbol>
+    <symbol id="icon-file" viewBox="0 0 24 24">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 2v6h6" />
+    </symbol>
     <symbol id="icon-search" viewBox="0 0 24 24">
       <circle cx="11" cy="11" r="7" />
       <path d="m20 20-3.5-3.5" />
@@ -1941,21 +2018,21 @@
       </div>
       <div class="file-filter-status" id="fileFilterStatus"> </div>
       <div class="file-filter-scope">
-        <span class="file-filter-scope-label" id="fileFilterScopeLabel">フィルタなし</span>
+        <span class="file-filter-scope-label" id="fileFilterScopeLabel">すべてのファイル</span>
         <button class="btn btn-ghost file-filter-clear" id="fileFilterClearBtn" onclick="clearFileFilterDraft()"
           disabled>
           <svg class="icon icon-sm" aria-hidden="true">
-            <use href="#icon-x"></use>
+            <use href="#icon-check-square"></use>
           </svg>
-          <span>クリア</span>
+          <span>すべて選択</span>
         </button>
       </div>
-      <div class="file-filter-list" id="fileFilterList" role="listbox" aria-label="ファイルフィルタ"
+      <div class="file-filter-list" id="fileFilterList" role="tree" aria-label="変更ファイル"
         aria-multiselectable="true"></div>
     </div>
     <div class="source-modal-actions">
       <button class="btn btn-ghost" onclick="closeFileFilterModal()">閉じる</button>
-      <button class="btn btn-primary" onclick="applyFileFilter()">適用</button>
+      <button class="btn btn-primary" id="fileFilterApplyBtn" onclick="applyFileFilter()">適用</button>
     </div>
   </div>
 
@@ -2118,6 +2195,7 @@
       inlineAddedMuteUpdating: false,
     };
     let draftFileFilter = [];
+    let fileFilterExpandedPaths = new Set();
 
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -3171,16 +3249,197 @@
       }
     }
 
+    function buildFileFilterTree(items) {
+      const root = {
+        type: 'folder',
+        name: '',
+        path: '',
+        children: new Map(),
+        filepaths: [],
+        fileCount: 0,
+        hunkCount: 0,
+      };
+
+      items.forEach(item => {
+        const filepath = String(item.filepath || '').replaceAll('\\', '/');
+        const parts = filepath.split('/').filter(Boolean);
+        if (!parts.length) return;
+
+        let parent = root;
+        parts.forEach((part, index) => {
+          const isFile = index === parts.length - 1;
+          const path = parts.slice(0, index + 1).join('/');
+          if (!parent.children.has(part)) {
+            parent.children.set(part, isFile
+              ? {
+                  type: 'file',
+                  name: part,
+                  path,
+                  filepath,
+                  count: item.count,
+                  filepaths: [filepath],
+                  fileCount: 1,
+                  hunkCount: item.count,
+                }
+              : {
+                  type: 'folder',
+                  name: part,
+                  path,
+                  children: new Map(),
+                  filepaths: [],
+                  fileCount: 0,
+                  hunkCount: 0,
+                });
+          }
+          parent = parent.children.get(part);
+        });
+      });
+
+      function finalize(node) {
+        if (node.type === 'file') return node;
+        node.children = [...node.children.values()]
+          .map(finalize)
+          .sort((a, b) => {
+            if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+            return a.name.localeCompare(b.name);
+          });
+        node.filepaths = node.children.flatMap(child => child.filepaths);
+        node.fileCount = node.filepaths.length;
+        node.hunkCount = node.children.reduce((total, child) => total + child.hunkCount, 0);
+        return node;
+      }
+
+      return finalize(root);
+    }
+
+    function compressedFileFilterFolder(node) {
+      const names = [node.name];
+      let target = node;
+      while (
+        target.type === 'folder'
+        && target.children.length === 1
+        && target.children[0].type === 'folder'
+      ) {
+        target = target.children[0];
+        names.push(target.name);
+      }
+      return { target, label: names.join('/') };
+    }
+
+    function fileFilterNodeMatches(node, query) {
+      if (!query) return true;
+      if (node.type === 'file') return node.filepath.toLowerCase().includes(query);
+      return node.children.some(child => fileFilterNodeMatches(child, query));
+    }
+
+    function initializeFileFilterExpansion(tree) {
+      fileFilterExpandedPaths = new Set();
+      tree.children
+        .filter(node => node.type === 'folder')
+        .forEach(node => {
+          fileFilterExpandedPaths.add(compressedFileFilterFolder(node).target.path);
+        });
+    }
+
+    function fileFilterSelectionState(filepaths, selectedSet) {
+      const selectedCount = filepaths.reduce(
+        (total, filepath) => total + (selectedSet.has(filepath) ? 1 : 0),
+        0
+      );
+      if (selectedCount === 0) return 'none';
+      if (selectedCount === filepaths.length) return 'all';
+      return 'mixed';
+    }
+
+    function createFileFilterTreeRow(node, label, depth, selectedSet, expanded = false) {
+      const row = document.createElement('div');
+      row.className = 'file-filter-tree-row';
+      row.style.setProperty('--tree-depth', String(depth));
+
+      if (node.type === 'folder') {
+        const disclosure = document.createElement('button');
+        disclosure.type = 'button';
+        disclosure.className = `file-filter-disclosure${expanded ? ' expanded' : ''}`;
+        disclosure.title = expanded ? '折りたたむ' : '展開する';
+        disclosure.setAttribute('aria-label', `${label}を${expanded ? '折りたたむ' : '展開する'}`);
+        disclosure.innerHTML = iconHtml('chevron-right', 'icon');
+        disclosure.addEventListener('click', () => {
+          if (fileFilterExpandedPaths.has(node.path)) fileFilterExpandedPaths.delete(node.path);
+          else fileFilterExpandedPaths.add(node.path);
+          renderFileFilterList();
+        });
+        row.appendChild(disclosure);
+      } else {
+        const placeholder = document.createElement('span');
+        placeholder.className = 'file-filter-disclosure-placeholder';
+        row.appendChild(placeholder);
+      }
+
+      const selection = fileFilterSelectionState(node.filepaths, selectedSet);
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = `file-filter-node ${node.type}`;
+      option.classList.toggle('active', selection === 'all');
+      option.classList.toggle('mixed', selection === 'mixed');
+      option.setAttribute('role', 'treeitem');
+      option.setAttribute('aria-checked', selection === 'mixed' ? 'mixed' : String(selection === 'all'));
+      if (node.type === 'folder') option.setAttribute('aria-expanded', String(expanded));
+      option.title = node.type === 'folder'
+        ? `${node.path} (${node.fileCount}ファイル / ${node.hunkCount} hunks)`
+        : node.filepath;
+      option.addEventListener('click', () => toggleDraftFileFilterValues(node.filepaths));
+
+      const check = document.createElement('span');
+      check.className = 'file-filter-check';
+
+      const nodeIcon = document.createElement('span');
+      nodeIcon.innerHTML = iconHtml(node.type === 'folder' ? 'folder-open' : 'file', 'icon file-filter-node-icon');
+
+      const path = document.createElement('span');
+      path.className = 'file-filter-path';
+      path.textContent = label;
+
+      const badge = document.createElement('span');
+      badge.className = 'file-filter-count';
+      badge.textContent = node.type === 'folder'
+        ? `${node.fileCount}F · ${node.hunkCount}H`
+        : `${node.hunkCount}H`;
+
+      option.append(check, nodeIcon, path, badge);
+      row.appendChild(option);
+      return row;
+    }
+
+    function renderFileFilterTreeNode(list, node, depth, query, selectedSet) {
+      if (!fileFilterNodeMatches(node, query)) return;
+
+      if (node.type === 'file') {
+        list.appendChild(createFileFilterTreeRow(node, node.name, depth, selectedSet));
+        return;
+      }
+
+      const compressed = compressedFileFilterFolder(node);
+      const target = compressed.target;
+      const expanded = Boolean(query) || fileFilterExpandedPaths.has(target.path);
+      list.appendChild(createFileFilterTreeRow(target, compressed.label, depth, selectedSet, expanded));
+      if (!expanded) return;
+      target.children.forEach(child => {
+        renderFileFilterTreeNode(list, child, depth + 1, query, selectedSet);
+      });
+    }
+
     function renderFileFilterList() {
       const list = document.getElementById('fileFilterList');
       const status = document.getElementById('fileFilterStatus');
       const scopeLabel = document.getElementById('fileFilterScopeLabel');
       const clearBtn = document.getElementById('fileFilterClearBtn');
+      const applyBtn = document.getElementById('fileFilterApplyBtn');
       if (!list || !status) return;
 
       const query = (document.getElementById('fileFilterSearch')?.value || '').trim().toLowerCase();
       const items = getFileFilterItems();
       const draftFilters = getDraftFileFilters();
+      const selectedSet = new Set(draftFilters);
       const filtered = query
         ? items.filter(item => item.filepath.toLowerCase().includes(query))
         : items;
@@ -3192,17 +3451,23 @@
         : `${items.length} ファイル`;
       status.textContent = totalCount ? `${statusText} / ${totalCount} hunks` : '解析後にファイルを選択できます';
       if (scopeLabel) {
-        scopeLabel.textContent = draftFilters.length > 0
-          ? `${draftFilters.length} ファイル選択中`
-          : 'フィルタなし';
-        scopeLabel.title = draftFilters.length > 0 ? draftFilters.join('\n') : 'フィルタなし';
+        const allSelected = items.length > 0 && draftFilters.length === items.length;
+        scopeLabel.textContent = allSelected
+          ? 'すべてのファイル'
+          : (draftFilters.length > 0
+              ? `${draftFilters.length} / ${items.length} ファイルを表示`
+              : 'ファイル未選択');
+        scopeLabel.title = draftFilters.length > 0 ? draftFilters.join('\n') : 'ファイル未選択';
+        scopeLabel.classList.toggle('empty', items.length > 0 && draftFilters.length === 0);
       }
       if (clearBtn) {
-        clearBtn.disabled = draftFilters.length === 0;
+        clearBtn.disabled = items.length === 0 || draftFilters.length === items.length;
       }
+      if (applyBtn) applyBtn.disabled = items.length > 0 && draftFilters.length === 0;
 
-      filtered.forEach(item => {
-        list.appendChild(createFileFilterOption(item.filepath, item.filepath, item.count));
+      const tree = buildFileFilterTree(items);
+      tree.children.forEach(node => {
+        renderFileFilterTreeNode(list, node, 0, query, selectedSet);
       });
 
       if (items.length === 0) {
@@ -3220,46 +3485,27 @@
       }
     }
 
-    function createFileFilterOption(value, label, count) {
-      const option = document.createElement('button');
-      option.type = 'button';
-      option.className = 'file-filter-option';
-      option.setAttribute('role', 'option');
-      const draftFilters = getDraftFileFilters();
-      const active = draftFilters.includes(value);
-      option.setAttribute('aria-selected', String(active));
-      if (active) option.classList.add('active');
-      option.addEventListener('click', () => toggleDraftFileFilter(value));
-
-      const check = document.createElement('span');
-      check.className = 'file-filter-check';
-
-      const path = document.createElement('span');
-      path.className = 'file-filter-path';
-      path.textContent = label;
-      path.title = value || label;
-
-      const badge = document.createElement('span');
-      badge.className = 'file-filter-count';
-      badge.textContent = `${count}`;
-
-      option.append(check, path, badge);
-      return option;
-    }
-
-    function toggleDraftFileFilter(value) {
-      const next = getDraftFileFilters();
-      const index = next.indexOf(value);
-      if (index >= 0) next.splice(index, 1);
-      else next.push(value);
-      draftFileFilter = next;
+    function toggleDraftFileFilterValues(values) {
+      const next = new Set(getDraftFileFilters());
+      const normalizedValues = normalizeFileFilter(values);
+      const allSelected = normalizedValues.every(value => next.has(value));
+      normalizedValues.forEach(value => {
+        if (allSelected) next.delete(value);
+        else next.add(value);
+      });
+      draftFileFilter = [...next];
       renderFileFilterList();
     }
 
     function openFileFilterModal() {
-      draftFileFilter = getAppliedFileFilters();
+      const items = getFileFilterItems();
+      const appliedFilters = getAppliedFileFilters();
+      draftFileFilter = appliedFilters.length > 0
+        ? appliedFilters
+        : items.map(item => item.filepath);
       const search = document.getElementById('fileFilterSearch');
       if (search) search.value = '';
+      initializeFileFilterExpansion(buildFileFilterTree(items));
       renderFileFilterList();
       document.getElementById('fileFilterModal').classList.add('open');
       document.getElementById('fileFilterOverlay').classList.add('open');
@@ -3272,9 +3518,7 @@
     }
 
     function clearFileFilterDraft() {
-      draftFileFilter = [];
-      const search = document.getElementById('fileFilterSearch');
-      if (search) search.value = '';
+      draftFileFilter = getFileFilterItems().map(item => item.filepath);
       renderFileFilterList();
     }
 
@@ -3289,7 +3533,13 @@
     }
 
     function applyFileFilter() {
-      state.fileFilter = getDraftFileFilters();
+      const items = getFileFilterItems();
+      const draftFilters = getDraftFileFilters();
+      if (items.length > 0 && draftFilters.length === 0) {
+        showToast('表示するファイルを1件以上選択してください', '');
+        return;
+      }
+      state.fileFilter = draftFilters.length === items.length ? [] : draftFilters;
       cacheFileFilterForRepo(state.repoPath || document.getElementById('repoPath').value.trim(), state.fileFilter);
       closeFileFilterModal();
       computeVisibleIndices();

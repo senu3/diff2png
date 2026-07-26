@@ -916,9 +916,33 @@
 
     .source-selection-summary {
       display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 44px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .source-selection-copy {
+      min-width: 0;
+      display: grid;
       gap: 3px;
-      padding-top: 10px;
-      border-top: 1px solid var(--border);
+    }
+
+    .source-selection-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .source-selection-action {
+      height: 28px;
+      padding: 0 8px;
+      font-size: 11px;
+      flex: 0 0 auto;
     }
 
     .source-selection-range {
@@ -1610,6 +1634,16 @@
       }
     }
 
+    @media (max-width: 560px) {
+      .source-selection-summary {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .source-selection-actions {
+        justify-content: flex-end;
+      }
+    }
+
     @media (prefers-reduced-motion: reduce) {
 
       *,
@@ -1988,14 +2022,32 @@
         </div>
 
         <div class="source-selection-summary">
-          <div class="source-selection-range" id="sourceSelectionRange">HEAD → 作業ツリー</div>
-          <div class="source-selection-detail" id="sourceSelectionDetail">ステージ済み + 未ステージ</div>
+          <div class="source-selection-copy">
+            <div class="source-selection-range" id="sourceSelectionRange">HEAD → 作業ツリー</div>
+            <div class="source-selection-detail" id="sourceSelectionDetail">ステージ済み + 未ステージ</div>
+          </div>
+          <div class="source-selection-actions">
+            <button class="btn btn-ghost source-selection-action" id="sourceSelectAllBtn" onclick="setAllSourceSelection(true)"
+              title="すべて選択" aria-label="すべて選択">
+              <svg class="icon icon-sm" aria-hidden="true">
+                <use href="#icon-check-square"></use>
+              </svg>
+              <span>すべて選択</span>
+            </button>
+            <button class="btn btn-ghost source-selection-action" id="sourceClearAllBtn" onclick="setAllSourceSelection(false)"
+              title="すべて解除" aria-label="すべて解除">
+              <svg class="icon icon-sm" aria-hidden="true">
+                <use href="#icon-square"></use>
+              </svg>
+              <span>すべて解除</span>
+            </button>
+          </div>
         </div>
       </div>
       <div class="source-commit-status" id="sourceCommitStatus"> </div>
     </div>
     <div class="source-modal-actions">
-      <button class="btn btn-primary" onclick="analyzeFromSourceModal()">選択範囲を解析</button>
+      <button class="btn btn-primary" id="sourceAnalyzeBtn" onclick="analyzeFromSourceModal()">選択範囲を解析</button>
       <button class="btn btn-ghost" onclick="closeSourceModal()">閉じる</button>
     </div>
   </div>
@@ -2188,6 +2240,7 @@
       fileFilter: [],
       commitItems: [],
       selectedSourceKeys: new Set(['unstaged', 'staged']),
+      sourceCommitsLoading: false,
       selectionMode: 'custom',
       rangeAdjusting: false,
       inlineDiffUpdating: false,
@@ -2492,6 +2545,28 @@
       updateSourceSummary();
     }
 
+    function setAllSourceSelection(selected) {
+      const items = getAllSourceItems();
+      state.selectedSourceKeys = new Set(selected ? items.map(item => item.key) : []);
+      renderSourcePicker();
+      updateSourceSummary();
+    }
+
+    function updateSourceSelectionActions() {
+      const totalCount = getAllSourceItems().length;
+      const selectedCount = getSelectedSourceKeys().length;
+      const selectAllBtn = document.getElementById('sourceSelectAllBtn');
+      const clearAllBtn = document.getElementById('sourceClearAllBtn');
+      const analyzeBtn = document.getElementById('sourceAnalyzeBtn');
+      if (selectAllBtn) {
+        selectAllBtn.disabled = state.sourceCommitsLoading
+          || totalCount === 0
+          || selectedCount === totalCount;
+      }
+      if (clearAllBtn) clearAllBtn.disabled = selectedCount === 0;
+      if (analyzeBtn) analyzeBtn.disabled = selectedCount === 0;
+    }
+
     function toggleSourceSelection(key, checked) {
       const items = getAllSourceItems();
       const index = items.findIndex(item => item.key === key);
@@ -2513,8 +2588,8 @@
       }
 
       if (low === high) {
+        state.selectedSourceKeys = new Set();
         renderSourcePicker();
-        showToast('差分ソースを1件以上選択してください', '');
         return;
       }
       if (index === low) {
@@ -2593,6 +2668,11 @@
       const summaryEl = document.getElementById('sourceSummary');
       if (!selected.length) {
         summaryEl.textContent = '取得元: 未選択';
+        const rangeEl = document.getElementById('sourceSelectionRange');
+        const detailEl = document.getElementById('sourceSelectionDetail');
+        if (rangeEl) rangeEl.textContent = '差分ソースを選択してください';
+        if (detailEl) detailEl.textContent = '0件選択';
+        updateSourceSelectionActions();
         return;
       }
 
@@ -2621,6 +2701,7 @@
       const detailEl = document.getElementById('sourceSelectionDetail');
       if (rangeEl) rangeEl.textContent = rangeText;
       if (detailEl) detailEl.textContent = detailText;
+      updateSourceSelectionActions();
     }
 
     function onSourceDiffModeChange() {
@@ -2686,6 +2767,10 @@
     }
 
     async function analyzeFromSourceModal() {
+      if (getSelectedSourceKeys().length === 0) {
+        showToast('差分ソースを1件以上選択してください', '');
+        return;
+      }
       closeSourceModal();
       await onAnalyzeButtonClick();
     }
@@ -2818,6 +2903,7 @@
         });
       }
       updateSourceSummary();
+      updateSourceSelectionActions();
     }
 
     async function loadCommits(showErrorToast = true) {
@@ -2827,6 +2913,8 @@
         return false;
       }
 
+      state.sourceCommitsLoading = true;
+      updateSourceSelectionActions();
       setSourceCommitStatus('コミットを読み込み中...');
       try {
         const res = await fetch('/api/commits', {
@@ -2838,6 +2926,8 @@
         if (!res.ok) {
           if (showErrorToast) showToast(data.error || 'コミットの読み込みに失敗しました', 'error');
           setSourceCommitStatus('コミットの読み込みに失敗しました');
+          state.sourceCommitsLoading = false;
+          updateSourceSelectionActions();
           return false;
         }
         const items = data.commits || [];
@@ -2845,13 +2935,20 @@
         state.commitItems = Array.isArray(items) ? items : [];
         const availableKeys = new Set(getAllSourceItems().map(item => item.key));
         const retainedKeys = [...previousSelection].filter(key => availableKeys.has(key));
-        state.selectedSourceKeys = new Set(retainedKeys.length ? retainedKeys : ['unstaged', 'staged']);
+        state.selectedSourceKeys = new Set(
+          previousSelection.size === 0
+            ? []
+            : (retainedKeys.length ? retainedKeys : ['unstaged', 'staged'])
+        );
+        state.sourceCommitsLoading = false;
         renderSourcePicker();
         setSourceCommitStatus(`${items.length} 件のコミットを読み込みました`);
         return true;
       } catch (e) {
         if (showErrorToast) showToast('コミットの読み込みに失敗しました: ' + e.message, 'error');
         setSourceCommitStatus('コミットの読み込みに失敗しました');
+        state.sourceCommitsLoading = false;
+        updateSourceSelectionActions();
         return false;
       }
     }
@@ -2924,7 +3021,14 @@
       const modeApplied = await ensureDiffMode();
       if (!modeApplied) return;
 
-      if (getSelectedSourceKeys().some(key => key.startsWith('commit:'))) {
+      const selectedSourceKeys = getSelectedSourceKeys();
+      if (selectedSourceKeys.length === 0) {
+        showToast('差分ソースを1件以上選択してください', '');
+        await openSourceModal();
+        return;
+      }
+
+      if (selectedSourceKeys.some(key => key.startsWith('commit:'))) {
         const loaded = await loadCommits(true);
         if (!loaded) {
           showToast('コミットを選択できませんでした', 'error');
@@ -2941,6 +3045,14 @@
       const preserveSelection = Boolean(options.preserveSelection);
       const repoPath = document.getElementById('repoPath').value.trim();
       if (!repoPath) { showToast('リポジトリパスを入力してください', 'error'); return; }
+      const src = getDiffSourceValues();
+      if (src.sourceKeys.length === 0) {
+        showToast('差分ソースを1件以上選択してください', '');
+        if (!document.getElementById('sourceModal').classList.contains('open')) {
+          await openSourceModal();
+        }
+        return;
+      }
 
       const prevActiveHunk = preserveActive && state.activeIndex >= 0
         ? state.hunks[state.activeIndex]
@@ -2954,7 +3066,6 @@
       document.getElementById('analyzeBtn').disabled = true;
 
       try {
-        const src = getDiffSourceValues();
         const res = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

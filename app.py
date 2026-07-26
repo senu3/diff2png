@@ -60,6 +60,9 @@ INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 DIFF_MODES = {"file", "patch", "deleted"}
 PATCH_LIKE_DIFF_MODES = {"patch", "deleted"}
 SOURCE_MODES = {"worktree", "staged", "commit", "range"}
+SOURCE_KEY_UNSTAGED = "unstaged"
+SOURCE_KEY_STAGED = "staged"
+SOURCE_COMMIT_PREFIX = "commit:"
 BACKGROUND_MODES = {"normal", "no_bg_footer", "transparent_no_footer"}
 INLINE_DIFF_MODES = {"full", "new", "off"}
 INLINE_ADDED_MUTES_LIMIT = 200
@@ -80,7 +83,11 @@ _WINDOWS_RESERVED_NAMES = {
 # git / diff ユーティリティ
 # ================================================================
 
-def run_git(repo_path: str, args: list[str]) -> subprocess.CompletedProcess[str]:
+def run_git(
+    repo_path: str,
+    args: list[str],
+    input_text: str | None = None,
+) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             ["git", *args],
@@ -90,6 +97,7 @@ def run_git(repo_path: str, args: list[str]) -> subprocess.CompletedProcess[str]
             errors="replace",
             cwd=repo_path,
             timeout=GIT_TIMEOUT_SECONDS,
+            input=input_text,
         )
     except subprocess.TimeoutExpired as e:
         raise RuntimeError(f"git コマンドがタイムアウトしました: git {' '.join(args)}") from e
@@ -134,7 +142,15 @@ def get_diff(
 
 
 def list_commits(repo_path: str, limit: int = 80) -> list[dict]:
-    result = run_git(repo_path, ["log", f"-n{max(1, min(limit, 200))}", "--pretty=format:%H\t%h\t%s"])
+    result = run_git(
+        repo_path,
+        [
+            "log",
+            "--first-parent",
+            f"-n{max(1, min(limit, 200))}",
+            "--pretty=format:%H\t%h\t%s",
+        ],
+    )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip())
 
@@ -150,6 +166,156 @@ def list_commits(repo_path: str, limit: int = 80) -> list[dict]:
             "subject": subject,
         })
     return commits
+
+
+def _source_layers(commits: list[dict]) -> list[dict]:
+    layers = [
+        {
+            "key": SOURCE_KEY_UNSTAGED,
+            "kind": SOURCE_KEY_UNSTAGED,
+            "label": "未ステージ",
+        },
+        {
+            "key": SOURCE_KEY_STAGED,
+            "kind": SOURCE_KEY_STAGED,
+            "label": "ステージ済み",
+        },
+    ]
+    for commit in commits:
+        commit_hash = str(commit.get("hash", "")).strip()
+        if not commit_hash:
+            continue
+        layers.append({
+            "key": f"{SOURCE_COMMIT_PREFIX}{commit_hash}",
+            "kind": "commit",
+            "label": str(commit.get("short", commit_hash[:7])),
+            "hash": commit_hash,
+            "short": str(commit.get("short", commit_hash[:7])),
+            "subject": str(commit.get("subject", "")),
+        })
+    return layers
+
+
+def _commit_parent_or_empty_tree(repo_path: str, commit_hash: str) -> tuple[str, bool]:
+    parent_result = run_git(repo_path, ["rev-parse", "--verify", f"{commit_hash}^"])
+    if parent_result.returncode == 0 and parent_result.stdout.strip():
+        return parent_result.stdout.strip(), False
+
+    empty_tree_result = run_git(repo_path, ["mktree"], input_text="")
+    if empty_tree_result.returncode != 0 or not empty_tree_result.stdout.strip():
+        raise RuntimeError(
+            empty_tree_result.stderr.strip()
+            or "ルートコミットの比較元を解決できませんでした"
+        )
+    return empty_tree_result.stdout.strip(), True
+
+
+def _source_range_summary(selected_layers: list[dict]) -> str:
+    commit_count = sum(1 for layer in selected_layers if layer["kind"] == "commit")
+    parts = []
+    if commit_count:
+        parts.append(f"{commit_count}コミット")
+    if any(layer["kind"] == SOURCE_KEY_STAGED for layer in selected_layers):
+        parts.append("ステージ済み")
+    if any(layer["kind"] == SOURCE_KEY_UNSTAGED for layer in selected_layers):
+        parts.append("未ステージ")
+    return " + ".join(parts)
+
+
+def resolve_source_selection(repo_path: str, raw_keys) -> dict:
+    if not isinstance(raw_keys, list) or not raw_keys:
+        raise ValueError("差分ソースを1件以上選択してください")
+
+    commits = list_commits(repo_path)
+    layers = _source_layers(commits)
+    index_by_key = {layer["key"]: idx for idx, layer in enumerate(layers)}
+
+    requested_keys = []
+    for raw_key in raw_keys:
+        key = str(raw_key or "").strip()
+        if not key or key not in index_by_key:
+            raise ValueError("選択された差分ソースが見つかりません")
+        if key not in requested_keys:
+            requested_keys.append(key)
+
+    requested_indices = [index_by_key[key] for key in requested_keys]
+    newest_index = min(requested_indices)
+    oldest_index = max(requested_indices)
+    selected_layers = layers[newest_index:oldest_index + 1]
+    newest_layer = selected_layers[0]
+    oldest_layer = selected_layers[-1]
+
+    if oldest_layer["kind"] == SOURCE_KEY_UNSTAGED:
+        base_source = {"type": "index"}
+        base_label = "インデックス"
+    elif oldest_layer["kind"] == SOURCE_KEY_STAGED:
+        base_source = {"type": "ref", "ref": "HEAD"}
+        base_label = "HEAD"
+    else:
+        parent_ref, is_root = _commit_parent_or_empty_tree(repo_path, oldest_layer["hash"])
+        base_source = {"type": "ref", "ref": parent_ref}
+        base_label = "空のツリー" if is_root else f"{oldest_layer['short']}^"
+
+    if newest_layer["kind"] == SOURCE_KEY_UNSTAGED:
+        target_source = {"type": "worktree"}
+        target_label = "作業ツリー"
+    elif newest_layer["kind"] == SOURCE_KEY_STAGED:
+        target_source = {"type": "index"}
+        target_label = "インデックス"
+    else:
+        target_source = {"type": "ref", "ref": newest_layer["hash"]}
+        target_label = newest_layer["short"]
+
+    return {
+        "keys": [layer["key"] for layer in selected_layers],
+        "requested_keys": requested_keys,
+        "base_source": base_source,
+        "target_source": target_source,
+        "base_label": base_label,
+        "target_label": target_label,
+        "range_label": f"{base_label} → {target_label}",
+        "summary": _source_range_summary(selected_layers),
+        "commit_count": sum(1 for layer in selected_layers if layer["kind"] == "commit"),
+    }
+
+
+def get_diff_for_source_selection(
+    repo_path: str,
+    selection: dict,
+    context_lines: int | None = None,
+    merge_threshold: int | None = None,
+) -> tuple[str, str]:
+    base_source = selection["base_source"]
+    target_source = selection["target_source"]
+    base_type = base_source["type"]
+    target_type = target_source["type"]
+    args = ["diff"]
+
+    if target_type == "worktree":
+        if base_type == "ref":
+            args.append(str(base_source["ref"]))
+        elif base_type != "index":
+            raise RuntimeError("比較元と作業ツリーの組み合わせが不正です")
+    elif target_type == "index":
+        if base_type != "ref":
+            raise RuntimeError("比較元とインデックスの組み合わせが不正です")
+        args.extend(["--cached", str(base_source["ref"])])
+    elif target_type == "ref":
+        if base_type != "ref":
+            raise RuntimeError("コミット間の比較元が不正です")
+        args.extend([str(base_source["ref"]), str(target_source["ref"])])
+    else:
+        raise RuntimeError("比較先が不正です")
+
+    if context_lines is not None:
+        args.append(f"-U{max(0, int(context_lines))}")
+    if merge_threshold is not None:
+        args.append(f"--inter-hunk-context={max(0, int(merge_threshold))}")
+
+    result = run_git(repo_path, args)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip())
+    return result.stdout, f"git {' '.join(args)}"
 
 
 def is_git_repo(repo_path: str) -> bool:
@@ -338,12 +504,31 @@ def hunk_at(session: dict, hunk_index: int) -> dict:
     return hunks[hunk_index]
 
 
-def hunks_payload(analysis_id: str, hunks: list[dict]) -> dict:
-    return {
+def hunks_payload(
+    analysis_id: str,
+    hunks: list[dict],
+    source_selection: dict | None = None,
+) -> dict:
+    payload = {
         "analysis_id": analysis_id,
         "hunks": [make_hunk_summary(h) for h in hunks],
         "total": len(hunks),
     }
+    if isinstance(source_selection, dict):
+        payload["source_selection"] = {
+            key: deepcopy(source_selection[key])
+            for key in (
+                "keys",
+                "requested_keys",
+                "base_label",
+                "target_label",
+                "range_label",
+                "summary",
+                "commit_count",
+            )
+            if key in source_selection
+        }
+    return payload
 
 
 def diff_command_label(source_mode: str, base_ref: str, target_ref: str) -> str:
@@ -554,6 +739,7 @@ def create_analysis_session(
     hunks: list[dict],
     content_source: dict,
     config: dict,
+    source_selection: dict | None = None,
 ) -> str:
     analysis_id = uuid4().hex
     ANALYSIS_SESSIONS[analysis_id] = {
@@ -563,6 +749,7 @@ def create_analysis_session(
         "content_source": content_source,
         "config": deepcopy(config),
         "diff_mode": config.get("diff_mode", DIFF_MODE),
+        "source_selection": deepcopy(source_selection),
     }
     while len(ANALYSIS_SESSIONS) > MAX_ANALYSIS_SESSIONS:
         oldest = next(iter(ANALYSIS_SESSIONS))
@@ -897,8 +1084,9 @@ def analyze():
     source_mode = str(data.get("source_mode", "worktree")).strip().lower() or "worktree"
     base_ref = str(data.get("base_ref", "")).strip()
     target_ref = str(data.get("target_ref", "")).strip()
+    source_keys = data.get("source_keys")
 
-    if source_mode not in SOURCE_MODES:
+    if source_keys is None and source_mode not in SOURCE_MODES:
         return error_response("不正なです")
 
     if not repo_path:
@@ -912,14 +1100,50 @@ def analyze():
     try:
         clear_repo_file_cache(str(repo))
         config_snapshot = current_config_snapshot()
-        content_source = content_source_for_diff(source_mode, target_ref)
-        diff_cmd_label = diff_command_label(source_mode, base_ref, target_ref)
-        diff_text = get_analysis_diff_text(str(repo), source_mode, base_ref, target_ref, config_snapshot)
-    except RuntimeError as e:
+        source_selection = None
+        if source_keys is not None:
+            source_selection = resolve_source_selection(str(repo), source_keys)
+            content_source = source_selection["target_source"]
+            context_lines = (
+                int(config_snapshot.get("context_lines", CONTEXT_LINES))
+                if config_snapshot.get("diff_mode") in PATCH_LIKE_DIFF_MODES
+                else 0
+            )
+            merge_threshold = (
+                int(config_snapshot.get("merge_threshold", MERGE_THRESHOLD))
+                if config_snapshot.get("diff_mode") in PATCH_LIKE_DIFF_MODES
+                else None
+            )
+            diff_text, diff_cmd_label = get_diff_for_source_selection(
+                str(repo),
+                source_selection,
+                context_lines=context_lines,
+                merge_threshold=merge_threshold,
+            )
+        else:
+            content_source = content_source_for_diff(source_mode, target_ref)
+            diff_cmd_label = diff_command_label(source_mode, base_ref, target_ref)
+            diff_text = get_analysis_diff_text(str(repo), source_mode, base_ref, target_ref, config_snapshot)
+    except (RuntimeError, ValueError) as e:
         return error_response(str(e))
 
     if not diff_text.strip():
-        return jsonify({"hunks": [], "message": "差分がありません"})
+        payload = {"hunks": [], "message": "差分がありません"}
+        if isinstance(source_selection, dict):
+            payload["source_selection"] = {
+                key: deepcopy(source_selection[key])
+                for key in (
+                    "keys",
+                    "requested_keys",
+                    "base_label",
+                    "target_label",
+                    "range_label",
+                    "summary",
+                    "commit_count",
+                )
+                if key in source_selection
+            }
+        return jsonify(payload)
 
     raw_hunks = parse_hunks(diff_text)
     # 各hunkに差分コマンド表記を付与
@@ -928,8 +1152,15 @@ def analyze():
 
     hunks = finalize_hunks(raw_hunks, str(repo), content_source, config_snapshot)
 
-    analysis_id = create_analysis_session(str(repo), raw_hunks, hunks, content_source, config_snapshot)
-    return jsonify(hunks_payload(analysis_id, hunks))
+    analysis_id = create_analysis_session(
+        str(repo),
+        raw_hunks,
+        hunks,
+        content_source,
+        config_snapshot,
+        source_selection,
+    )
+    return jsonify(hunks_payload(analysis_id, hunks, source_selection))
 
 
 @app.route("/api/reconfigure-analysis", methods=["POST"])
@@ -965,7 +1196,11 @@ def reconfigure_analysis():
 
         session["config"] = deepcopy(config_snapshot)
         session["diff_mode"] = config_snapshot.get("diff_mode", DIFF_MODE)
-        return jsonify(hunks_payload(analysis_id, session["hunks"]))
+        return jsonify(hunks_payload(
+            analysis_id,
+            session["hunks"],
+            session.get("source_selection"),
+        ))
 
     context_changed = (
         int(previous_config.get("context_lines", CONTEXT_LINES))
@@ -980,13 +1215,21 @@ def reconfigure_analysis():
     if not context_changed and not inline_default_changed:
         session["config"] = deepcopy(config_snapshot)
         session["diff_mode"] = config_snapshot.get("diff_mode", DIFF_MODE)
-        return jsonify(hunks_payload(analysis_id, session["hunks"]))
+        return jsonify(hunks_payload(
+            analysis_id,
+            session["hunks"],
+            session.get("source_selection"),
+        ))
 
     hunks = finalize_hunks(raw_hunks, str(repo), session["content_source"], config_snapshot)
     session["hunks"] = hunks
     session["config"] = deepcopy(config_snapshot)
     session["diff_mode"] = config_snapshot.get("diff_mode", DIFF_MODE)
-    return jsonify(hunks_payload(analysis_id, hunks))
+    return jsonify(hunks_payload(
+        analysis_id,
+        hunks,
+        session.get("source_selection"),
+    ))
 
 
 @app.route("/api/hunk-range/<int:hunk_index>", methods=["POST"])

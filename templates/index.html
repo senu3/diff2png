@@ -697,20 +697,6 @@
       text-align: center;
     }
 
-    .source-controls {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      grid-auto-rows: max-content;
-      gap: 8px;
-      align-content: start;
-      align-items: start;
-      width: 100%;
-      max-height: 0;
-      opacity: 0;
-      overflow: hidden;
-      transition: max-height 0.24s ease, opacity 0.24s ease;
-    }
-
     .source-control {
       display: grid;
       grid-template-columns: 1fr;
@@ -726,15 +712,6 @@
       text-transform: uppercase;
     }
 
-    .source-control.single {
-      grid-column: 1 / -1;
-    }
-
-    .source-controls.open {
-      max-height: 620px;
-      opacity: 1;
-    }
-
     .source-controls-row {
       display: flex;
       gap: 8px;
@@ -744,120 +721,66 @@
       display: none;
     }
 
-    .source-segmented {
-      display: flex;
-      flex-wrap: nowrap;
-      gap: 4px;
-      padding: 4px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--bg);
-      overflow-x: auto;
-      overflow-y: hidden;
-      width: 100%;
-    }
-
-    .source-segmented::-webkit-scrollbar {
-      height: 4px;
-    }
-
-    .source-segmented::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .source-segmented::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 2px;
-    }
-
-    .source-segment {
-      min-width: 112px;
-      flex: 1 0 112px;
-      height: 32px;
-      padding: 0 8px;
-      border: 1px solid transparent;
-      border-radius: 6px;
-      background: transparent;
-      color: var(--text-dim);
-      font-family: var(--sans);
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.12s, border-color 0.12s, color 0.12s;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .source-segment:hover {
-      color: var(--text);
-      background: rgba(255, 255, 255, 0.035);
-    }
-
-    .source-segment.active {
-      color: var(--text);
-      background: var(--surface2);
-      border-color: var(--accent-dim);
-    }
-
-    .source-segment:focus-visible {
-      outline: 2px solid var(--accent);
-      outline-offset: 2px;
-    }
-
-    .source-commit-tools,
-    .source-commit-grid {
-      grid-column: 1 / -1;
-    }
-
-    .source-commit-grid {
+    .source-picker {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: 10px;
+      gap: 14px;
       align-items: start;
       width: 100%;
     }
 
-    .source-commit-grid.single {
-      grid-template-columns: 1fr;
-    }
-
-    .source-commit-panel {
-      min-width: 0;
+    .source-section {
       display: grid;
       grid-auto-rows: max-content;
       gap: 6px;
       align-content: start;
+      min-width: 0;
     }
 
-    .source-commit-list {
+    .source-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .source-section-count {
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    .source-list {
       display: grid;
       grid-auto-rows: max-content;
       gap: 4px;
-      max-height: 230px;
+      min-width: 0;
+    }
+
+    .source-history-list {
+      max-height: clamp(120px, calc(100vh - 480px), 310px);
       overflow-y: auto;
       padding-right: 2px;
     }
 
-    .source-commit-list::-webkit-scrollbar {
+    .source-history-list::-webkit-scrollbar {
       width: 4px;
     }
 
-    .source-commit-list::-webkit-scrollbar-track {
+    .source-history-list::-webkit-scrollbar-track {
       background: transparent;
     }
 
-    .source-commit-list::-webkit-scrollbar-thumb {
+    .source-history-list::-webkit-scrollbar-thumb {
       background: var(--border);
       border-radius: 2px;
     }
 
-    .source-commit-option {
+    .source-option {
       min-width: 0;
       display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-columns: 16px auto minmax(0, 1fr);
       gap: 8px;
-      align-items: baseline;
+      align-items: center;
       padding: 8px 9px;
       border: 1px solid transparent;
       border-radius: 6px;
@@ -868,33 +791,72 @@
       transition: background 0.12s, border-color 0.12s;
     }
 
-    .source-commit-option:hover {
+    .source-option:hover {
       background: var(--surface2);
     }
 
-    .source-commit-option.active {
+    .source-option.active {
       background: var(--surface2);
       border-color: var(--accent-dim);
     }
 
-    .source-commit-option:focus-visible {
+    .source-option:focus-within {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
 
-    .source-commit-sha {
+    .source-option input {
+      width: 14px;
+      height: 14px;
+      margin: 0;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .source-option-key {
       color: var(--accent);
       font-family: var(--mono);
       font-size: 11px;
     }
 
-    .source-commit-subject {
+    .source-option-copy {
       min-width: 0;
-      color: var(--text);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .source-option-title {
       font-size: 12px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .source-option-detail {
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    .source-selection-summary {
+      display: grid;
+      gap: 3px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .source-selection-range {
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    .source-selection-detail {
+      color: var(--text-dim);
+      font-size: 11px;
     }
 
     .source-commit-status {
@@ -1927,55 +1889,36 @@
       </button>
     </div>
     <div class="source-modal-body">
-      <div class="source-control single">
-        <div class="source-control-label">取得元</div>
-        <select class="source-native-select" id="diffSourceMode" onchange="onDiffSourceModeChange()">
-          <option value="worktree">作業ツリー</option>
-          <option value="staged">ステージ済み</option>
-          <option value="commit">1コミット</option>
-          <option value="range">2点比較</option>
-        </select>
-        <div class="source-segmented" role="tablist" aria-label="取得元">
-          <button type="button" class="source-segment" data-source-mode="worktree" onclick="setSourceMode('worktree')"
-            role="tab">作業ツリー</button>
-          <button type="button" class="source-segment" data-source-mode="staged" onclick="setSourceMode('staged')"
-            role="tab">ステージ済み</button>
-          <button type="button" class="source-segment" data-source-mode="commit" onclick="setSourceMode('commit')"
-            role="tab">1コミット</button>
-          <button type="button" class="source-segment" data-source-mode="range" onclick="setSourceMode('range')"
-            role="tab">2点比較</button>
+      <div class="source-picker">
+        <div class="source-section">
+          <div class="source-section-head">
+            <div class="source-control-label">現在の変更</div>
+          </div>
+          <div class="source-list" id="sourceCurrentList" role="group" aria-label="現在の変更"></div>
         </div>
-      </div>
-      <div class="source-controls" id="sourceControls">
-        <div class="source-commit-tools hidden" id="sourceCommitTools">
-          <div class="source-control single">
+
+        <div class="source-section">
+          <div class="source-section-head">
+            <div class="source-control-label">コミット履歴</div>
+            <span class="source-section-count" id="sourceHistoryCount"></span>
+          </div>
+          <div class="source-control">
             <div class="source-control-label">コミットを検索</div>
-            <input type="text" id="sourceCommitSearch" placeholder="hash またはメッセージ" oninput="renderCommitPickers()">
+            <input type="text" id="sourceCommitSearch" placeholder="hash またはメッセージ" oninput="renderSourcePicker()">
           </div>
+          <div class="source-list source-history-list" id="sourceHistoryList" role="group"
+            aria-label="コミット履歴"></div>
         </div>
-        <select class="source-native-select" id="sourceTarget" onchange="updateSourceSummary()"></select>
-        <select class="source-native-select" id="sourceBase" onchange="updateSourceSummary()"></select>
-        <select class="source-native-select" id="sourceTargetRange" onchange="syncRangeTarget()"></select>
-        <div class="source-commit-grid hidden" id="sourceCommitGrid">
-          <div class="source-commit-panel hidden" id="sourceTargetPanel">
-            <div class="source-control-label">変更を見るコミット</div>
-            <div class="source-commit-list" id="sourceTargetList" role="listbox" aria-label="変更を見るコミット"></div>
-          </div>
-          <div class="source-commit-panel hidden" id="sourceBasePanel">
-            <div class="source-control-label">比較元</div>
-            <div class="source-commit-list" id="sourceBaseList" role="listbox" aria-label="比較元"></div>
-          </div>
-          <div class="source-commit-panel hidden" id="sourceTargetRangePanel">
-            <div class="source-control-label">比較先</div>
-            <div class="source-commit-list" id="sourceTargetRangeList" role="listbox" aria-label="比較先"></div>
-          </div>
+
+        <div class="source-selection-summary">
+          <div class="source-selection-range" id="sourceSelectionRange">HEAD → 作業ツリー</div>
+          <div class="source-selection-detail" id="sourceSelectionDetail">ステージ済み + 未ステージ</div>
         </div>
       </div>
       <div class="source-commit-status" id="sourceCommitStatus"> </div>
-      <div class="source-hint" id="sourceHint">未コミットの作業ツリー差分を取得します。</div>
     </div>
     <div class="source-modal-actions">
-      <button class="btn btn-primary" onclick="analyzeFromSourceModal()">この取得元で解析</button>
+      <button class="btn btn-primary" onclick="analyzeFromSourceModal()">選択範囲を解析</button>
       <button class="btn btn-ghost" onclick="closeSourceModal()">閉じる</button>
     </div>
   </div>
@@ -2167,6 +2110,7 @@
       lastOutputDir: '',
       fileFilter: [],
       commitItems: [],
+      selectedSourceKeys: new Set(['unstaged', 'staged']),
       selectionMode: 'custom',
       rangeAdjusting: false,
       inlineDiffUpdating: false,
@@ -2274,7 +2218,7 @@
       const btn = document.getElementById('sourceDisplayBtn');
       if (!btn) return;
       const currentPath = document.getElementById('repoPath').value.trim();
-      btn.disabled = !state.repoPath || currentPath !== state.repoPath;
+      btn.disabled = !currentPath;
     }
 
     let currentDiffMode = 'file';
@@ -2408,23 +2352,91 @@
       }
     }
 
-    function getSelectedSourceMode() {
-      return document.getElementById('diffSourceMode').value || 'worktree';
+    function sourceKeyForCommit(hash) {
+      return `commit:${String(hash || '').trim()}`;
     }
 
-    function setSourceMode(mode) {
-      document.getElementById('diffSourceMode').value = mode;
-      onDiffSourceModeChange();
+    function getAllSourceItems() {
+      return [
+        {
+          key: 'unstaged',
+          kind: 'unstaged',
+          short: 'WT',
+          title: '未ステージ',
+          detail: 'index → working tree',
+        },
+        {
+          key: 'staged',
+          kind: 'staged',
+          short: 'IDX',
+          title: 'ステージ済み',
+          detail: 'HEAD → index',
+        },
+        ...(state.commitItems || []).map(commit => ({
+          key: sourceKeyForCommit(commit.hash),
+          kind: 'commit',
+          hash: commit.hash,
+          short: commit.short || String(commit.hash || '').slice(0, 7),
+          title: commit.subject || '(no subject)',
+          detail: '',
+        })),
+      ];
     }
 
-    function updateSourceSegmented() {
-      const mode = getSelectedSourceMode();
-      document.querySelectorAll('.source-segment').forEach(btn => {
-        const active = btn.dataset.sourceMode === mode;
-        btn.classList.toggle('active', active);
-        btn.setAttribute('aria-selected', String(active));
-        btn.tabIndex = active ? 0 : -1;
-      });
+    function getSelectedSourceKeys() {
+      return getAllSourceItems()
+        .filter(item => state.selectedSourceKeys.has(item.key))
+        .map(item => item.key);
+    }
+
+    function setSourceSelectionRange(startIndex, endIndex) {
+      const items = getAllSourceItems();
+      if (!items.length) return;
+      const low = Math.max(0, Math.min(startIndex, endIndex));
+      const high = Math.min(items.length - 1, Math.max(startIndex, endIndex));
+      state.selectedSourceKeys = new Set(items.slice(low, high + 1).map(item => item.key));
+      renderSourcePicker();
+      updateSourceSummary();
+    }
+
+    function toggleSourceSelection(key, checked) {
+      const items = getAllSourceItems();
+      const index = items.findIndex(item => item.key === key);
+      if (index < 0) return;
+
+      const selectedIndices = items
+        .map((item, itemIndex) => state.selectedSourceKeys.has(item.key) ? itemIndex : -1)
+        .filter(itemIndex => itemIndex >= 0);
+      if (!selectedIndices.length) {
+        setSourceSelectionRange(index, index);
+        return;
+      }
+
+      let low = Math.min(...selectedIndices);
+      let high = Math.max(...selectedIndices);
+      if (checked) {
+        setSourceSelectionRange(Math.min(low, index), Math.max(high, index));
+        return;
+      }
+
+      if (low === high) {
+        renderSourcePicker();
+        showToast('差分ソースを1件以上選択してください', '');
+        return;
+      }
+      if (index === low) {
+        setSourceSelectionRange(low + 1, high);
+      } else if (index === high) {
+        setSourceSelectionRange(low, high - 1);
+      } else {
+        const newerCount = index - low;
+        const olderCount = high - index;
+        if (newerCount >= olderCount) {
+          setSourceSelectionRange(low, index - 1);
+        } else {
+          setSourceSelectionRange(index + 1, high);
+        }
+      }
     }
 
     function getSelectedDiffMode() {
@@ -2446,13 +2458,8 @@
     }
 
     function getDiffSourceValues() {
-      const mode = getSelectedSourceMode();
       return {
-        sourceMode: mode,
-        baseRef: mode === 'range' ? document.getElementById('sourceBase').value : '',
-        targetRef: mode === 'range'
-          ? document.getElementById('sourceTargetRange').value
-          : document.getElementById('sourceTarget').value,
+        sourceKeys: getSelectedSourceKeys(),
       };
     }
 
@@ -2487,37 +2494,40 @@
       return Object.keys(next).filter(key => prev[key] !== next[key]);
     }
 
-    function getCommitLabel(hash) {
-      const item = (state.commitItems || []).find(c => c.hash === hash);
-      return item ? `${item.short} ${item.subject}` : (hash || '未選択');
-    }
-
     function updateSourceSummary() {
-      const mode = getSelectedSourceMode();
-      const baseEl = document.getElementById('sourceBase');
-      const targetEl = document.getElementById('sourceTarget');
-      const rangeTargetEl = document.getElementById('sourceTargetRange');
+      const items = getAllSourceItems();
+      const selected = items.filter(item => state.selectedSourceKeys.has(item.key));
       const summaryEl = document.getElementById('sourceSummary');
-
-      if (mode === 'worktree') {
-        summaryEl.textContent = '取得元: 作業ツリーの差分';
+      if (!selected.length) {
+        summaryEl.textContent = '取得元: 未選択';
         return;
       }
 
-      if (mode === 'staged') {
-        summaryEl.textContent = '取得元: ステージ済みの差分';
-        return;
-      }
+      const newest = selected[0];
+      const oldest = selected[selected.length - 1];
+      const baseLabel = oldest.kind === 'unstaged'
+        ? 'index'
+        : oldest.kind === 'staged'
+          ? 'HEAD'
+          : `${oldest.short}^`;
+      const targetLabel = newest.kind === 'unstaged'
+        ? 'working tree'
+        : newest.kind === 'staged'
+          ? 'index'
+          : newest.short;
+      const commitCount = selected.filter(item => item.kind === 'commit').length;
+      const detailParts = [];
+      if (commitCount) detailParts.push(`${commitCount}コミット`);
+      if (selected.some(item => item.kind === 'staged')) detailParts.push('ステージ済み');
+      if (selected.some(item => item.kind === 'unstaged')) detailParts.push('未ステージ');
+      const rangeText = `${baseLabel} → ${targetLabel}`;
+      const detailText = detailParts.join(' + ');
 
-      if (mode === 'commit') {
-        const t = getCommitLabel(targetEl.value);
-        summaryEl.textContent = `1コミット: ${t}`;
-        return;
-      }
-
-      const b = getCommitLabel(baseEl.value);
-      const t = getCommitLabel(rangeTargetEl.value);
-      summaryEl.textContent = `2点比較: ${b} -> ${t}`;
+      summaryEl.textContent = `取得元: ${rangeText}`;
+      const rangeEl = document.getElementById('sourceSelectionRange');
+      const detailEl = document.getElementById('sourceSelectionDetail');
+      if (rangeEl) rangeEl.textContent = rangeText;
+      if (detailEl) detailEl.textContent = detailText;
     }
 
     function onSourceDiffModeChange() {
@@ -2563,10 +2573,8 @@
       if (document.getElementById('sourceDisplayBtn')?.disabled) return;
       document.getElementById('sourceModal').classList.add('open');
       document.getElementById('sourceOverlay').classList.add('open');
-      const mode = getSelectedSourceMode();
-      if (mode === 'commit' || mode === 'range') {
-        await loadCommits(false);
-      }
+      renderSourcePicker();
+      await loadCommits(false);
       updateSourceSummary();
     }
 
@@ -2593,54 +2601,8 @@
       document.getElementById('outputOverlay').classList.remove('open');
     }
 
-    function syncRangeTarget() {
-      const rangeTarget = document.getElementById('sourceTargetRange').value;
-      if (rangeTarget) {
-        document.getElementById('sourceTarget').value = rangeTarget;
-      }
-      updateSourceSummary();
-      renderCommitPickers();
-    }
-
     function setSourceCommitStatus(text) {
       document.getElementById('sourceCommitStatus').textContent = text || ' ';
-    }
-
-    function onDiffSourceModeChange() {
-      const mode = getSelectedSourceMode();
-      const controls = document.getElementById('sourceControls');
-      const commitTools = document.getElementById('sourceCommitTools');
-      const commitGrid = document.getElementById('sourceCommitGrid');
-      const targetPanel = document.getElementById('sourceTargetPanel');
-      const basePanel = document.getElementById('sourceBasePanel');
-      const targetRangePanel = document.getElementById('sourceTargetRangePanel');
-      const sourceHint = document.getElementById('sourceHint');
-      const usesCommit = mode === 'commit' || mode === 'range';
-
-      updateSourceSegmented();
-      controls.classList.toggle('open', usesCommit);
-      commitTools.classList.toggle('hidden', !usesCommit);
-      commitGrid.classList.toggle('hidden', !usesCommit);
-      commitGrid.classList.toggle('single', mode === 'commit');
-      targetPanel.classList.toggle('hidden', mode !== 'commit');
-      basePanel.classList.toggle('hidden', mode !== 'range');
-      targetRangePanel.classList.toggle('hidden', mode !== 'range');
-
-      if (mode === 'commit') {
-        sourceHint.textContent = '選んだコミット単体の差分を取得します。';
-        loadCommits(false);
-      } else if (mode === 'range') {
-        sourceHint.textContent = '比較元から比較先までの差分を取得します。';
-        loadCommits(false);
-      } else if (mode === 'worktree') {
-        setSourceCommitStatus('取得元: 作業ツリー');
-        sourceHint.textContent = '未コミットの作業ツリー差分を取得します。';
-      } else if (mode === 'staged') {
-        setSourceCommitStatus('取得元: ステージ済み');
-        sourceHint.textContent = 'git index にステージ済みの差分だけを取得します。';
-      }
-      renderCommitPickers();
-      updateSourceSummary();
     }
 
     async function ensureDiffMode(appliedMode = null) {
@@ -2670,64 +2632,6 @@
       }
     }
 
-    function renderCommitOptions(items) {
-      state.commitItems = Array.isArray(items) ? items : [];
-      const baseEl = document.getElementById('sourceBase');
-      const targetEl = document.getElementById('sourceTarget');
-      const targetRangeEl = document.getElementById('sourceTargetRange');
-      const prevBase = baseEl.value;
-      const prevTarget = targetEl.value;
-      const prevRangeTarget = targetRangeEl.value;
-
-      baseEl.innerHTML = '';
-      targetEl.innerHTML = '';
-      targetRangeEl.innerHTML = '';
-
-      items.forEach(c => {
-        const label = `${c.short} ${c.subject}`;
-
-        const opBase = document.createElement('option');
-        opBase.value = c.hash;
-        opBase.textContent = label;
-        baseEl.appendChild(opBase);
-
-        const opTarget = document.createElement('option');
-        opTarget.value = c.hash;
-        opTarget.textContent = label;
-        targetEl.appendChild(opTarget);
-
-        const opTargetRange = document.createElement('option');
-        opTargetRange.value = c.hash;
-        opTargetRange.textContent = label;
-        targetRangeEl.appendChild(opTargetRange);
-      });
-
-      if (prevBase && items.some(c => c.hash === prevBase)) {
-        baseEl.value = prevBase;
-      }
-      if (prevTarget && items.some(c => c.hash === prevTarget)) {
-        targetEl.value = prevTarget;
-      }
-      if (prevRangeTarget && items.some(c => c.hash === prevRangeTarget)) {
-        targetRangeEl.value = prevRangeTarget;
-      }
-
-      if (!targetEl.value && targetEl.options.length > 0) {
-        targetEl.selectedIndex = 0;
-      }
-      if (!targetRangeEl.value && targetRangeEl.options.length > 0) {
-        targetRangeEl.selectedIndex = 0;
-      }
-      if (!baseEl.value && baseEl.options.length > 1) {
-        baseEl.selectedIndex = 1;
-      } else if (!baseEl.value && baseEl.options.length > 0) {
-        baseEl.selectedIndex = 0;
-      }
-      document.getElementById('sourceTarget').value = targetRangeEl.value || targetEl.value;
-      renderCommitPickers();
-      updateSourceSummary();
-    }
-
     function getFilteredCommitItems() {
       const query = (document.getElementById('sourceCommitSearch')?.value || '').trim().toLowerCase();
       const items = state.commitItems || [];
@@ -2739,62 +2643,79 @@
       );
     }
 
-    function renderCommitPickers() {
-      const mode = getSelectedSourceMode();
-      const items = getFilteredCommitItems();
-      renderCommitPickerList('sourceTargetList', 'sourceTarget', items, mode === 'commit');
-      renderCommitPickerList('sourceBaseList', 'sourceBase', items, mode === 'range');
-      renderCommitPickerList('sourceTargetRangeList', 'sourceTargetRange', items, mode === 'range');
+    function createSourceOption(item) {
+      const label = document.createElement('label');
+      label.className = 'source-option';
+      const active = state.selectedSourceKeys.has(item.key);
+      label.classList.toggle('active', active);
+      label.title = item.kind === 'commit'
+        ? `${item.short} ${item.title}`
+        : `${item.title} (${item.detail})`;
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = active;
+      checkbox.setAttribute('aria-label', item.title);
+      checkbox.addEventListener('change', () => {
+        toggleSourceSelection(item.key, checkbox.checked);
+      });
+
+      const key = document.createElement('span');
+      key.className = 'source-option-key';
+      key.textContent = item.short;
+
+      const copy = document.createElement('span');
+      copy.className = 'source-option-copy';
+
+      const title = document.createElement('span');
+      title.className = 'source-option-title';
+      title.textContent = item.title;
+      copy.appendChild(title);
+
+      if (item.detail) {
+        const detail = document.createElement('span');
+        detail.className = 'source-option-detail';
+        detail.textContent = item.detail;
+        copy.appendChild(detail);
+      }
+
+      label.append(checkbox, key, copy);
+      return label;
     }
 
-    function renderCommitPickerList(listId, selectId, items, enabled) {
-      const list = document.getElementById(listId);
-      if (!list) return;
-      list.replaceChildren();
-      if (!enabled) return;
+    function renderSourcePicker() {
+      const currentList = document.getElementById('sourceCurrentList');
+      const historyList = document.getElementById('sourceHistoryList');
+      if (!currentList || !historyList) return;
 
-      if (!items.length) {
+      currentList.replaceChildren();
+      getAllSourceItems()
+        .filter(item => item.kind !== 'commit')
+        .forEach(item => currentList.appendChild(createSourceOption(item)));
+
+      historyList.replaceChildren();
+      const commits = getFilteredCommitItems();
+      const count = document.getElementById('sourceHistoryCount');
+      if (count) count.textContent = `${commits.length}/${state.commitItems.length}`;
+
+      if (!commits.length) {
         const empty = document.createElement('div');
         empty.className = 'empty-state';
-        empty.style.height = '120px';
+        empty.style.height = '100px';
         empty.innerHTML = `<div class="empty-icon">${iconHtml('search', 'icon icon-lg')}</div><div class="empty-label">一致するコミットがありません</div>`;
-        list.appendChild(empty);
-        return;
+        historyList.appendChild(empty);
+      } else {
+        commits.forEach(commit => {
+          historyList.appendChild(createSourceOption({
+            key: sourceKeyForCommit(commit.hash),
+            kind: 'commit',
+            hash: commit.hash,
+            short: commit.short || String(commit.hash || '').slice(0, 7),
+            title: commit.subject || '(no subject)',
+            detail: '',
+          }));
+        });
       }
-
-      const selectedValue = document.getElementById(selectId).value;
-      items.forEach(item => {
-        const option = document.createElement('button');
-        option.type = 'button';
-        option.className = 'source-commit-option';
-        option.setAttribute('role', 'option');
-        const active = item.hash === selectedValue;
-        option.classList.toggle('active', active);
-        option.setAttribute('aria-selected', String(active));
-        option.title = `${item.short} ${item.subject}`;
-        option.addEventListener('click', () => selectCommitFor(selectId, item.hash));
-
-        const sha = document.createElement('span');
-        sha.className = 'source-commit-sha';
-        sha.textContent = item.short || String(item.hash || '').slice(0, 7);
-
-        const subject = document.createElement('span');
-        subject.className = 'source-commit-subject';
-        subject.textContent = item.subject || '(no subject)';
-
-        option.append(sha, subject);
-        list.appendChild(option);
-      });
-    }
-
-    function selectCommitFor(selectId, hash) {
-      const select = document.getElementById(selectId);
-      if (!select) return;
-      select.value = hash;
-      if (selectId === 'sourceTargetRange') {
-        document.getElementById('sourceTarget').value = hash;
-      }
-      renderCommitPickers();
       updateSourceSummary();
     }
 
@@ -2819,9 +2740,14 @@
           return false;
         }
         const items = data.commits || [];
-        renderCommitOptions(items);
-        setSourceCommitStatus(`${items.length} 件のコミットから選択できます`);
-        return items.length > 0;
+        const previousSelection = new Set(state.selectedSourceKeys);
+        state.commitItems = Array.isArray(items) ? items : [];
+        const availableKeys = new Set(getAllSourceItems().map(item => item.key));
+        const retainedKeys = [...previousSelection].filter(key => availableKeys.has(key));
+        state.selectedSourceKeys = new Set(retainedKeys.length ? retainedKeys : ['unstaged', 'staged']);
+        renderSourcePicker();
+        setSourceCommitStatus(`${items.length} 件のコミットを読み込みました`);
+        return true;
       } catch (e) {
         if (showErrorToast) showToast('コミットの読み込みに失敗しました: ' + e.message, 'error');
         setSourceCommitStatus('コミットの読み込みに失敗しました');
@@ -2897,10 +2823,9 @@
       const modeApplied = await ensureDiffMode();
       if (!modeApplied) return;
 
-      const mode = getSelectedSourceMode();
-      if (mode !== 'worktree') {
-        const hasCommits = await loadCommits(true);
-        if (!hasCommits) {
+      if (getSelectedSourceKeys().some(key => key.startsWith('commit:'))) {
+        const loaded = await loadCommits(true);
+        if (!loaded) {
           showToast('コミットを選択できませんでした', 'error');
           return;
         }
@@ -2934,9 +2859,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             repo_path: repoPath,
-            source_mode: src.sourceMode,
-            base_ref: src.baseRef,
-            target_ref: src.targetRef,
+            source_keys: src.sourceKeys,
           }),
         });
         const data = await res.json();
@@ -2947,9 +2870,14 @@
         hideRepoRestorePrompt();
         state.analysisId = data.analysis_id || '';
         state.hunks = data.hunks;
+        if (Array.isArray(data.source_selection?.keys) && data.source_selection.keys.length) {
+          state.selectedSourceKeys = new Set(data.source_selection.keys);
+        }
         state.inlineAddedMutePicking = false;
         updateSourceDisplayButton();
         updatePreviewDiffModeSegment();
+        renderSourcePicker();
+        updateSourceSummary();
         state.activeIndex = -1;
 
         if (!preserveSelection) {
@@ -4183,7 +4111,6 @@
         currentDiffMode = cfg.diff_mode || 'file';
         document.getElementById('sourceDiffMode').value = currentDiffMode;
         updatePreviewDiffModeSegment();
-        document.getElementById('diffSourceMode').value = 'worktree';
         setSlider('cfg-context', 'cfg-context-val', cfg.context_lines);
         setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);
         setSlider('cfg-width', 'cfg-width-val', cfg.html_width);
@@ -4206,7 +4133,7 @@
           body: JSON.stringify(syncPayload),
         });
 
-        onDiffSourceModeChange();
+        renderSourcePicker();
         updateAnalyzeButtonLabel();
         updateSourceSummary();
         lastAppliedConfig = normalizeConfigPayload(syncPayload);

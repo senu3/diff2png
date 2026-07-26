@@ -23,6 +23,148 @@ def _raw_hunk(start: int, end: int | None = None) -> dict:
 
 
 class HunkMergeTests(unittest.TestCase):
+    def test_source_selection_expands_to_contiguous_history_range(self):
+        commits = [
+            {"hash": "c3", "short": "c3", "subject": "third"},
+            {"hash": "c2", "short": "c2", "subject": "second"},
+            {"hash": "c1", "short": "c1", "subject": "first"},
+        ]
+
+        with (
+            patch.object(diff2png, "list_commits", return_value=commits),
+            patch.object(
+                diff2png,
+                "_commit_parent_or_empty_tree",
+                return_value=("c1-parent", False),
+            ),
+        ):
+            selection = diff2png.resolve_source_selection(
+                ".",
+                ["unstaged", "commit:c1"],
+            )
+
+        self.assertEqual(
+            selection["keys"],
+            ["unstaged", "staged", "commit:c3", "commit:c2", "commit:c1"],
+        )
+        self.assertEqual(selection["base_source"], {"type": "ref", "ref": "c1-parent"})
+        self.assertEqual(selection["target_source"], {"type": "worktree"})
+        self.assertEqual(selection["summary"], "3コミット + ステージ済み + 未ステージ")
+
+    def test_combined_source_diff_uses_index_as_staged_target(self):
+        selection = {
+            "base_source": {"type": "ref", "ref": "base-ref"},
+            "target_source": {"type": "index"},
+        }
+        result = subprocess.CompletedProcess([], 0, "diff text", "")
+
+        with patch.object(diff2png, "run_git", return_value=result) as run_git:
+            diff_text, label = diff2png.get_diff_for_source_selection(
+                ".",
+                selection,
+                context_lines=4,
+                merge_threshold=8,
+            )
+
+        self.assertEqual(diff_text, "diff text")
+        self.assertEqual(label, "git diff --cached base-ref -U4 --inter-hunk-context=8")
+        run_git.assert_called_once_with(
+            ".",
+            ["diff", "--cached", "base-ref", "-U4", "--inter-hunk-context=8"],
+        )
+
+    def test_analyze_combines_selected_history_and_current_changes(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not available")
+
+        original_config = {
+            "CONTEXT_LINES": diff2png.CONTEXT_LINES,
+            "MERGE_THRESHOLD": diff2png.MERGE_THRESHOLD,
+            "DIFF_MODE": diff2png.DIFF_MODE,
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+
+            target = repo / "sample.txt"
+            target.write_text("base\none\ntwo\nstage\nwork\n", encoding="utf-8")
+            subprocess.run(["git", "add", "sample.txt"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "initial"], cwd=repo, check=True, capture_output=True, text=True)
+
+            target.write_text("base\none changed\ntwo\nstage\nwork\n", encoding="utf-8")
+            subprocess.run(["git", "add", "sample.txt"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "first"], cwd=repo, check=True, capture_output=True, text=True)
+            first_commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+
+            target.write_text("base\none changed\ntwo changed\nstage\nwork\n", encoding="utf-8")
+            subprocess.run(["git", "add", "sample.txt"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "second"], cwd=repo, check=True, capture_output=True, text=True)
+            second_commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+
+            target.write_text("base\none changed\ntwo changed\nstage changed\nwork\n", encoding="utf-8")
+            subprocess.run(["git", "add", "sample.txt"], cwd=repo, check=True)
+            target.write_text(
+                "base\none changed\ntwo changed\nstage changed\nwork changed\n",
+                encoding="utf-8",
+            )
+
+            try:
+                diff2png.CONTEXT_LINES = 0
+                diff2png.MERGE_THRESHOLD = 8
+                diff2png.DIFF_MODE = "file"
+                diff2png.ANALYSIS_SESSIONS.clear()
+
+                client = diff2png.app.test_client()
+                response = client.post(
+                    "/api/analyze",
+                    json={
+                        "repo_path": str(repo),
+                        "source_keys": ["unstaged", f"commit:{first_commit}"],
+                    },
+                )
+            finally:
+                diff2png.CONTEXT_LINES = original_config["CONTEXT_LINES"]
+                diff2png.MERGE_THRESHOLD = original_config["MERGE_THRESHOLD"]
+                diff2png.DIFF_MODE = original_config["DIFF_MODE"]
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = response.get_json()
+        self.assertEqual(
+            data["source_selection"]["keys"],
+            [
+                "unstaged",
+                "staged",
+                f"commit:{second_commit}",
+                f"commit:{first_commit}",
+            ],
+        )
+        self.assertEqual(
+            data["source_selection"]["summary"],
+            "2コミット + ステージ済み + 未ステージ",
+        )
+        self.assertGreaterEqual(len(data["hunks"]), 1)
+        analysis_id = data["analysis_id"]
+        self.assertEqual(
+            diff2png.ANALYSIS_SESSIONS[analysis_id]["content_source"],
+            {"type": "worktree"},
+        )
+        diff2png.ANALYSIS_SESSIONS.clear()
+
     def test_configured_server_port_uses_default_and_validates_override(self):
         with patch.dict("os.environ", {}, clear=True):
             self.assertEqual(diff2png.configured_server_port(), 5127)

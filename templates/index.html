@@ -2389,6 +2389,21 @@
         .map(item => item.key);
     }
 
+    function isCurrentChangesSelection(sourceKeys) {
+      return Array.isArray(sourceKeys)
+        && sourceKeys.length === 2
+        && sourceKeys.includes('unstaged')
+        && sourceKeys.includes('staged');
+    }
+
+    function selectLatestCommit() {
+      const latestCommit = state.commitItems?.[0];
+      if (!latestCommit?.hash) return false;
+      state.selectedSourceKeys = new Set([sourceKeyForCommit(latestCommit.hash)]);
+      renderSourcePicker();
+      return true;
+    }
+
     function setSourceSelectionRange(startIndex, endIndex) {
       const items = getAllSourceItems();
       if (!items.length) return;
@@ -2569,13 +2584,21 @@
       }
     }
 
-    async function openSourceModal() {
+    async function openSourceModal(options = {}) {
       if (document.getElementById('sourceDisplayBtn')?.disabled) return;
       document.getElementById('sourceModal').classList.add('open');
       document.getElementById('sourceOverlay').classList.add('open');
       renderSourcePicker();
-      await loadCommits(false);
+      const loaded = await loadCommits(Boolean(options.showLoadError));
+      let selectedLatest = false;
+      if (options.selectLatestCommit && loaded) {
+        selectedLatest = selectLatestCommit();
+        setSourceCommitStatus(selectedLatest
+          ? '現在の変更がないため、直近コミットを選択しました'
+          : '現在の変更もコミット履歴もありません');
+      }
       updateSourceSummary();
+      return { loaded, selectedLatest };
     }
 
     function closeSourceModal() {
@@ -2897,8 +2920,18 @@
         clearPreview();
 
         if (data.hunks.length === 0) {
-          showToast(data.message || '差分がありません', '');
           setStatus('差分なし');
+          if (isCurrentChangesSelection(src.sourceKeys)) {
+            const result = await openSourceModal({ selectLatestCommit: true });
+            showToast(
+              result?.selectedLatest
+                ? '現在の変更がないため、直近コミットを選択しました'
+                : (data.message || '差分がありません'),
+              ''
+            );
+          } else {
+            showToast(data.message || '差分がありません', '');
+          }
         } else {
           showToast(`${data.hunks.length} 件のhunkを検出しました`, 'success');
           setStatus(`${data.hunks.length} hunks`);

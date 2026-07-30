@@ -1002,7 +1002,7 @@ def build_code_html(
             row_classes.append(f"manual-row-{manual_row_highlight}")
         rows.append(
             f'<tr class="{" ".join(row_classes)}">'
-            f'<td class="lineno">{old_lineno}</td>'
+            '<td class="lineno"></td>'
             '<td class="marker">-</td>'
             f'<td class="code">{escape(deletion["text"])}</td>'
             '</tr>'

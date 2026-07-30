@@ -622,8 +622,12 @@ class HunkMergeTests(unittest.TestCase):
         self.assertLess(html.index("first"), html.index("removed one"))
         self.assertLess(html.index("removed one"), html.index("removed two"))
         self.assertLess(html.index("removed two"), html.index("second"))
-        self.assertIn('<td class="lineno">2</td><td class="marker">-</td>', html)
-        self.assertIn('<td class="lineno">3</td><td class="marker">-</td>', html)
+        self.assertEqual(
+            html.count('<td class="lineno"></td><td class="marker">-</td>'),
+            2,
+        )
+        self.assertNotIn('<td class="lineno">2</td><td class="marker">-</td>', html)
+        self.assertNotIn('<td class="lineno">3</td><td class="marker">-</td>', html)
         self.assertNotIn('<td class="lineno deletion-before">', html)
         self.assertNotIn('<td class="lineno deletion-after">', html)
 
@@ -664,6 +668,7 @@ class HunkMergeTests(unittest.TestCase):
             )
 
         self.assertIn('<tr class="deleted">', html)
+        self.assertIn('<td class="lineno"></td><td class="marker">-</td>', html)
         self.assertLess(html.index("first"), html.index("removed"))
         self.assertLess(html.index("removed"), html.index("second"))
         self.assertNotIn('<td class="lineno deletion-before">', html)

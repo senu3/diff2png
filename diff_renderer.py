@@ -1133,7 +1133,7 @@ def build_deleted_context_html(
                 row_classes.append(f"manual-row-{manual_row_highlight}")
             rows.append(
                 f'<tr class="{" ".join(row_classes)}">'
-                f'<td class="lineno">{old_ln}</td>'
+                '<td class="lineno"></td>'
                 '<td class="marker">-</td>'
                 f'<td class="code">{escape(text)}</td>'
                 '</tr>'
@@ -1306,7 +1306,7 @@ def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp:
         if prefix == "-":
             rows.append(
                 '<tr class="deleted">'
-                f'<td class="lineno old">{old_ln}</td>'
+                '<td class="lineno old"></td>'
                 '<td class="lineno new"></td>'
                 '<td class="marker">-</td>'
                 f'<td class="code">{escaped}</td>'

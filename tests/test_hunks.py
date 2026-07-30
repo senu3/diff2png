@@ -498,6 +498,7 @@ class HunkMergeTests(unittest.TestCase):
         self.assertIn("L4–7", html)
         self.assertIn("line 5", html)
         self.assertIn('class="deleted"', html)
+        self.assertIn('<td class="lineno"></td><td class="marker">-</td>', html)
         self.assertIn("removed line", html)
 
     def test_deleted_only_merged_hunks_keep_each_deletion_at_its_anchor(self):
@@ -534,8 +535,12 @@ class HunkMergeTests(unittest.TestCase):
         self.assertLess(html.index("first removed"), html.index("line 3"))
         self.assertLess(html.index("line 7"), html.index("second removed"))
         self.assertLess(html.index("second removed"), html.index("line 8"))
-        self.assertIn('<td class="lineno">3</td>', html)
-        self.assertIn('<td class="lineno">9</td>', html)
+        self.assertEqual(
+            html.count('<td class="lineno"></td><td class="marker">-</td>'),
+            2,
+        )
+        self.assertNotIn('<td class="lineno">3</td><td class="marker">-</td>', html)
+        self.assertNotIn('<td class="lineno">9</td><td class="marker">-</td>', html)
 
     def test_normal_view_marks_unpaired_line_deletion_before_following_line(self):
         hunk = {
@@ -1213,6 +1218,11 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn('class="added"', html)
         self.assertNotIn('class="inline-added"', html)
         self.assertNotIn('published', html)
+        self.assertIn(
+            '<td class="lineno old"></td><td class="lineno new"></td>'
+            '<td class="marker">-</td>',
+            html,
+        )
         self.assertIn('| 削除', html)
 
     def test_patch_modes_shrink_context_and_reset_without_hiding_changes(self):

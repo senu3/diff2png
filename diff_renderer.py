@@ -601,7 +601,7 @@ def _line_replacements_by_new_lineno(hunk: dict) -> dict[int, tuple[int | None, 
     else:
         replacements = _line_replacements_for_diff_lines(
             int(hunk.get("old_start", hunk.get("start", 1))),
-            int(hunk.get("start", 1)),
+            int(hunk.get("orig_start", hunk.get("default_start", hunk.get("start", 1)))),
             list(hunk.get("changed_lines", [])),
             list(hunk.get("diff_lines", [])),
         )
@@ -832,7 +832,7 @@ def _normal_view_unpaired_deletions(
         blocks = [block for block in raw_blocks if isinstance(block, dict)]
     else:
         blocks = [{
-            "start": hunk.get("orig_start", hunk.get("start", 1)),
+            "start": hunk.get("orig_start", hunk.get("default_start", hunk.get("start", 1))),
             "old_start": hunk.get("old_start", hunk.get("start", 1)),
             "diff_lines": hunk.get("diff_lines", []),
         }]
@@ -867,6 +867,16 @@ def _normal_view_unpaired_deletions(
     ), added_linenos
 
 
+def _normal_view_anchor_is_visible(hunk: dict, anchor: int) -> bool:
+    visible_start = int(hunk.get("start", 1))
+    visible_end = int(hunk.get("end", visible_start))
+    if visible_start <= anchor <= visible_end:
+        return True
+
+    default_end = int(hunk.get("default_end", visible_end))
+    return anchor == visible_end + 1 and visible_end == default_end
+
+
 def _normal_view_visible_deletions(
     hunk: dict,
     replacements: dict[int, tuple[int | None, str]],
@@ -879,12 +889,10 @@ def _normal_view_visible_deletions(
     if not 1 <= len(deletions) <= INLINE_DIFF_ISOLATED_DELETION_MAX_LINES:
         return []
 
-    visible_start = int(hunk.get("start", 1))
-    visible_end = int(hunk.get("end", visible_start))
     return [
         deletion
         for deletion in deletions
-        if visible_start <= deletion["anchor"] <= visible_end + 1
+        if _normal_view_anchor_is_visible(hunk, deletion["anchor"])
         and all(
             abs(added_lineno - deletion["anchor"])
             > INLINE_DIFF_ISOLATED_DELETION_ADDED_DISTANCE
@@ -912,14 +920,14 @@ def _normal_view_deletion_markers(
     visible_start = int(hunk.get("start", 1))
     visible_end = int(hunk.get("end", visible_start))
     before = {
-        max(visible_start, anchor)
+        anchor
         for anchor in anchors
-        if anchor <= visible_end
+        if visible_start <= anchor <= visible_end
     }
     after = {
         visible_end
         for anchor in anchors
-        if anchor > visible_end
+        if _normal_view_anchor_is_visible(hunk, anchor) and anchor > visible_end
     }
     return before, after
 
@@ -1073,7 +1081,8 @@ def build_code_html(
 
 def _deleted_diff_blocks(hunk: dict) -> list[dict]:
     raw_blocks = hunk.get("diff_blocks")
-    if not isinstance(raw_blocks, list) or not raw_blocks:
+    using_hunk_fallback = not isinstance(raw_blocks, list) or not raw_blocks
+    if using_hunk_fallback:
         raw_blocks = [hunk]
 
     blocks = []
@@ -1086,8 +1095,18 @@ def _deleted_diff_blocks(hunk: dict) -> list[dict]:
             if raw.startswith("-") and not raw.startswith("---")
         ]
         if deleted_texts:
+            if using_hunk_fallback:
+                anchor = hunk.get(
+                    "orig_start",
+                    hunk.get("default_start", hunk.get("start", 1)),
+                )
+            else:
+                anchor = block.get(
+                    "start",
+                    hunk.get("orig_start", hunk.get("default_start", hunk.get("start", 1))),
+                )
             blocks.append({
-                "anchor": int(block.get("start", hunk.get("orig_start", hunk.get("start", 1)))),
+                "anchor": int(anchor),
                 "old_start": int(block.get("old_start", hunk.get("old_start", hunk.get("start", 1)))),
                 "texts": deleted_texts,
             })
@@ -1106,7 +1125,13 @@ def build_deleted_context_html(
 ) -> str:
     render_config = config or _default_render_config()
     lines = read_lines(repo_path, hunk["filepath"], hunk["start"], hunk["end"], content_source, read_source_lines)
-    deleted_blocks = _deleted_diff_blocks(hunk)
+    visible_start = int(hunk.get("start", 1))
+    visible_end = int(hunk.get("end", visible_start))
+    deleted_blocks = [
+        block
+        for block in _deleted_diff_blocks(hunk)
+        if visible_start <= block["anchor"] <= visible_end
+    ]
     deleted_texts = [text for block in deleted_blocks for text in block["texts"]]
     combined_texts = [t for (_, t) in lines] + deleted_texts
     stripped_combined, _ = _strip_common_indent_from_lines(combined_texts)

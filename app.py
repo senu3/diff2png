@@ -630,64 +630,12 @@ def _clamp_hunk_range(start: int, end: int, total_lines: int) -> tuple[int, int]
     return start, end
 
 
-def _required_hunk_range(
-    hunk: dict,
-    total_lines: int,
-    include_diff_anchors: bool = False,
-) -> tuple[int, int]:
-    anchors: list[int] = []
-    for lineno in hunk.get("changed_lines", []):
-        try:
-            anchors.append(int(lineno))
-        except (TypeError, ValueError):
-            continue
-
-    if include_diff_anchors:
-        raw_blocks = hunk.get("diff_blocks")
-        if not isinstance(raw_blocks, list) or not raw_blocks:
-            raw_blocks = [hunk]
-        for block in raw_blocks:
-            if not isinstance(block, dict):
-                continue
-            try:
-                cursor = int(block.get("start", hunk.get("default_start", hunk.get("start", 1))))
-            except (TypeError, ValueError):
-                cursor = 1
-            for raw in block.get("diff_lines", []):
-                if not raw or raw.startswith("\\"):
-                    continue
-                if raw.startswith("+") and not raw.startswith("+++"):
-                    anchors.append(cursor)
-                    cursor += 1
-                elif raw.startswith("-") and not raw.startswith("---"):
-                    anchors.append(cursor)
-                elif raw.startswith(" "):
-                    cursor += 1
-
-    for key in ("orig_start", "orig_end"):
-        if key not in hunk:
-            continue
-        try:
-            anchors.append(int(hunk[key]))
-        except (TypeError, ValueError):
-            continue
-
-    if not anchors:
-        try:
-            anchors.append(int(hunk.get("default_start", hunk.get("start", 1))))
-        except (TypeError, ValueError):
-            anchors.append(1)
-
-    return _clamp_hunk_range(min(anchors), max(anchors), total_lines)
-
-
 def adjust_hunk_range(
     hunk: dict,
     repo_path: str,
     content_source: dict,
     action: str,
     step: int = 1,
-    include_diff_anchors: bool = False,
 ) -> dict:
     try:
         total_lines = len(read_source_lines(repo_path, hunk["filepath"], content_source))
@@ -704,21 +652,20 @@ def adjust_hunk_range(
         int(hunk.get("default_end", end)),
         total_lines,
     )
-    required_start, required_end = _required_hunk_range(hunk, total_lines, include_diff_anchors)
     delta = max(1, int(step))
 
     if action == "expand_up":
         next_start = max(1, start - delta)
         next_end = end
     elif action == "shrink_up":
-        next_start = min(start + delta, required_start) if start < required_start else start
+        next_start = min(start + delta, end)
         next_end = end
     elif action == "expand_down":
         next_start = start
         next_end = min(total_lines, end + delta)
     elif action == "shrink_down":
         next_start = start
-        next_end = max(end - delta, required_end) if end > required_end else end
+        next_end = max(end - delta, start)
     elif action == "reset":
         next_start = default_start
         next_end = default_end
@@ -1252,7 +1199,6 @@ def update_hunk_range(hunk_index: int):
             str(repo),
             session["content_source"],
             action,
-            include_diff_anchors=diff_mode in PATCH_LIKE_DIFF_MODES,
         )
     except ValueError as e:
         return error_response(str(e))

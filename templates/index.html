@@ -3750,14 +3750,15 @@
       const adjustable = isRangeAdjustable(index);
       const h = state.hunks[index] || {};
       const isPatch = currentDiffMode !== 'file';
+      const isSingleLine = Number(h.start) >= Number(h.end);
       document.querySelectorAll('.range-overlay').forEach(el => {
         el.classList.toggle('hidden', !adjustable);
       });
       document.getElementById('rangeExpandUpBtn').classList.toggle('hidden', isPatch);
       document.getElementById('rangeExpandDownBtn').classList.toggle('hidden', isPatch);
-      document.getElementById('rangeShrinkUpBtn').disabled = !adjustable;
+      document.getElementById('rangeShrinkUpBtn').disabled = !adjustable || isSingleLine;
       document.getElementById('rangeExpandUpBtn').disabled = !adjustable || isPatch;
-      document.getElementById('rangeShrinkDownBtn').disabled = !adjustable;
+      document.getElementById('rangeShrinkDownBtn').disabled = !adjustable || isSingleLine;
       document.getElementById('rangeExpandDownBtn').disabled = !adjustable || isPatch;
       document.getElementById('rangeResetBtn').disabled = !adjustable || !h.range_adjusted;
       updateInlineDiffControls(index);

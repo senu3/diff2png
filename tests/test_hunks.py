@@ -466,6 +466,128 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual((expanded_up["start"], expanded_up["end"]), (27, 30))
         self.assertEqual((expanded_down["start"], expanded_down["end"]), (27, 30))
 
+    def test_adjust_hunk_range_can_shrink_past_changes_to_one_line(self):
+        source_lines = [f"line {i}" for i in range(1, 31)]
+        shrink_up_hunk = {
+            **_raw_hunk(8, 14),
+            "default_start": 8,
+            "default_end": 14,
+            "orig_start": 10,
+            "orig_end": 12,
+            "changed_lines": [10, 12],
+        }
+        shrink_down_hunk = dict(shrink_up_hunk)
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            shrink_up = diff2png.adjust_hunk_range(
+                shrink_up_hunk,
+                ".",
+                {"type": "worktree"},
+                "shrink_up",
+                step=20,
+            )
+            shrink_down = diff2png.adjust_hunk_range(
+                shrink_down_hunk,
+                ".",
+                {"type": "worktree"},
+                "shrink_down",
+                step=20,
+            )
+
+        self.assertEqual((shrink_up["start"], shrink_up["end"]), (14, 14))
+        self.assertEqual((shrink_down["start"], shrink_down["end"]), (8, 8))
+
+    def test_normal_view_hides_changes_and_deletion_markers_outside_adjusted_range(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 5,
+            "default_start": 1,
+            "default_end": 5,
+            "old_start": 1,
+            "changed_lines": [4],
+            "diff_lines": [
+                " first",
+                "-removed",
+                " second",
+                " third",
+                "+added",
+                " fourth",
+            ],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+        source_lines = ["first", "second", "third", "added", "fourth"]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            diff2png.adjust_hunk_range(
+                hunk,
+                ".",
+                {"type": "worktree"},
+                "shrink_up",
+                step=20,
+            )
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-07-30 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertEqual((hunk["start"], hunk["end"]), (5, 5))
+        self.assertIn('<td class="code">fourth</td>', html)
+        self.assertNotIn('<td class="code">added</td>', html)
+        self.assertNotIn("removed", html)
+        self.assertNotIn('<tr class="deleted">', html)
+        self.assertNotIn("lineno deletion-before", html)
+        self.assertNotIn("lineno deletion-after", html)
+
+    def test_deleted_only_hunk_hides_deletion_outside_adjusted_range(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 5,
+            "default_start": 1,
+            "default_end": 5,
+            "orig_start": 2,
+            "old_start": 2,
+            "changed_lines": [],
+            "diff_lines": ["-removed"],
+            "diff_blocks": [
+                {"start": 2, "old_start": 2, "diff_lines": ["-removed"]},
+            ],
+            "added_count": 0,
+            "deleted_count": 1,
+            "changed_count": 1,
+        }
+        source_lines = ["first", "second", "third", "fourth", "fifth"]
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            diff2png.adjust_hunk_range(
+                hunk,
+                ".",
+                {"type": "worktree"},
+                "shrink_up",
+                step=2,
+            )
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-07-30 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertEqual((hunk["start"], hunk["end"]), (3, 5))
+        self.assertNotIn("removed", html)
+        self.assertNotIn('<tr class="deleted">', html)
+
     def test_deleted_only_hunk_normal_view_keeps_deleted_row_with_context(self):
         hunk = {
             "filepath": "sample.py",
@@ -1225,7 +1347,7 @@ class HunkMergeTests(unittest.TestCase):
         )
         self.assertIn('| 削除', html)
 
-    def test_patch_modes_shrink_context_and_reset_without_hiding_changes(self):
+    def test_patch_modes_shrink_context_and_reset(self):
         hunk = {
             "filepath": "sample.py",
             "start": 1,
@@ -1249,10 +1371,10 @@ class HunkMergeTests(unittest.TestCase):
 
         with patch.object(diff2png, "read_source_lines", return_value=["line"] * 5):
             diff2png.adjust_hunk_range(
-                hunk, ".", {"type": "worktree"}, "shrink_up", include_diff_anchors=True
+                hunk, ".", {"type": "worktree"}, "shrink_up"
             )
             diff2png.adjust_hunk_range(
-                hunk, ".", {"type": "worktree"}, "shrink_down", include_diff_anchors=True
+                hunk, ".", {"type": "worktree"}, "shrink_down"
             )
 
         self.assertEqual((hunk["start"], hunk["end"]), (2, 4))
@@ -1279,6 +1401,53 @@ class HunkMergeTests(unittest.TestCase):
         with patch.object(diff2png, "read_source_lines", return_value=["line"] * 5):
             diff2png.adjust_hunk_range(hunk, ".", {"type": "worktree"}, "reset")
         self.assertEqual((hunk["start"], hunk["end"]), (1, 5))
+
+    def test_patch_modes_hide_changes_outside_adjusted_range(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 5,
+            "default_start": 1,
+            "default_end": 5,
+            "old_start": 1,
+            "changed_lines": [3],
+            "diff_lines": [
+                " context top",
+                " context near top",
+                '-status = "draft"',
+                '+status = "published"',
+                " context near bottom",
+                " context bottom",
+            ],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+
+        with patch.object(diff2png, "read_source_lines", return_value=["line"] * 5):
+            diff2png.adjust_hunk_range(
+                hunk,
+                ".",
+                {"type": "worktree"},
+                "shrink_up",
+                step=3,
+            )
+
+        self.assertEqual((hunk["start"], hunk["end"]), (4, 5))
+        for mode in ("patch", "deleted"):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-07-30 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": mode, "html_width": 960, "background_mode": "normal"},
+            )
+            self.assertIn("context near bottom", html)
+            self.assertIn("context bottom", html)
+            self.assertNotIn("draft", html)
+            self.assertNotIn("published", html)
 
     def test_patch_mode_range_endpoint_allows_shrink_and_reset_but_rejects_expand(self):
         if shutil.which("git") is None:

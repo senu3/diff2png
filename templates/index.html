@@ -570,16 +570,35 @@
       gap: 8px;
     }
 
-    .file-filter-scope {
-      min-height: 34px;
-      display: flex;
+    .selection-bar {
+      min-height: 44px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
-      justify-content: space-between;
       gap: 10px;
       padding: 8px 10px;
       border: 1px solid var(--border);
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.025);
+    }
+
+    .selection-bar-copy {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+    }
+
+    .selection-bar-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .selection-bar-action {
+      height: 28px;
+      padding: 0 8px;
+      font-size: 11px;
+      flex: 0 0 auto;
     }
 
     .file-filter-scope-label {
@@ -589,13 +608,6 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-    }
-
-    .file-filter-clear {
-      height: 24px;
-      padding: 0 8px;
-      font-size: 11px;
-      flex: 0 0 auto;
     }
 
     .file-filter-list {
@@ -912,37 +924,6 @@
       font-family: var(--mono);
       font-size: 10px;
       white-space: nowrap;
-    }
-
-    .source-selection-summary {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 10px;
-      min-height: 44px;
-      padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: rgba(255, 255, 255, 0.025);
-    }
-
-    .source-selection-copy {
-      min-width: 0;
-      display: grid;
-      gap: 3px;
-    }
-
-    .source-selection-actions {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .source-selection-action {
-      height: 28px;
-      padding: 0 8px;
-      font-size: 11px;
-      flex: 0 0 auto;
     }
 
     .source-selection-range {
@@ -1635,11 +1616,11 @@
     }
 
     @media (max-width: 560px) {
-      .source-selection-summary {
+      .selection-bar {
         grid-template-columns: minmax(0, 1fr);
       }
 
-      .source-selection-actions {
+      .selection-bar-actions {
         justify-content: flex-end;
       }
     }
@@ -2001,6 +1982,29 @@
     </div>
     <div class="source-modal-body">
       <div class="source-picker">
+        <div class="source-selection-summary selection-bar">
+          <div class="source-selection-copy selection-bar-copy">
+            <div class="source-selection-range" id="sourceSelectionRange">HEAD → 作業ツリー</div>
+            <div class="source-selection-detail" id="sourceSelectionDetail">ステージ済み + 未ステージ</div>
+          </div>
+          <div class="source-selection-actions selection-bar-actions">
+            <button class="btn btn-ghost source-selection-action selection-bar-action" id="sourceSelectAllBtn"
+              onclick="setAllSourceSelection(true)" title="すべて選択" aria-label="すべて選択">
+              <svg class="icon icon-sm" aria-hidden="true">
+                <use href="#icon-check-square"></use>
+              </svg>
+              <span>すべて選択</span>
+            </button>
+            <button class="btn btn-ghost source-selection-action selection-bar-action" id="sourceClearAllBtn"
+              onclick="setAllSourceSelection(false)" title="すべて解除" aria-label="すべて解除">
+              <svg class="icon icon-sm" aria-hidden="true">
+                <use href="#icon-square"></use>
+              </svg>
+              <span>すべて解除</span>
+            </button>
+          </div>
+        </div>
+
         <div class="source-section">
           <div class="source-section-head">
             <div class="source-control-label">現在の変更</div>
@@ -2019,29 +2023,6 @@
           </div>
           <div class="source-list source-history-list" id="sourceHistoryList" role="group"
             aria-label="コミット履歴"></div>
-        </div>
-
-        <div class="source-selection-summary">
-          <div class="source-selection-copy">
-            <div class="source-selection-range" id="sourceSelectionRange">HEAD → 作業ツリー</div>
-            <div class="source-selection-detail" id="sourceSelectionDetail">ステージ済み + 未ステージ</div>
-          </div>
-          <div class="source-selection-actions">
-            <button class="btn btn-ghost source-selection-action" id="sourceSelectAllBtn" onclick="setAllSourceSelection(true)"
-              title="すべて選択" aria-label="すべて選択">
-              <svg class="icon icon-sm" aria-hidden="true">
-                <use href="#icon-check-square"></use>
-              </svg>
-              <span>すべて選択</span>
-            </button>
-            <button class="btn btn-ghost source-selection-action" id="sourceClearAllBtn" onclick="setAllSourceSelection(false)"
-              title="すべて解除" aria-label="すべて解除">
-              <svg class="icon icon-sm" aria-hidden="true">
-                <use href="#icon-square"></use>
-              </svg>
-              <span>すべて解除</span>
-            </button>
-          </div>
         </div>
       </div>
       <div class="source-commit-status" id="sourceCommitStatus"> </div>
@@ -2069,15 +2050,24 @@
           onkeydown="onFileFilterSearchKeydown(event)">
       </div>
       <div class="file-filter-status" id="fileFilterStatus"> </div>
-      <div class="file-filter-scope">
+      <div class="file-filter-scope selection-bar">
         <span class="file-filter-scope-label" id="fileFilterScopeLabel">すべてのファイル</span>
-        <button class="btn btn-ghost file-filter-clear" id="fileFilterClearBtn" onclick="clearFileFilterDraft()"
-          disabled>
-          <svg class="icon icon-sm" aria-hidden="true">
-            <use href="#icon-check-square"></use>
-          </svg>
-          <span>すべて選択</span>
-        </button>
+        <div class="selection-bar-actions">
+          <button class="btn btn-ghost selection-bar-action" id="fileFilterSelectAllBtn"
+            onclick="selectAllFileFilterDraft()" disabled>
+            <svg class="icon icon-sm" aria-hidden="true">
+              <use href="#icon-check-square"></use>
+            </svg>
+            <span>すべて選択</span>
+          </button>
+          <button class="btn btn-ghost selection-bar-action" id="fileFilterClearAllBtn"
+            onclick="clearAllFileFilterDraft()">
+            <svg class="icon icon-sm" aria-hidden="true">
+              <use href="#icon-square"></use>
+            </svg>
+            <span>すべて解除</span>
+          </button>
+        </div>
       </div>
       <div class="file-filter-list" id="fileFilterList" role="tree" aria-label="変更ファイル"
         aria-multiselectable="true"></div>
@@ -3543,7 +3533,8 @@
       const list = document.getElementById('fileFilterList');
       const status = document.getElementById('fileFilterStatus');
       const scopeLabel = document.getElementById('fileFilterScopeLabel');
-      const clearBtn = document.getElementById('fileFilterClearBtn');
+      const selectAllBtn = document.getElementById('fileFilterSelectAllBtn');
+      const clearAllBtn = document.getElementById('fileFilterClearAllBtn');
       const applyBtn = document.getElementById('fileFilterApplyBtn');
       if (!list || !status) return;
 
@@ -3571,9 +3562,10 @@
         scopeLabel.title = draftFilters.length > 0 ? draftFilters.join('\n') : 'ファイル未選択';
         scopeLabel.classList.toggle('empty', items.length > 0 && draftFilters.length === 0);
       }
-      if (clearBtn) {
-        clearBtn.disabled = items.length === 0 || draftFilters.length === items.length;
+      if (selectAllBtn) {
+        selectAllBtn.disabled = items.length === 0 || draftFilters.length === items.length;
       }
+      if (clearAllBtn) clearAllBtn.disabled = items.length === 0 || draftFilters.length === 0;
       if (applyBtn) applyBtn.disabled = items.length > 0 && draftFilters.length === 0;
 
       const tree = buildFileFilterTree(items);
@@ -3628,8 +3620,13 @@
       document.getElementById('fileFilterOverlay').classList.remove('open');
     }
 
-    function clearFileFilterDraft() {
+    function selectAllFileFilterDraft() {
       draftFileFilter = getFileFilterItems().map(item => item.filepath);
+      renderFileFilterList();
+    }
+
+    function clearAllFileFilterDraft() {
+      draftFileFilter = [];
       renderFileFilterList();
     }
 

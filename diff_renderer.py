@@ -19,6 +19,8 @@ INLINE_DIFF_LARGE_FRAGMENT_MIN_CHARS = 6
 INLINE_DIFF_MIN_SIMILARITY = 0.62
 INLINE_DIFF_CONTROL_HEADER_PAIR_SCORE = 0.7
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
+INLINE_DIFF_ISOLATED_DELETION_MAX_LINES = 2
+INLINE_DIFF_ISOLATED_DELETION_ADDED_DISTANCE = 2
 INLINE_DIFF_MODES = {"full", "new", "off"}
 INLINE_ADDED_MUTES_LIMIT = 200
 INLINE_ADDED_MUTE_KEY_LIMIT = 1000
@@ -816,10 +818,10 @@ def _merge_inline_punctuation_fragments(
     return _merge_nearby_inline_fragments(opcodes, old_tokens, new_tokens)
 
 
-def _normal_view_deletion_markers(
+def _normal_view_unpaired_deletions(
     hunk: dict,
     replacements: dict[int, tuple[int | None, str]],
-) -> tuple[set[int], set[int]]:
+) -> tuple[list[dict], set[int]]:
     paired_old_linenos = {
         int(old_lineno)
         for old_lineno, _ in replacements.values()
@@ -835,33 +837,77 @@ def _normal_view_deletion_markers(
             "diff_lines": hunk.get("diff_lines", []),
         }]
 
-    anchors: set[int] = set()
+    deletions = []
+    added_linenos: set[int] = set()
     for block in blocks:
         old_lineno = int(block.get("old_start", hunk.get("old_start", 1)))
         new_lineno = int(block.get("start", hunk.get("orig_start", hunk.get("start", 1))))
-        has_unpaired_deletion = False
 
         for raw in block.get("diff_lines", []):
             if not raw or raw.startswith("\\"):
                 continue
             if raw.startswith("-") and not raw.startswith("---"):
                 if old_lineno not in paired_old_linenos:
-                    has_unpaired_deletion = True
+                    deletions.append({
+                        "anchor": new_lineno,
+                        "old_lineno": old_lineno,
+                        "text": raw[1:],
+                    })
                 old_lineno += 1
             elif raw.startswith("+") and not raw.startswith("+++"):
-                if has_unpaired_deletion:
-                    anchors.add(new_lineno)
-                    has_unpaired_deletion = False
+                added_linenos.add(new_lineno)
                 new_lineno += 1
             elif raw.startswith(" "):
-                if has_unpaired_deletion:
-                    anchors.add(new_lineno)
-                    has_unpaired_deletion = False
                 old_lineno += 1
                 new_lineno += 1
 
-        if has_unpaired_deletion:
-            anchors.add(new_lineno)
+    return sorted(
+        deletions,
+        key=lambda deletion: (deletion["anchor"], deletion["old_lineno"]),
+    ), added_linenos
+
+
+def _normal_view_visible_deletions(
+    hunk: dict,
+    replacements: dict[int, tuple[int | None, str]],
+    inline_diff_mode: str,
+) -> list[dict]:
+    if inline_diff_mode != "full":
+        return []
+
+    deletions, added_linenos = _normal_view_unpaired_deletions(hunk, replacements)
+    if not 1 <= len(deletions) <= INLINE_DIFF_ISOLATED_DELETION_MAX_LINES:
+        return []
+
+    visible_start = int(hunk.get("start", 1))
+    visible_end = int(hunk.get("end", visible_start))
+    return [
+        deletion
+        for deletion in deletions
+        if visible_start <= deletion["anchor"] <= visible_end + 1
+        and all(
+            abs(added_lineno - deletion["anchor"])
+            > INLINE_DIFF_ISOLATED_DELETION_ADDED_DISTANCE
+            for added_lineno in added_linenos
+        )
+    ]
+
+
+def _normal_view_deletion_markers(
+    hunk: dict,
+    replacements: dict[int, tuple[int | None, str]],
+    visible_deletions: list[dict] | None = None,
+) -> tuple[set[int], set[int]]:
+    deletions, _ = _normal_view_unpaired_deletions(hunk, replacements)
+    rendered = {
+        (deletion["anchor"], deletion["old_lineno"])
+        for deletion in (visible_deletions or [])
+    }
+    anchors = {
+        deletion["anchor"]
+        for deletion in deletions
+        if (deletion["anchor"], deletion["old_lineno"]) not in rendered
+    }
 
     visible_start = int(hunk.get("start", 1))
     visible_end = int(hunk.get("end", visible_start))
@@ -912,9 +958,15 @@ def build_code_html(
     inline_diff_mode = hunk_inline_diff_mode(hunk)
     line_replacements = _line_replacements_by_new_lineno(hunk)
     replacements = line_replacements if inline_diff_mode != "off" else {}
+    visible_deletions = _normal_view_visible_deletions(
+        hunk,
+        line_replacements,
+        inline_diff_mode,
+    )
     deletion_markers_before, deletion_markers_after = _normal_view_deletion_markers(
         hunk,
         line_replacements,
+        visible_deletions,
     )
     inline_diff_max_changed_chars = normalize_inline_diff_max_changed_chars(
         render_config.get("inline_diff_max_changed_chars", INLINE_DIFF_MAX_CHANGED_CHARS)
@@ -922,18 +974,48 @@ def build_code_html(
     inline_added_mutes = hunk_inline_added_mutes(hunk)
     manual_row_highlights = hunk_manual_row_highlights(hunk)
     replacement_texts = [text for _, text in replacements.values()]
-    stripped_combined, _ = _strip_common_indent_from_lines(raw_texts + replacement_texts)
+    deletion_texts = [deletion["text"] for deletion in visible_deletions]
+    stripped_combined, _ = _strip_common_indent_from_lines(
+        raw_texts + replacement_texts + deletion_texts
+    )
     stripped_texts = stripped_combined[:len(raw_texts)]
-    stripped_replacements = stripped_combined[len(raw_texts):]
+    replacement_end = len(raw_texts) + len(replacement_texts)
+    stripped_replacements = stripped_combined[len(raw_texts):replacement_end]
+    stripped_deletions = stripped_combined[replacement_end:]
     replacement_by_lineno = {
         lineno: (old_lineno, stripped_replacements[idx])
         for idx, (lineno, (old_lineno, _)) in enumerate(replacements.items())
     }
+    for deletion, stripped_text in zip(visible_deletions, stripped_deletions):
+        deletion["text"] = stripped_text
     lang = detect_language(hunk["filepath"])
     changed_set = set(hunk["changed_lines"])
 
     rows = []
+    next_visible_deletion = 0
+
+    def append_visible_deletion(deletion: dict) -> None:
+        old_lineno = int(deletion["old_lineno"])
+        row_classes = ["deleted"]
+        manual_row_highlight = manual_row_highlights.get(old_lineno)
+        if manual_row_highlight:
+            row_classes.append(f"manual-row-{manual_row_highlight}")
+        rows.append(
+            f'<tr class="{" ".join(row_classes)}">'
+            f'<td class="lineno">{old_lineno}</td>'
+            '<td class="marker">-</td>'
+            f'<td class="code">{escape(deletion["text"])}</td>'
+            '</tr>'
+        )
+
     for idx, (lineno, text) in enumerate(lines):
+        while (
+            next_visible_deletion < len(visible_deletions)
+            and visible_deletions[next_visible_deletion]["anchor"] <= lineno
+        ):
+            append_visible_deletion(visible_deletions[next_visible_deletion])
+            next_visible_deletion += 1
+
         # text は共通インデントを削除したものを使う
         text = stripped_texts[idx]
         is_changed = lineno in changed_set
@@ -981,6 +1063,9 @@ def build_code_html(
             f'<td class="code">{code_html}</td>'
             f'</tr>'
         )
+
+    for deletion in visible_deletions[next_visible_deletion:]:
+        append_visible_deletion(deletion)
 
     meta = f"L{hunk['start']}–{hunk['end']} | {hunk_index}/{total} | {lang}"
     return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)

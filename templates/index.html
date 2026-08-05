@@ -1488,16 +1488,50 @@
     }
 
     .range-overlay-line {
-      min-width: 42px;
-      padding: 0 5px;
+      width: 88px;
+      height: 28px;
+      padding: 0 4px 0 7px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
       color: var(--text);
       font-family: var(--mono);
       font-size: 11px;
       line-height: 1;
       white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      box-sizing: border-box;
     }
 
-    .range-overlay-line.adjusted {
+    .range-overlay-line:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(91, 138, 240, 0.15);
+    }
+
+    .range-line-input {
+      width: 64px;
+      min-width: 0;
+      height: 24px;
+      padding: 0 2px;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: inherit;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      box-sizing: border-box;
+    }
+
+    .range-line-input:disabled {
+      cursor: not-allowed;
+    }
+
+    .range-overlay-line.adjusted,
+    .range-overlay-line.adjusted .range-line-input {
       color: var(--accent);
     }
 
@@ -1507,6 +1541,20 @@
       height: 28px;
       padding: 0 8px;
       font-size: 12px;
+    }
+
+    .range-overlay .range-icon-btn {
+      width: 28px;
+      min-width: 28px;
+      padding: 0;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .range-overlay .range-step-btn.is-holding {
+      border-color: rgba(91, 138, 240, 0.65);
+      background: rgba(91, 138, 240, 0.16);
+      color: var(--text);
     }
 
     .preview-frame-wrap::-webkit-scrollbar {
@@ -1757,6 +1805,11 @@
     <symbol id="icon-undo" viewBox="0 0 24 24">
       <path d="M9 14 4 9l5-5" />
       <path d="M4 9h10a6 6 0 1 1 0 12h-2" />
+    </symbol>
+    <symbol id="icon-eraser" viewBox="0 0 24 24">
+      <path d="m7 21-4.3-4.3a2.26 2.26 0 0 1 0-3.2L13.5 2.7a2.26 2.26 0 0 1 3.2 0l4.6 4.6a2.26 2.26 0 0 1 0 3.2L11.8 20" />
+      <path d="m5 11 9 9" />
+      <path d="M22 21H7" />
     </symbol>
     <symbol id="icon-trash" viewBox="0 0 24 24">
       <path d="M3 6h18" />
@@ -2165,10 +2218,10 @@
         <span class="inline-hidden-count hidden" id="inlineHiddenCount" aria-hidden="true"></span>
       </button>
       <div class="range-btns">
-        <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
-          title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
+        <button class="btn btn-ghost" id="highlightResetBtn" onclick="resetActiveHighlights()" disabled
+          title="このhunkのハイライト編集をすべて戻す" aria-label="このhunkのハイライト編集をすべて戻す">
           <svg class="icon icon-sm" aria-hidden="true">
-            <use href="#icon-undo"></use>
+            <use href="#icon-eraser"></use>
           </svg>
         </button>
       </div>
@@ -2192,20 +2245,31 @@
     <div class="preview-frame-wrap" id="previewWrap">
       <div class="range-overlay range-overlay-top hidden" id="rangeOverlayTop">
         <span class="range-overlay-label">上端</span>
-        <span class="range-overlay-line" id="rangeOverlayStart">—</span>
-        <button class="btn btn-ghost" id="rangeExpandUpBtn" onclick="adjustActiveRange('expand_up')" disabled
-          title="上に広げる" aria-label="上に広げる">
+        <label class="range-overlay-line" for="rangeStartInput">
+          <span aria-hidden="true">L</span>
+          <input class="range-line-input" id="rangeStartInput" type="number" min="1" step="1"
+            inputmode="numeric" disabled aria-label="開始行"
+            onkeydown="onRangeLineInputKeydown(event, 'start')" onblur="commitRangeLineInput('start')">
+        </label>
+        <button class="btn btn-ghost range-icon-btn range-step-btn" id="rangeExpandUpBtn"
+          data-range-action="expand_up" disabled
+          title="上に広げる（長押しで連続）" aria-label="上に広げる">
           <svg class="icon icon-sm" aria-hidden="true">
             <use href="#icon-arrow-up-from-line"></use>
           </svg>
-          <span>広げる</span>
         </button>
-        <button class="btn btn-ghost" id="rangeShrinkUpBtn" onclick="adjustActiveRange('shrink_up')" disabled
-          title="上を狭める" aria-label="上を狭める">
+        <button class="btn btn-ghost range-icon-btn range-step-btn" id="rangeShrinkUpBtn"
+          data-range-action="shrink_up" disabled
+          title="上を狭める（長押しで連続）" aria-label="上を狭める">
           <svg class="icon icon-sm" aria-hidden="true">
             <use href="#icon-arrow-down-to-line"></use>
           </svg>
-          <span>狭める</span>
+        </button>
+        <button class="btn btn-ghost range-icon-btn" id="rangeResetTopBtn" onclick="adjustActiveRange('reset')"
+          disabled title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-undo"></use>
+          </svg>
         </button>
       </div>
       <div class="preview-content" id="previewContent">
@@ -2218,20 +2282,31 @@
       </div>
       <div class="range-overlay range-overlay-bottom hidden" id="rangeOverlayBottom">
         <span class="range-overlay-label">下端</span>
-        <span class="range-overlay-line" id="rangeOverlayEnd">—</span>
-        <button class="btn btn-ghost" id="rangeExpandDownBtn" onclick="adjustActiveRange('expand_down')" disabled
-          title="下に広げる" aria-label="下に広げる">
+        <label class="range-overlay-line" for="rangeEndInput">
+          <span aria-hidden="true">L</span>
+          <input class="range-line-input" id="rangeEndInput" type="number" min="1" step="1"
+            inputmode="numeric" disabled aria-label="終了行"
+            onkeydown="onRangeLineInputKeydown(event, 'end')" onblur="commitRangeLineInput('end')">
+        </label>
+        <button class="btn btn-ghost range-icon-btn range-step-btn" id="rangeExpandDownBtn"
+          data-range-action="expand_down" disabled
+          title="下に広げる（長押しで連続）" aria-label="下に広げる">
           <svg class="icon icon-sm" aria-hidden="true">
             <use href="#icon-arrow-down-from-line"></use>
           </svg>
-          <span>広げる</span>
         </button>
-        <button class="btn btn-ghost" id="rangeShrinkDownBtn" onclick="adjustActiveRange('shrink_down')" disabled
-          title="下を狭める" aria-label="下を狭める">
+        <button class="btn btn-ghost range-icon-btn range-step-btn" id="rangeShrinkDownBtn"
+          data-range-action="shrink_down" disabled
+          title="下を狭める（長押しで連続）" aria-label="下を狭める">
           <svg class="icon icon-sm" aria-hidden="true">
             <use href="#icon-arrow-up-to-line"></use>
           </svg>
-          <span>狭める</span>
+        </button>
+        <button class="btn btn-ghost range-icon-btn" id="rangeResetBottomBtn" onclick="adjustActiveRange('reset')"
+          disabled title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-undo"></use>
+          </svg>
         </button>
       </div>
     </div>
@@ -2256,9 +2331,24 @@
       inlineDiffUpdating: false,
       inlineChangeEditing: false,
       inlineChangeUpdating: false,
+      highlightResetting: false,
     };
     let draftFileFilter = [];
     let fileFilterExpandedPaths = new Set();
+    const rangeHold = {
+      active: false,
+      action: '',
+      index: -1,
+      button: null,
+      delayTimer: null,
+      repeatTimer: null,
+      pointerId: null,
+      triggered: false,
+      changed: false,
+      suppressButton: null,
+      suppressUntil: 0,
+      original: null,
+    };
 
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -3739,6 +3829,30 @@
         && currentDiffMode === 'file';
     }
 
+    function hasHighlightEdits(hunk) {
+      return Boolean(hunk) && (
+        (Array.isArray(hunk.inline_hidden_changes) && hunk.inline_hidden_changes.length > 0)
+        || (Array.isArray(hunk.inline_added_mutes) && hunk.inline_added_mutes.length > 0)
+        || (hunk.manual_row_highlights && Object.keys(hunk.manual_row_highlights).length > 0)
+      );
+    }
+
+    function updateHighlightResetButton(index) {
+      const btn = document.getElementById('highlightResetBtn');
+      if (!btn) return;
+      const h = state.hunks[index];
+      const available = Boolean(h) && currentDiffMode === 'file';
+      const hasEdits = hasHighlightEdits(h);
+      btn.disabled = !available || !hasEdits || state.highlightResetting;
+      const title = !available
+        ? '通常表示のhunkで使用できます'
+        : hasEdits
+          ? 'このhunkのハイライト編集をすべて戻す'
+          : '戻すハイライト編集はありません';
+      btn.title = title;
+      btn.setAttribute('aria-label', title);
+    }
+
     function updateInlineChangeEditButton(index, iframe = currentPreviewIframe()) {
       const btn = document.getElementById('inlineChangeEditBtn');
       if (!btn) return;
@@ -3765,6 +3879,7 @@
         : '通常表示のhunkで使用できます';
       btn.title = title;
       btn.setAttribute('aria-label', title);
+      updateHighlightResetButton(index);
     }
 
     function getInlineDiffMode(hunk) {
@@ -3779,17 +3894,30 @@
       const adjustable = isRangeAdjustable(index);
       const h = state.hunks[index] || {};
       const isPatch = currentDiffMode !== 'file';
+      const busy = state.rangeAdjusting;
+      const start = Number(h.start) || 1;
+      const end = Number(h.end) || start;
+      const totalLines = Math.max(Number(h.file_line_count) || end, end, 1);
       const isSingleLine = Number(h.start) >= Number(h.end);
       document.querySelectorAll('.range-overlay').forEach(el => {
         el.classList.toggle('hidden', !adjustable);
       });
       document.getElementById('rangeExpandUpBtn').classList.toggle('hidden', isPatch);
       document.getElementById('rangeExpandDownBtn').classList.toggle('hidden', isPatch);
-      document.getElementById('rangeShrinkUpBtn').disabled = !adjustable || isSingleLine;
-      document.getElementById('rangeExpandUpBtn').disabled = !adjustable || isPatch;
-      document.getElementById('rangeShrinkDownBtn').disabled = !adjustable || isSingleLine;
-      document.getElementById('rangeExpandDownBtn').disabled = !adjustable || isPatch;
-      document.getElementById('rangeResetBtn').disabled = !adjustable || !h.range_adjusted;
+      document.getElementById('rangeShrinkUpBtn').disabled = !adjustable || busy || isSingleLine;
+      document.getElementById('rangeExpandUpBtn').disabled = !adjustable || busy || isPatch || start <= 1;
+      document.getElementById('rangeShrinkDownBtn').disabled = !adjustable || busy || isSingleLine;
+      document.getElementById('rangeExpandDownBtn').disabled = !adjustable || busy || isPatch || end >= totalLines;
+      document.getElementById('rangeResetTopBtn').disabled = !adjustable || busy || !h.range_adjusted;
+      document.getElementById('rangeResetBottomBtn').disabled = !adjustable || busy || !h.range_adjusted;
+      const startInput = document.getElementById('rangeStartInput');
+      const endInput = document.getElementById('rangeEndInput');
+      startInput.disabled = !adjustable || busy;
+      startInput.min = String(isPatch ? start : 1);
+      startInput.max = String(end);
+      endInput.disabled = !adjustable || busy;
+      endInput.min = String(start);
+      endInput.max = String(isPatch ? end : totalLines);
       updateInlineDiffControls(index);
       updateInlineChangeEditButton(index);
     }
@@ -3797,37 +3925,41 @@
     function updateHunkRangeLabel(index) {
       const h = state.hunks[index];
       const el = document.getElementById(`hunk-range-${index}`);
-      if (!h || !el) return;
-      el.textContent = `L${h.start}–${h.end}`;
-      el.classList.toggle('adjusted', Boolean(h.range_adjusted));
+      if (!h) return;
+      if (el) {
+        el.textContent = `L${h.start}–${h.end}`;
+        el.classList.toggle('adjusted', Boolean(h.range_adjusted));
+      }
       if (index === state.activeIndex) {
         updatePreviewRange(h);
       }
     }
 
     function updatePreviewRange(hunk) {
-      const startEl = document.getElementById('rangeOverlayStart');
-      const endEl = document.getElementById('rangeOverlayEnd');
-      if (!startEl || !endEl) return;
+      const startInput = document.getElementById('rangeStartInput');
+      const endInput = document.getElementById('rangeEndInput');
+      const startField = startInput?.closest('.range-overlay-line');
+      const endField = endInput?.closest('.range-overlay-line');
+      if (!startInput || !endInput || !startField || !endField) return;
       if (!hunk) {
-        startEl.textContent = '—';
-        endEl.textContent = '—';
-        startEl.title = '上端';
-        endEl.title = '下端';
-        startEl.classList.remove('adjusted');
-        endEl.classList.remove('adjusted');
+        startInput.value = '';
+        endInput.value = '';
+        startField.title = '上端';
+        endField.title = '下端';
+        startField.classList.remove('adjusted');
+        endField.classList.remove('adjusted');
         return;
       }
       const startText = `L${hunk.start}`;
       const endText = `L${hunk.end}`;
       const startAdjusted = Number(hunk.start) !== Number(hunk.default_start ?? hunk.start);
       const endAdjusted = Number(hunk.end) !== Number(hunk.default_end ?? hunk.end);
-      startEl.textContent = startText;
-      endEl.textContent = endText;
-      startEl.title = startAdjusted ? `上端 ${startText}（調整済み）` : `上端 ${startText}`;
-      endEl.title = endAdjusted ? `下端 ${endText}（調整済み）` : `下端 ${endText}`;
-      startEl.classList.toggle('adjusted', startAdjusted);
-      endEl.classList.toggle('adjusted', endAdjusted);
+      startInput.value = String(hunk.start);
+      endInput.value = String(hunk.end);
+      startField.title = startAdjusted ? `上端 ${startText}（調整済み）` : `上端 ${startText}`;
+      endField.title = endAdjusted ? `下端 ${endText}（調整済み）` : `下端 ${endText}`;
+      startField.classList.toggle('adjusted', startAdjusted);
+      endField.classList.toggle('adjusted', endAdjusted);
     }
 
     function currentPreviewIframe() {
@@ -4043,6 +4175,7 @@
           return;
         }
         state.hunks[index] = data.hunk;
+        updateHighlightResetButton(index);
       } catch (e) {
         applyManualRowHighlightClass(row, previousColor);
         showToast('行背景の変更に失敗しました: ' + e.message, 'error');
@@ -4073,6 +4206,45 @@
       updatePreviewInlineChangeEditMode();
     }
 
+    async function resetActiveHighlights() {
+      const index = state.activeIndex;
+      if (
+        index < 0
+        || !state.analysisId
+        || currentDiffMode !== 'file'
+        || state.highlightResetting
+        || state.inlineChangeUpdating
+        || !hasHighlightEdits(state.hunks[index])
+      ) return;
+
+      state.highlightResetting = true;
+      updateHighlightResetButton(index);
+      try {
+        const res = await fetch(`/api/hunk-highlights-reset/${index}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repo_path: state.repoPath,
+            analysis_id: state.analysisId,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || 'ハイライト編集のリセットに失敗しました', 'error');
+          return;
+        }
+        state.hunks[index] = data.hunk;
+        updateInlineChangeEditButton(index);
+        await showPreview(index, { showLoading: false, keepIframe: true, scrollIntoView: false });
+        showToast('ハイライト編集を元に戻しました', 'success');
+      } catch (e) {
+        showToast('ハイライト編集のリセットに失敗しました: ' + e.message, 'error');
+      } finally {
+        state.highlightResetting = false;
+        updateHighlightResetButton(index);
+      }
+    }
+
     function writePreviewHtml(html, options = {}) {
       const keepExisting = Boolean(options.keepExisting);
       const content = document.getElementById('previewContent');
@@ -4097,13 +4269,256 @@
       requestAnimationFrame(fitHeight);
     }
 
+    function rangeAfterAction(hunk, action) {
+      const start = Number(hunk?.start) || 1;
+      const end = Number(hunk?.end) || start;
+      const totalLines = Math.max(Number(hunk?.file_line_count) || end, end, 1);
+      if (currentDiffMode !== 'file' && (action === 'expand_up' || action === 'expand_down')) {
+        return { start, end };
+      }
+      if (action === 'expand_up') return { start: Math.max(1, start - 1), end };
+      if (action === 'shrink_up') return { start: Math.min(end, start + 1), end };
+      if (action === 'expand_down') return { start, end: Math.min(totalLines, end + 1) };
+      if (action === 'shrink_down') return { start, end: Math.max(start, end - 1) };
+      return { start, end };
+    }
+
+    function applyLocalHunkRange(index, start, end) {
+      const hunk = state.hunks[index];
+      if (!hunk) return;
+      hunk.start = start;
+      hunk.end = end;
+      hunk.range_adjusted = (
+        Number(start) !== Number(hunk.default_start ?? start)
+        || Number(end) !== Number(hunk.default_end ?? end)
+      );
+      updateHunkRangeLabel(index);
+      updateRangeButtons(index);
+    }
+
+    async function setActiveRangeAbsolute(start, end, options = {}) {
+      const index = Number.isInteger(options.index) ? options.index : state.activeIndex;
+      if (state.rangeAdjusting || index < 0 || !state.analysisId || !isRangeAdjustable(index)) return false;
+      const hunk = state.hunks[index];
+      const rollback = options.rollback || {
+        start: Number(hunk.start),
+        end: Number(hunk.end),
+      };
+      const restrictionBase = options.restrictionBase || rollback;
+      if (currentDiffMode !== 'file' && (
+        start < Number(restrictionBase.start) || end > Number(restrictionBase.end)
+      )) {
+        applyLocalHunkRange(index, rollback.start, rollback.end);
+        showToast('共通差分・追加・削除表示では範囲を拡大できません', 'error');
+        return false;
+      }
+
+      state.rangeAdjusting = true;
+      updateRangeButtons(index);
+      try {
+        const res = await fetch(`/api/hunk-range/${index}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repo_path: state.repoPath,
+            analysis_id: state.analysisId,
+            start,
+            end,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          applyLocalHunkRange(index, rollback.start, rollback.end);
+          showToast(data.error || '行範囲の指定に失敗しました', 'error');
+          return false;
+        }
+
+        state.hunks[index] = data.hunk;
+        updateHunkRangeLabel(index);
+        if (index === state.activeIndex) {
+          await showPreview(index, { showLoading: false, keepIframe: true, scrollIntoView: false });
+        }
+        return true;
+      } catch (e) {
+        applyLocalHunkRange(index, rollback.start, rollback.end);
+        showToast('行範囲の指定に失敗しました: ' + e.message, 'error');
+        return false;
+      } finally {
+        state.rangeAdjusting = false;
+        updateRangeButtons(index);
+      }
+    }
+
+    function onRangeLineInputKeydown(event, edge) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        event.currentTarget.blur();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        const hunk = state.hunks[state.activeIndex];
+        if (hunk) {
+          event.currentTarget.value = String(edge === 'start' ? hunk.start : hunk.end);
+        }
+        event.currentTarget.blur();
+      }
+    }
+
+    async function commitRangeLineInput(edge) {
+      const index = state.activeIndex;
+      const hunk = state.hunks[index];
+      const input = document.getElementById(edge === 'start' ? 'rangeStartInput' : 'rangeEndInput');
+      if (!hunk || !input || state.rangeAdjusting || rangeHold.active) {
+        if (hunk) updatePreviewRange(hunk);
+        return;
+      }
+
+      const value = Number(input.value);
+      const start = edge === 'start' ? value : Number(hunk.start);
+      const end = edge === 'end' ? value : Number(hunk.end);
+      const totalLines = Math.max(Number(hunk.file_line_count) || end, Number(hunk.end), 1);
+      let error = '';
+      if (input.value === '' || !Number.isInteger(value)) {
+        error = '行番号は整数で入力してください';
+      } else if (value < 1 || value > totalLines) {
+        error = `行番号はL1～L${totalLines}の範囲で入力してください`;
+      } else if (start > end) {
+        error = '開始行は終了行以下で入力してください';
+      } else if (currentDiffMode !== 'file' && (
+        start < Number(hunk.start) || end > Number(hunk.end)
+      )) {
+        error = '共通差分・追加・削除表示では現在の範囲より内側を指定してください';
+      }
+
+      if (error) {
+        showToast(error, 'error');
+        updatePreviewRange(hunk);
+        return;
+      }
+      if (start === Number(hunk.start) && end === Number(hunk.end)) return;
+      await setActiveRangeAbsolute(start, end);
+    }
+
+    function clearRangeHoldTimers() {
+      if (rangeHold.delayTimer !== null) clearTimeout(rangeHold.delayTimer);
+      if (rangeHold.repeatTimer !== null) clearInterval(rangeHold.repeatTimer);
+      rangeHold.delayTimer = null;
+      rangeHold.repeatTimer = null;
+    }
+
+    function applyRangeHoldStep() {
+      if (!rangeHold.active || rangeHold.index !== state.activeIndex) return;
+      const hunk = state.hunks[rangeHold.index];
+      const next = rangeAfterAction(hunk, rangeHold.action);
+      if (next.start === Number(hunk.start) && next.end === Number(hunk.end)) {
+        if (rangeHold.repeatTimer !== null) clearInterval(rangeHold.repeatTimer);
+        rangeHold.repeatTimer = null;
+        return;
+      }
+      rangeHold.changed = true;
+      applyLocalHunkRange(rangeHold.index, next.start, next.end);
+    }
+
+    function startRangeHold(event) {
+      if ((event.pointerType === 'mouse' && event.button !== 0) || event.currentTarget.disabled) return;
+      if (state.rangeAdjusting || rangeHold.active) return;
+      const action = event.currentTarget.dataset.rangeAction;
+      const hunk = state.hunks[state.activeIndex];
+      if (!action || !hunk) return;
+
+      rangeHold.active = true;
+      rangeHold.action = action;
+      rangeHold.index = state.activeIndex;
+      rangeHold.button = event.currentTarget;
+      rangeHold.pointerId = event.pointerId;
+      rangeHold.triggered = false;
+      rangeHold.changed = false;
+      rangeHold.original = { start: Number(hunk.start), end: Number(hunk.end) };
+      rangeHold.button.classList.add('is-holding');
+      try {
+        rangeHold.button.setPointerCapture(event.pointerId);
+      } catch (_) { }
+
+      rangeHold.delayTimer = setTimeout(() => {
+        if (!rangeHold.active) return;
+        rangeHold.triggered = true;
+        rangeHold.repeatTimer = setInterval(applyRangeHoldStep, 110);
+        applyRangeHoldStep();
+      }, 380);
+    }
+
+    function finishRangeHold(event, commit = true) {
+      if (!rangeHold.active) return;
+      if (event?.pointerId !== undefined && rangeHold.pointerId !== event.pointerId) return;
+      clearRangeHoldTimers();
+      const button = rangeHold.button;
+      const index = rangeHold.index;
+      const original = rangeHold.original;
+      const triggered = rangeHold.triggered;
+      const changed = rangeHold.changed;
+      const hunk = state.hunks[index];
+      const target = hunk ? { start: Number(hunk.start), end: Number(hunk.end) } : original;
+      rangeHold.active = false;
+      rangeHold.button = null;
+      rangeHold.pointerId = null;
+      button?.classList.remove('is-holding');
+      try {
+        if (event?.pointerId !== undefined && button?.hasPointerCapture(event.pointerId)) {
+          button.releasePointerCapture(event.pointerId);
+        }
+      } catch (_) { }
+
+      if (triggered) {
+        rangeHold.suppressButton = button;
+        rangeHold.suppressUntil = Date.now() + 600;
+      }
+      if (!changed || !original) return;
+      if (!commit || index !== state.activeIndex || !target) {
+        applyLocalHunkRange(index, original.start, original.end);
+        return;
+      }
+      void setActiveRangeAbsolute(target.start, target.end, {
+        index,
+        rollback: original,
+        restrictionBase: original,
+      });
+    }
+
+    function onRangeStepClick(event) {
+      if (
+        rangeHold.suppressButton === event.currentTarget
+        && Date.now() < rangeHold.suppressUntil
+      ) {
+        event.preventDefault();
+        rangeHold.suppressButton = null;
+        return;
+      }
+      void adjustActiveRange(event.currentTarget.dataset.rangeAction);
+    }
+
+    function installRangeHoldControls() {
+      document.querySelectorAll('.range-step-btn').forEach(button => {
+        button.addEventListener('pointerdown', startRangeHold);
+        button.addEventListener('pointerup', event => finishRangeHold(event));
+        button.addEventListener('pointercancel', event => finishRangeHold(event));
+        button.addEventListener('pointerleave', event => finishRangeHold(event));
+        button.addEventListener('lostpointercapture', event => finishRangeHold(event));
+        button.addEventListener('click', onRangeStepClick);
+        button.addEventListener('contextmenu', event => event.preventDefault());
+      });
+      window.addEventListener('blur', () => finishRangeHold(null));
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) finishRangeHold(null);
+      });
+    }
+
     async function adjustActiveRange(action) {
       const index = state.activeIndex;
-      if (state.rangeAdjusting) return;
+      if (state.rangeAdjusting || rangeHold.active) return;
       if (index < 0 || !state.analysisId || !isRangeAdjustable(index)) return;
       if (currentDiffMode !== 'file' && (action === 'expand_up' || action === 'expand_down')) return;
 
       state.rangeAdjusting = true;
+      updateRangeButtons(index);
 
       try {
         const res = await fetch(`/api/hunk-range/${index}`, {
@@ -4557,6 +4972,7 @@
       updateAnalyzeButtonLabel();
     });
 
+    installRangeHoldControls();
     applySessionCacheToControls();
     updateAnalyzeButtonLabel();
 

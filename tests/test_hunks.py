@@ -1562,6 +1562,14 @@ class HunkMergeTests(unittest.TestCase):
                 payload = {"repo_path": str(repo), "analysis_id": analysis_id}
                 shrink = client.post("/api/hunk-range/0", json={**payload, "action": "shrink_up"})
                 expand = client.post("/api/hunk-range/0", json={**payload, "action": "expand_up"})
+                direct_shrink = client.post(
+                    "/api/hunk-range/0",
+                    json={**payload, "start": 3, "end": 4},
+                )
+                direct_expand = client.post(
+                    "/api/hunk-range/0",
+                    json={**payload, "start": 2, "end": 5},
+                )
                 reset = client.post("/api/hunk-range/0", json={**payload, "action": "reset"})
             finally:
                 diff2png.ANALYSIS_SESSIONS.clear()
@@ -1570,8 +1578,82 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual(shrink.get_json()["hunk"]["start"], 2)
         self.assertEqual(expand.status_code, 400)
         self.assertIn("拡大できません", expand.get_json()["error"])
+        self.assertEqual(direct_shrink.status_code, 200)
+        self.assertEqual(
+            (direct_shrink.get_json()["hunk"]["start"], direct_shrink.get_json()["hunk"]["end"]),
+            (3, 4),
+        )
+        self.assertEqual(direct_expand.status_code, 400)
+        self.assertIn("拡大できません", direct_expand.get_json()["error"])
         self.assertEqual(reset.status_code, 200)
         self.assertEqual(reset.get_json()["hunk"]["start"], 1)
+
+    def test_file_mode_range_endpoint_accepts_valid_absolute_range(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not available")
+
+        hunk = {
+            "filepath": "sample.py",
+            "start": 2,
+            "end": 8,
+            "default_start": 2,
+            "default_end": 8,
+            "old_start": 2,
+            "changed_lines": [5],
+            "diff_lines": ["-old", "+new"],
+            "added_count": 1,
+            "deleted_count": 1,
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+            (repo / "sample.py").write_text(
+                "\n".join(f"line {line}" for line in range(1, 11)),
+                encoding="utf-8",
+            )
+            try:
+                diff2png.ANALYSIS_SESSIONS.clear()
+                analysis_id = diff2png.create_analysis_session(
+                    str(repo),
+                    [hunk],
+                    [hunk],
+                    {"type": "worktree"},
+                    {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+                )
+                client = diff2png.app.test_client()
+                payload = {"repo_path": str(repo), "analysis_id": analysis_id}
+                valid = client.post(
+                    "/api/hunk-range/0",
+                    json={**payload, "start": 4, "end": 6},
+                )
+                reversed_range = client.post(
+                    "/api/hunk-range/0",
+                    json={**payload, "start": 7, "end": 6},
+                )
+                past_end = client.post(
+                    "/api/hunk-range/0",
+                    json={**payload, "start": 4, "end": 11},
+                )
+                fractional = client.post(
+                    "/api/hunk-range/0",
+                    json={**payload, "start": 4.5, "end": 6},
+                )
+            finally:
+                diff2png.ANALYSIS_SESSIONS.clear()
+
+        self.assertEqual(valid.status_code, 200, valid.get_data(as_text=True))
+        self.assertEqual(
+            (valid.get_json()["hunk"]["start"], valid.get_json()["hunk"]["end"]),
+            (4, 6),
+        )
+        self.assertEqual(valid.get_json()["hunk"]["file_line_count"], 10)
+        self.assertEqual(reversed_range.status_code, 400)
+        self.assertIn("開始行", reversed_range.get_json()["error"])
+        self.assertEqual(past_end.status_code, 400)
+        self.assertIn("最終行", past_end.get_json()["error"])
+        self.assertEqual(fractional.status_code, 400)
+        self.assertIn("整数", fractional.get_json()["error"])
 
     def test_hunk_inline_diff_endpoint_updates_target_hunk(self):
         if shutil.which("git") is None:
@@ -1791,6 +1873,57 @@ class HunkMergeTests(unittest.TestCase):
         expected = ["added:1:0:new", "deleted:1:0:old"]
         self.assertEqual(data["hunk"]["inline_hidden_changes"], expected)
         self.assertEqual(hunks[0]["inline_hidden_changes"], expected)
+
+    def test_hunk_highlights_reset_endpoint_clears_all_edit_types(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not available")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+            hunk = {
+                "filepath": "sample.py",
+                "start": 1,
+                "end": 1,
+                "default_start": 1,
+                "default_end": 1,
+                "old_start": 1,
+                "changed_lines": [1],
+                "diff_lines": ['-a = "old"', '+a = "new"'],
+                "added_count": 1,
+                "deleted_count": 1,
+                "changed_count": 2,
+                "inline_diff_mode": "full",
+                "inline_diff_enabled": True,
+                "inline_added_mutes": ["1:0:new"],
+                "inline_hidden_changes": ["deleted:1:0:old"],
+                "manual_row_highlights": {"1": "yellow"},
+            }
+
+            try:
+                diff2png.ANALYSIS_SESSIONS.clear()
+                analysis_id = diff2png.create_analysis_session(
+                    str(repo),
+                    [hunk],
+                    [hunk],
+                    {"type": "worktree"},
+                    {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+                )
+                response = diff2png.app.test_client().post(
+                    "/api/hunk-highlights-reset/0",
+                    json={"repo_path": str(repo), "analysis_id": analysis_id},
+                )
+            finally:
+                diff2png.ANALYSIS_SESSIONS.clear()
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        data = response.get_json()["hunk"]
+        self.assertEqual(data["inline_added_mutes"], [])
+        self.assertEqual(data["inline_hidden_changes"], [])
+        self.assertEqual(data["manual_row_highlights"], {})
+        self.assertEqual(hunk["inline_added_mutes"], [])
+        self.assertEqual(hunk["inline_hidden_changes"], [])
+        self.assertEqual(hunk["manual_row_highlights"], {})
 
     def test_normal_view_renders_muted_added_highlight(self):
         hunk = {

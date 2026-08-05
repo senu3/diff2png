@@ -432,6 +432,7 @@ def make_hunk_summary(hunk: dict) -> dict:
     end = int(hunk.get("end", start))
     default_start = int(hunk.get("default_start", start))
     default_end = int(hunk.get("default_end", end))
+    file_line_count = max(int(hunk.get("file_line_count", end)), end, 1)
     inline_diff_mode = hunk_inline_diff_mode(hunk)
     inline_diff_enabled = inline_diff_mode != "off"
     return {
@@ -440,6 +441,7 @@ def make_hunk_summary(hunk: dict) -> dict:
         "end": end,
         "default_start": default_start,
         "default_end": default_end,
+        "file_line_count": file_line_count,
         "range_adjusted": start != default_start or end != default_end,
         "inline_diff_enabled": inline_diff_enabled,
         "inline_diff_mode": inline_diff_mode,
@@ -616,6 +618,7 @@ def finalize_hunks(raw_hunks: list[dict], repo_path: str, content_source: dict, 
     for h in hunks:
         h["default_start"] = int(h.get("start", 1))
         h["default_end"] = int(h.get("end", h.get("start", 1)))
+        h["file_line_count"] = _hunk_file_line_count(h, repo_path, content_source)
         inline_diff_mode = normalize_inline_diff_mode(
             str(config.get("inline_diff_default_mode", INLINE_DIFF_DEFAULT_MODE)),
             INLINE_DIFF_DEFAULT_MODE,
@@ -635,6 +638,21 @@ def _clamp_hunk_range(start: int, end: int, total_lines: int) -> tuple[int, int]
     return start, end
 
 
+def _hunk_file_line_count(hunk: dict, repo_path: str, content_source: dict) -> int:
+    fallback = max(
+        int(hunk.get("end", 1)),
+        int(hunk.get("default_end", 1)),
+        1,
+    )
+    try:
+        return max(
+            len(read_source_lines(repo_path, hunk["filepath"], content_source)),
+            fallback,
+        )
+    except Exception:
+        return fallback
+
+
 def adjust_hunk_range(
     hunk: dict,
     repo_path: str,
@@ -642,10 +660,7 @@ def adjust_hunk_range(
     action: str,
     step: int = 1,
 ) -> dict:
-    try:
-        total_lines = len(read_source_lines(repo_path, hunk["filepath"], content_source))
-    except Exception:
-        total_lines = max(int(hunk.get("end", 1)), int(hunk.get("default_end", 1)), 1)
+    total_lines = _hunk_file_line_count(hunk, repo_path, content_source)
 
     start, end = _clamp_hunk_range(
         int(hunk.get("start", 1)),
@@ -682,6 +697,28 @@ def adjust_hunk_range(
     hunk["end"] = next_end
     hunk["default_start"] = default_start
     hunk["default_end"] = default_end
+    hunk["file_line_count"] = total_lines
+    return make_hunk_summary(hunk)
+
+
+def set_hunk_range(
+    hunk: dict,
+    repo_path: str,
+    content_source: dict,
+    start: int,
+    end: int,
+) -> dict:
+    total_lines = _hunk_file_line_count(hunk, repo_path, content_source)
+    if start < 1 or end < 1:
+        raise ValueError("行番号は1以上で指定してください")
+    if start > end:
+        raise ValueError("開始行は終了行以下で指定してください")
+    if end > total_lines:
+        raise ValueError(f"行番号はファイルの最終行（L{total_lines}）以内で指定してください")
+
+    hunk["start"] = start
+    hunk["end"] = end
+    hunk["file_line_count"] = total_lines
     return make_hunk_summary(hunk)
 
 
@@ -1189,24 +1226,56 @@ def reconfigure_analysis():
 def update_hunk_range(hunk_index: int):
     data = request_json_data()
     action = str(data.get("action", "")).strip()
+    has_explicit_range = "start" in data or "end" in data
 
     try:
         repo, session = resolve_analysis_context(data)
         diff_mode = session_config(session).get("diff_mode")
         if diff_mode in PATCH_LIKE_DIFF_MODES and action in {"expand_up", "expand_down"}:
-            raise ValueError("差分表示と赤のみ表示では範囲を拡大できません")
+            raise ValueError("共通差分・追加・削除表示では範囲を拡大できません")
         hunk = hunk_at(session, hunk_index)
     except ValueError as e:
         return error_response(str(e))
 
     try:
-        summary = adjust_hunk_range(
-            hunk,
-            str(repo),
-            session["content_source"],
-            action,
-        )
-    except ValueError as e:
+        if has_explicit_range:
+            if "start" not in data or "end" not in data:
+                raise ValueError("開始行と終了行を両方指定してください")
+            range_values = (data.get("start"), data.get("end"))
+            if any(
+                isinstance(value, bool)
+                or not (
+                    isinstance(value, int)
+                    or (
+                        isinstance(value, str)
+                        and value.strip().lstrip("-").isdigit()
+                    )
+                )
+                for value in range_values
+            ):
+                raise ValueError("行番号は整数で指定してください")
+            start, end = (int(value) for value in range_values)
+            current_start = int(hunk.get("start", 1))
+            current_end = int(hunk.get("end", current_start))
+            if diff_mode in PATCH_LIKE_DIFF_MODES and (
+                start < current_start or end > current_end
+            ):
+                raise ValueError("共通差分・追加・削除表示では範囲を拡大できません")
+            summary = set_hunk_range(
+                hunk,
+                str(repo),
+                session["content_source"],
+                start,
+                end,
+            )
+        else:
+            summary = adjust_hunk_range(
+                hunk,
+                str(repo),
+                session["content_source"],
+                action,
+            )
+    except (TypeError, ValueError) as e:
         return error_response(str(e))
 
     return jsonify({"hunk": summary})
@@ -1305,6 +1374,24 @@ def update_hunk_inline_change_hidden(hunk_index: int):
     else:
         hidden_changes.discard(key)
     hunk["inline_hidden_changes"] = sorted(hidden_changes)
+    return jsonify({"hunk": make_hunk_summary(hunk)})
+
+
+@app.route("/api/hunk-highlights-reset/<int:hunk_index>", methods=["POST"])
+def reset_hunk_highlights(hunk_index: int):
+    data = request_json_data()
+    try:
+        require_payload_text(data, "repo_path", "リポジトリパスが無効です")
+        require_payload_text(data, "analysis_id", "analysis_id が不正です")
+        _, session = resolve_analysis_context(data)
+        require_file_mode(session, "ハイライト編集のリセットは通常表示でのみ使用できます")
+        hunk = hunk_at(session, hunk_index)
+    except ValueError as e:
+        return error_response(str(e))
+
+    hunk["inline_added_mutes"] = []
+    hunk["inline_hidden_changes"] = []
+    hunk["manual_row_highlights"] = {}
     return jsonify({"hunk": make_hunk_summary(hunk)})
 
 

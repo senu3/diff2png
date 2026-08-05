@@ -1297,19 +1297,40 @@
       opacity: 0.45;
     }
 
-    .inline-added-mute-toggle {
+    .inline-change-edit-toggle {
       height: 28px;
       padding: 0 9px;
       font-size: 11px;
       line-height: 1;
       white-space: nowrap;
       flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
     }
 
-    .inline-added-mute-toggle.active {
+    .inline-change-edit-toggle.active {
       border-color: rgba(91, 138, 240, 0.45);
       color: var(--text);
       background: rgba(91, 138, 240, 0.06);
+    }
+
+    .inline-hidden-count {
+      min-width: 17px;
+      height: 17px;
+      padding: 0 4px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(220, 38, 38, 0.12);
+      color: #b91c1c;
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .inline-hidden-count.hidden {
+      display: none;
     }
 
     .preview-mode-segment {
@@ -2136,9 +2157,12 @@
             onclick="setActiveInlineDiffMode('off')" disabled aria-pressed="false">OFF</button>
         </div>
       </div>
-      <button class="btn btn-ghost inline-added-mute-toggle" id="inlineAddedMuteBtn"
-        onclick="toggleInlineAddedMutePicker()" disabled title="追加ハイライトを編集"
-        aria-label="追加ハイライトを編集">ハイライト編集</button>
+      <button class="btn btn-ghost inline-change-edit-toggle" id="inlineChangeEditBtn"
+        onclick="toggleInlineChangeEditor()" disabled title="行内差分と行背景を編集"
+        aria-label="行内差分と行背景を編集">
+        <span>ハイライト編集</span>
+        <span class="inline-hidden-count hidden" id="inlineHiddenCount" aria-hidden="true"></span>
+      </button>
       <div class="range-btns">
         <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
           title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
@@ -2229,8 +2253,8 @@
       selectionMode: 'custom',
       rangeAdjusting: false,
       inlineDiffUpdating: false,
-      inlineAddedMutePicking: false,
-      inlineAddedMuteUpdating: false,
+      inlineChangeEditing: false,
+      inlineChangeUpdating: false,
     };
     let draftFileFilter = [];
     let fileFilterExpandedPaths = new Set();
@@ -2609,8 +2633,8 @@
         btn.disabled = !hasAnalysis;
       });
       updateInlineDiffControls(state.activeIndex);
-      updateInlineAddedMuteButton(state.activeIndex);
-      updatePreviewInlineAddedMuteMode();
+      updateInlineChangeEditButton(state.activeIndex);
+      updatePreviewInlineChangeEditMode();
     }
 
     function getDiffSourceValues() {
@@ -3073,7 +3097,7 @@
         if (Array.isArray(data.source_selection?.keys) && data.source_selection.keys.length) {
           state.selectedSourceKeys = new Set(data.source_selection.keys);
         }
-        state.inlineAddedMutePicking = false;
+        state.inlineChangeEditing = false;
         updateSourceDisplayButton();
         updatePreviewDiffModeSegment();
         renderSourcePicker();
@@ -3162,7 +3186,7 @@
         }
 
         state.hunks = data.hunks || [];
-        state.inlineAddedMutePicking = false;
+        state.inlineChangeEditing = false;
         state.activeIndex = -1;
         updatePreviewDiffModeSegment();
         computeVisibleIndices();
@@ -3708,30 +3732,35 @@
       });
     }
 
-    function hasInlineAddedMuteTargets(iframe = currentPreviewIframe()) {
-      const doc = iframe?.contentDocument;
-      return Boolean(doc?.querySelector('span.inline-added'));
-    }
-
-    function canUseInlineAddedMute(index, iframe = currentPreviewIframe()) {
+    function canEditInlineChanges(index) {
       const h = state.hunks[index];
       return Boolean(h)
         && currentDiffMode === 'file';
     }
 
-    function updateInlineAddedMuteButton(index, iframe = currentPreviewIframe()) {
-      const btn = document.getElementById('inlineAddedMuteBtn');
+    function updateInlineChangeEditButton(index, iframe = currentPreviewIframe()) {
+      const btn = document.getElementById('inlineChangeEditBtn');
       if (!btn) return;
 
-      const enabled = canUseInlineAddedMute(index, iframe);
-      if (!enabled && state.inlineAddedMutePicking) {
-        state.inlineAddedMutePicking = false;
-        updatePreviewInlineAddedMuteMode(iframe);
+      const h = state.hunks[index];
+      const hiddenCount = Array.isArray(h?.inline_hidden_changes)
+        ? h.inline_hidden_changes.length
+        : 0;
+      const count = document.getElementById('inlineHiddenCount');
+      if (count) {
+        count.textContent = String(hiddenCount);
+        count.classList.toggle('hidden', hiddenCount === 0);
+      }
+
+      const enabled = canEditInlineChanges(index, iframe);
+      if (!enabled && state.inlineChangeEditing) {
+        state.inlineChangeEditing = false;
+        updatePreviewInlineChangeEditMode(iframe);
       }
       btn.disabled = !enabled;
-      btn.classList.toggle('active', enabled && state.inlineAddedMutePicking);
+      btn.classList.toggle('active', enabled && state.inlineChangeEditing);
       const title = enabled
-        ? '追加ハイライトや行背景をクリックして編集'
+        ? `赤・緑文字の非表示や行背景を編集${hiddenCount ? `（非表示 ${hiddenCount}件）` : ''}`
         : '通常表示のhunkで使用できます';
       btn.title = title;
       btn.setAttribute('aria-label', title);
@@ -3761,7 +3790,7 @@
       document.getElementById('rangeExpandDownBtn').disabled = !adjustable || isPatch;
       document.getElementById('rangeResetBtn').disabled = !adjustable || !h.range_adjusted;
       updateInlineDiffControls(index);
-      updateInlineAddedMuteButton(index);
+      updateInlineChangeEditButton(index);
     }
 
     function updateHunkRangeLabel(index) {
@@ -3804,7 +3833,7 @@
       return document.getElementById('previewContent')?.querySelector('iframe') || null;
     }
 
-    function inlineAddedMuteStyle() {
+    function inlineChangeEditStyle() {
       return `
         tr.manual-row-green {
           background: #ecfdf5 !important;
@@ -3824,45 +3853,70 @@
           background: transparent !important;
           color: inherit !important;
         }
-        body.inline-added-mute-picking tr {
+        body.inline-change-editing tr {
           cursor: pointer;
         }
-        body.inline-added-mute-picking tr:hover td.code {
+        body.inline-change-editing tr:hover td.code {
           box-shadow: inset 0 0 0 9999px rgba(91, 138, 240, 0.05);
         }
-        body.inline-added-mute-picking span.inline-added {
+        body.inline-change-editing span.inline-added,
+        body.inline-change-editing span.inline-deleted {
           cursor: pointer;
-          outline: 1px dashed #16a34a;
+          outline: 1px dashed currentColor;
           outline-offset: 1px;
         }
-        body.inline-added-mute-picking span.inline-added.inline-added-muted {
-          outline-color: #94a3b8;
+        body.inline-change-editing span.inline-change-hidden {
+          display: inline-flex !important;
+          align-items: center;
+          justify-content: center;
+          width: 18px;
+          min-width: 18px;
+          height: 1.25em;
+          padding: 0 !important;
+          overflow: hidden;
+          color: transparent !important;
+          background: #f8fafc !important;
+          text-decoration: none !important;
+          vertical-align: text-bottom;
         }
-        body.inline-added-mute-picking span.inline-added:hover {
+        body.inline-change-editing span.inline-added.inline-change-hidden {
+          outline-color: #16a34a;
+        }
+        body.inline-change-editing span.inline-deleted.inline-change-hidden {
+          outline-color: #dc2626;
+        }
+        body.inline-change-editing span.inline-change-hidden::before {
+          content: "...";
+          color: #64748b;
+          font-size: 10px;
+          line-height: 1;
+        }
+        body.inline-change-editing span.inline-added:hover,
+        body.inline-change-editing span.inline-deleted:hover {
           box-shadow: 0 0 0 2px rgba(91, 138, 240, 0.35);
         }
       `;
     }
 
-    function installInlineAddedMuteControls(iframe) {
+    function installInlineChangeEditControls(iframe) {
       const doc = iframe?.contentDocument;
       if (!doc?.body) return;
-      if (!doc.getElementById('inline-added-mute-style')) {
+      if (!doc.getElementById('inline-change-edit-style')) {
         const style = doc.createElement('style');
-        style.id = 'inline-added-mute-style';
-        style.textContent = inlineAddedMuteStyle();
+        style.id = 'inline-change-edit-style';
+        style.textContent = inlineChangeEditStyle();
         doc.head.appendChild(style);
       }
-      doc.body.addEventListener('click', onPreviewInlineAddedClick);
-      updateInlineAddedMuteButton(state.activeIndex, iframe);
-      updatePreviewInlineAddedMuteMode(iframe);
+      doc.body.addEventListener('click', onPreviewInlineChangeClick);
+      updateInlineChangeEditButton(state.activeIndex, iframe);
+      updatePreviewInlineChangeEditMode(iframe);
     }
 
-    function updatePreviewInlineAddedMuteMode(iframe = currentPreviewIframe()) {
+    function updatePreviewInlineChangeEditMode(iframe = currentPreviewIframe()) {
       const doc = iframe?.contentDocument;
       if (!doc?.body) return;
-      const enabled = canUseInlineAddedMute(state.activeIndex, iframe) && state.inlineAddedMutePicking;
-      doc.body.classList.toggle('inline-added-mute-picking', enabled);
+      const enabled = canEditInlineChanges(state.activeIndex, iframe) && state.inlineChangeEditing;
+      doc.body.classList.toggle('inline-change-editing', enabled);
       doc.querySelectorAll('tr').forEach(row => {
         if (enabled) {
           row.setAttribute('title', 'クリックで行背景を切り替え');
@@ -3870,21 +3924,24 @@
           row.removeAttribute('title');
         }
       });
-      doc.querySelectorAll('span.inline-added').forEach(span => {
+      doc.querySelectorAll('span.inline-added, span.inline-deleted').forEach(span => {
         if (enabled) {
-          span.setAttribute('title', 'クリックで追加ハイライトを消す/戻す');
+          const kind = span.classList.contains('inline-deleted') ? '削除文字' : '追加文字';
+          const action = span.classList.contains('inline-change-hidden') ? '戻す' : '非表示';
+          span.setAttribute('title', `クリックで${kind}を${action}`);
         } else {
           span.removeAttribute('title');
         }
       });
     }
 
-    function getInlineAddedMuteKey(span) {
+    function getInlineChangeKey(span) {
       const row = span.closest('tr');
       const line = row?.querySelector('td.lineno')?.textContent.trim() || '';
-      const spansInRow = Array.from(row?.querySelectorAll('span.inline-added') || []);
+      const kind = span.classList.contains('inline-deleted') ? 'deleted' : 'added';
+      const spansInRow = Array.from(row?.querySelectorAll(`span.inline-${kind}`) || []);
       const indexInRow = Math.max(0, spansInRow.indexOf(span));
-      return `${line}:${indexInRow}:${span.textContent || ''}`;
+      return `${kind}:${line}:${indexInRow}:${span.textContent || ''}`;
     }
 
     function getPreviewRowLineNumber(row) {
@@ -3913,50 +3970,52 @@
       return 'green';
     }
 
-    async function toggleInlineAddedMuteSpan(span) {
+    async function toggleInlineChangeSpan(span) {
       const index = state.activeIndex;
-      if (state.inlineAddedMuteUpdating || index < 0 || !state.analysisId || !canUseInlineAddedMute(index)) return;
+      if (state.inlineChangeUpdating || index < 0 || !state.analysisId || !canEditInlineChanges(index)) return;
       if (getInlineDiffMode(state.hunks[index]) === 'off') return;
 
-      const key = getInlineAddedMuteKey(span);
-      const nextMuted = !span.classList.contains('inline-added-muted');
-      state.inlineAddedMuteUpdating = true;
-      span.classList.toggle('inline-added-muted', nextMuted);
+      const key = getInlineChangeKey(span);
+      const nextHidden = !span.classList.contains('inline-change-hidden');
+      state.inlineChangeUpdating = true;
+      span.classList.toggle('inline-change-hidden', nextHidden);
 
       try {
-        const res = await fetch(`/api/hunk-inline-added-mute/${index}`, {
+        const res = await fetch(`/api/hunk-inline-change-hidden/${index}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             repo_path: state.repoPath,
             analysis_id: state.analysisId,
             key,
-            muted: nextMuted,
+            hidden: nextHidden,
           }),
         });
         const data = await res.json();
         if (!res.ok) {
-          span.classList.toggle('inline-added-muted', !nextMuted);
-          showToast(data.error || '追加ハイライトの変更に失敗しました', 'error');
+          span.classList.toggle('inline-change-hidden', !nextHidden);
+          showToast(data.error || '行内差分の表示変更に失敗しました', 'error');
           return;
         }
         state.hunks[index] = data.hunk;
+        updateInlineChangeEditButton(index);
+        updatePreviewInlineChangeEditMode();
       } catch (e) {
-        span.classList.toggle('inline-added-muted', !nextMuted);
-        showToast('追加ハイライトの変更に失敗しました: ' + e.message, 'error');
+        span.classList.toggle('inline-change-hidden', !nextHidden);
+        showToast('行内差分の表示変更に失敗しました: ' + e.message, 'error');
       } finally {
-        state.inlineAddedMuteUpdating = false;
+        state.inlineChangeUpdating = false;
       }
     }
 
     async function toggleManualRowHighlight(row) {
       const index = state.activeIndex;
       const lineno = getPreviewRowLineNumber(row);
-      if (state.inlineAddedMuteUpdating || index < 0 || !state.analysisId || !canUseInlineAddedMute(index) || !lineno) return;
+      if (state.inlineChangeUpdating || index < 0 || !state.analysisId || !canEditInlineChanges(index) || !lineno) return;
 
       const previousColor = getManualRowHighlightColor(row);
       const nextColor = nextManualRowHighlightColor(row);
-      state.inlineAddedMuteUpdating = true;
+      state.inlineChangeUpdating = true;
       applyManualRowHighlightClass(row, nextColor);
 
       try {
@@ -3981,30 +4040,30 @@
         applyManualRowHighlightClass(row, previousColor);
         showToast('行背景の変更に失敗しました: ' + e.message, 'error');
       } finally {
-        state.inlineAddedMuteUpdating = false;
+        state.inlineChangeUpdating = false;
       }
     }
 
-    function onPreviewInlineAddedClick(event) {
-      if (!state.inlineAddedMutePicking || !canUseInlineAddedMute(state.activeIndex)) return;
+    function onPreviewInlineChangeClick(event) {
+      if (!state.inlineChangeEditing || !canEditInlineChanges(state.activeIndex)) return;
       const target = event.target?.nodeType === 1 ? event.target : event.target?.parentElement;
-      const span = target?.closest?.('span.inline-added');
+      const span = target?.closest?.('span.inline-added, span.inline-deleted');
       const row = target?.closest?.('tr');
       if (!span && !row) return;
       event.preventDefault();
       event.stopPropagation();
       if (span) {
-        toggleInlineAddedMuteSpan(span);
+        toggleInlineChangeSpan(span);
       } else {
         toggleManualRowHighlight(row);
       }
     }
 
-    function toggleInlineAddedMutePicker() {
-      if (!canUseInlineAddedMute(state.activeIndex)) return;
-      state.inlineAddedMutePicking = !state.inlineAddedMutePicking;
-      updateInlineAddedMuteButton(state.activeIndex);
-      updatePreviewInlineAddedMuteMode();
+    function toggleInlineChangeEditor() {
+      if (!canEditInlineChanges(state.activeIndex)) return;
+      state.inlineChangeEditing = !state.inlineChangeEditing;
+      updateInlineChangeEditButton(state.activeIndex);
+      updatePreviewInlineChangeEditMode();
     }
 
     function writePreviewHtml(html, options = {}) {
@@ -4020,7 +4079,7 @@
       iframe.contentDocument.open();
       iframe.contentDocument.write(html);
       iframe.contentDocument.close();
-      installInlineAddedMuteControls(iframe);
+      installInlineChangeEditControls(iframe);
 
       const fitHeight = () => {
         if (!iframe.contentDocument?.body) return;
@@ -4095,14 +4154,14 @@
 
         state.hunks[index] = data.hunk;
         updateInlineDiffControls(index);
-        updateInlineAddedMuteButton(index);
+        updateInlineChangeEditButton(index);
         await showPreview(index, { showLoading: false, keepIframe: true, scrollIntoView: false });
       } catch (e) {
         showToast('行内差分の切り替えに失敗しました: ' + e.message, 'error');
       } finally {
         state.inlineDiffUpdating = false;
         updateInlineDiffControls(index);
-        updateInlineAddedMuteButton(index);
+        updateInlineChangeEditButton(index);
       }
     }
 

@@ -24,10 +24,12 @@ import diff_renderer
 from diff_renderer import (
     hunk_inline_added_mutes,
     hunk_inline_diff_mode,
+    hunk_inline_hidden_changes,
     hunk_manual_row_highlights,
     normalize_inline_added_mute_key,
     normalize_inline_diff_max_changed_chars,
     normalize_inline_diff_mode,
+    normalize_inline_hidden_change_key,
     normalize_manual_row_highlight_color,
 )
 
@@ -67,6 +69,7 @@ BACKGROUND_MODES = {"normal", "no_bg_footer", "transparent_no_footer"}
 INLINE_DIFF_MODES = {"full", "off"}
 INLINE_ADDED_MUTES_LIMIT = 200
 INLINE_ADDED_MUTE_KEY_LIMIT = 1000
+INLINE_HIDDEN_CHANGES_LIMIT = 400
 MANUAL_ROW_HIGHLIGHTS_LIMIT = 500
 MANUAL_ROW_HIGHLIGHT_COLORS = {"green", "yellow"}
 _FILENAME_UNSAFE_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
@@ -445,6 +448,7 @@ def make_hunk_summary(hunk: dict) -> dict:
         "added_count": hunk.get("added_count", 0),
         "deleted_count": hunk.get("deleted_count", 0),
         "inline_added_mutes": sorted(hunk_inline_added_mutes(hunk)),
+        "inline_hidden_changes": sorted(hunk_inline_hidden_changes(hunk)),
         "manual_row_highlights": {
             str(lineno): color
             for lineno, color in sorted(hunk_manual_row_highlights(hunk).items())
@@ -619,6 +623,7 @@ def finalize_hunks(raw_hunks: list[dict], repo_path: str, content_source: dict, 
         h["inline_diff_enabled"] = inline_diff_mode != "off"
         h["inline_diff_mode"] = inline_diff_mode
         h["inline_added_mutes"] = []
+        h["inline_hidden_changes"] = []
         h["manual_row_highlights"] = {}
     return hunks
 
@@ -1265,6 +1270,41 @@ def update_hunk_inline_added_mute(hunk_index: int):
     else:
         mutes.discard(key)
     hunk["inline_added_mutes"] = sorted(mutes)
+    return jsonify({"hunk": make_hunk_summary(hunk)})
+
+
+@app.route("/api/hunk-inline-change-hidden/<int:hunk_index>", methods=["POST"])
+def update_hunk_inline_change_hidden(hunk_index: int):
+    data = request_json_data()
+    hidden = data.get("hidden")
+    try:
+        require_payload_text(data, "repo_path", "リポジトリパスが無効です")
+        require_payload_text(data, "analysis_id", "analysis_id が不正です")
+    except ValueError as e:
+        return error_response(str(e))
+
+    if not isinstance(hidden, bool):
+        return error_response("hidden は真偽値で指定してください")
+
+    try:
+        key = normalize_inline_hidden_change_key(data.get("key"))
+        _, session = resolve_analysis_context(data)
+        require_file_mode(session, "行内差分の非表示は通常表示でのみ使用できます")
+        hunk = hunk_at(session, hunk_index)
+    except ValueError as e:
+        return error_response(str(e))
+
+    if hunk_inline_diff_mode(hunk) == "off":
+        return error_response("行内差分が非表示のhunkでは使用できません")
+
+    hidden_changes = hunk_inline_hidden_changes(hunk)
+    if hidden:
+        if len(hidden_changes) >= INLINE_HIDDEN_CHANGES_LIMIT and key not in hidden_changes:
+            return error_response("非表示数が上限に達しました")
+        hidden_changes.add(key)
+    else:
+        hidden_changes.discard(key)
+    hunk["inline_hidden_changes"] = sorted(hidden_changes)
     return jsonify({"hunk": make_hunk_summary(hunk)})
 
 

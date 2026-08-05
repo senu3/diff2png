@@ -1174,6 +1174,23 @@ class HunkMergeTests(unittest.TestCase):
 
         self.assertIn('<span class="inline-added inline-added-muted">new</span>', html)
 
+    def test_inline_diff_can_hide_added_and_deleted_fragments(self):
+        html = diff2png._inline_diff_html(
+            "value = old",
+            "value = new",
+            added_key_prefix="10",
+            hidden_change_keys={"deleted:10:0:old", "added:10:0:new"},
+        )
+
+        self.assertIn(
+            '<span class="inline-deleted inline-change-hidden">old</span>',
+            html,
+        )
+        self.assertIn(
+            '<span class="inline-added inline-change-hidden">new</span>',
+            html,
+        )
+
     def test_normal_view_does_not_pair_single_html_tag_rename(self):
         hunk = {
             "filepath": "sample.html",
@@ -1717,6 +1734,64 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual(data["hunk"]["inline_added_mutes"], ["1:0:new"])
         self.assertEqual(hunks[0]["inline_added_mutes"], ["1:0:new"])
 
+    def test_hunk_inline_change_hidden_endpoint_updates_target_hunk(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not available")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, text=True)
+            hunks = [
+                {
+                    "filepath": "sample.py",
+                    "start": 1,
+                    "end": 1,
+                    "default_start": 1,
+                    "default_end": 1,
+                    "old_start": 1,
+                    "changed_lines": [1],
+                    "diff_lines": ['-a = "old"', '+a = "new"'],
+                    "added_count": 1,
+                    "deleted_count": 1,
+                    "changed_count": 2,
+                    "inline_diff_mode": "full",
+                    "inline_diff_enabled": True,
+                },
+            ]
+
+            try:
+                diff2png.ANALYSIS_SESSIONS.clear()
+                analysis_id = diff2png.create_analysis_session(
+                    str(repo),
+                    hunks,
+                    hunks,
+                    {"type": "worktree"},
+                    {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+                )
+                client = diff2png.app.test_client()
+                for key in ("deleted:1:0:old", "added:1:0:new"):
+                    response = client.post(
+                        "/api/hunk-inline-change-hidden/0",
+                        json={
+                            "repo_path": str(repo),
+                            "analysis_id": analysis_id,
+                            "key": key,
+                            "hidden": True,
+                        },
+                    )
+                    self.assertEqual(
+                        response.status_code,
+                        200,
+                        response.get_data(as_text=True),
+                    )
+            finally:
+                diff2png.ANALYSIS_SESSIONS.clear()
+
+        data = response.get_json()
+        expected = ["added:1:0:new", "deleted:1:0:old"]
+        self.assertEqual(data["hunk"]["inline_hidden_changes"], expected)
+        self.assertEqual(hunks[0]["inline_hidden_changes"], expected)
+
     def test_normal_view_renders_muted_added_highlight(self):
         hunk = {
             "filepath": "sample.py",
@@ -1748,6 +1823,49 @@ class HunkMergeTests(unittest.TestCase):
             )
 
         self.assertIn('<span class="inline-added inline-added-muted">new</span>', html)
+
+    def test_normal_view_renders_hidden_inline_changes(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 1,
+            "default_start": 1,
+            "default_end": 1,
+            "old_start": 1,
+            "changed_lines": [1],
+            "diff_lines": ['-value = "old"', '+value = "new"'],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+            "inline_diff_mode": "full",
+            "inline_diff_enabled": True,
+            "inline_hidden_changes": [
+                "added:1:0:new",
+                "deleted:1:0:old",
+            ],
+        }
+        source_lines = ['value = "new"']
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            html = diff2png.build_code_html(
+                hunk,
+                ".",
+                1,
+                1,
+                "2026-08-05 00:00:00",
+                {"type": "worktree"},
+                {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
+            )
+
+        self.assertIn("span.inline-change-hidden{display:none}", html)
+        self.assertIn(
+            '<span class="inline-deleted inline-change-hidden">old</span>',
+            html,
+        )
+        self.assertIn(
+            '<span class="inline-added inline-change-hidden">new</span>',
+            html,
+        )
 
     def test_normal_view_renders_manual_row_highlights(self):
         hunk = {

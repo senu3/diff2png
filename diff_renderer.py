@@ -24,6 +24,8 @@ INLINE_DIFF_ISOLATED_DELETION_MIN_ADDED_DISTANCE = 2
 INLINE_DIFF_MODES = {"full", "off"}
 INLINE_ADDED_MUTES_LIMIT = 200
 INLINE_ADDED_MUTE_KEY_LIMIT = 1000
+INLINE_HIDDEN_CHANGES_LIMIT = 400
+INLINE_HIDDEN_CHANGE_KEY_LIMIT = 1000
 MANUAL_ROW_HIGHLIGHTS_LIMIT = 500
 MANUAL_ROW_HIGHLIGHT_COLORS = {"green", "yellow"}
 CODE_TAB_SIZE = 4
@@ -85,6 +87,27 @@ def hunk_inline_added_mutes(hunk: dict) -> set[str]:
         str(value)
         for value in values[:INLINE_ADDED_MUTES_LIMIT]
         if isinstance(value, str) and value
+    }
+
+
+def normalize_inline_hidden_change_key(value: str | None) -> str:
+    key = str(value or "")
+    if not key or len(key) > INLINE_HIDDEN_CHANGE_KEY_LIMIT:
+        raise ValueError("key が不正です")
+    if not (key.startswith("added:") or key.startswith("deleted:")):
+        raise ValueError("key が不正です")
+    return key
+
+
+def hunk_inline_hidden_changes(hunk: dict) -> set[str]:
+    values = hunk.get("inline_hidden_changes", [])
+    if not isinstance(values, list):
+        return set()
+    return {
+        str(value)
+        for value in values[:INLINE_HIDDEN_CHANGES_LIMIT]
+        if isinstance(value, str)
+        and (value.startswith("added:") or value.startswith("deleted:"))
     }
 
 
@@ -248,6 +271,7 @@ td.code{{padding:2px 8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:
 span.inline-added{{background:#bbf7d0;color:#14532d;border-radius:3px;padding:0 2px}}
 span.inline-added.inline-added-muted{{background:transparent;color:inherit}}
 span.inline-deleted{{background:#fecaca;color:#991b1b;border-radius:3px;padding:0 2px;text-decoration:line-through}}
+span.inline-change-hidden{{display:none}}
 tr.changed.inline-rendered{{background:#f8fafc}}
 tr.changed.inline-rendered td.lineno{{background:#f8fafc;color:#64748b}}
 tr.manual-row-green{{background:#ecfdf5}}
@@ -626,10 +650,13 @@ def _inline_diff_html(
     max_changed_chars: int | None = None,
     muted_added_keys: set[str] | None = None,
     added_key_prefix: str = "",
+    hidden_change_keys: set[str] | None = None,
 ) -> str | None:
     parts = []
     added_index = 0
+    deleted_index = 0
     muted_added_keys = muted_added_keys or set()
+    hidden_change_keys = hidden_change_keys or set()
     changed_chars_limit = (
         INLINE_DIFF_MAX_CHANGED_CHARS
         if max_changed_chars is None
@@ -665,9 +692,24 @@ def _inline_diff_html(
 
     def added_span(text: str) -> str:
         nonlocal added_index
-        key = f"{added_key_prefix}:{added_index}:{text}"
+        legacy_key = f"{added_key_prefix}:{added_index}:{text}"
+        hidden_key = f"added:{legacy_key}"
         added_index += 1
-        class_name = "inline-added inline-added-muted" if key in muted_added_keys else "inline-added"
+        classes = ["inline-added"]
+        if legacy_key in muted_added_keys:
+            classes.append("inline-added-muted")
+        if hidden_key in hidden_change_keys:
+            classes.append("inline-change-hidden")
+        class_name = " ".join(classes)
+        return f'<span class="{class_name}">{escape(text)}</span>'
+
+    def deleted_span(text: str) -> str:
+        nonlocal deleted_index
+        hidden_key = f"deleted:{added_key_prefix}:{deleted_index}:{text}"
+        deleted_index += 1
+        class_name = "inline-deleted"
+        if hidden_key in hidden_change_keys:
+            class_name += " inline-change-hidden"
         return f'<span class="{class_name}">{escape(text)}</span>'
 
     for tag, i1, i2, j1, j2 in opcodes:
@@ -688,13 +730,13 @@ def _inline_diff_html(
             )
         elif tag == "delete":
             if show_old and not is_leading_indent:
-                parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
+                parts.append(deleted_span(old_part))
         elif tag == "replace":
             if is_leading_indent:
                 parts.append(escape(new_part))
             else:
                 if show_old:
-                    parts.append(f'<span class="inline-deleted">{escape(old_part)}</span>')
+                    parts.append(deleted_span(old_part))
                 parts.append(added_span(new_part))
     return "".join(parts)
 
@@ -986,6 +1028,7 @@ def build_code_html(
         render_config.get("inline_diff_max_changed_chars", INLINE_DIFF_MAX_CHANGED_CHARS)
     )
     inline_added_mutes = hunk_inline_added_mutes(hunk)
+    inline_hidden_changes = hunk_inline_hidden_changes(hunk)
     manual_row_highlights = hunk_manual_row_highlights(hunk)
     replacement_texts = [text for _, text in replacements.values()]
     deletion_texts = [deletion["text"] for deletion in visible_deletions]
@@ -1044,6 +1087,7 @@ def build_code_html(
                 inline_diff_max_changed_chars,
                 inline_added_mutes,
                 str(lineno),
+                inline_hidden_changes,
             )
             if inline_html is not None:
                 code_html = inline_html

@@ -21,7 +21,7 @@ INLINE_DIFF_CONTROL_HEADER_PAIR_SCORE = 0.7
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 INLINE_DIFF_ISOLATED_DELETION_MAX_LINES = 2
 INLINE_DIFF_ISOLATED_DELETION_MIN_ADDED_DISTANCE = 2
-INLINE_DIFF_MODES = {"full", "new", "off"}
+INLINE_DIFF_MODES = {"full", "off"}
 INLINE_ADDED_MUTES_LIMIT = 200
 INLINE_ADDED_MUTE_KEY_LIMIT = 1000
 MANUAL_ROW_HIGHLIGHTS_LIMIT = 500
@@ -50,6 +50,8 @@ def _control_header_kind(text: str) -> str | None:
 
 def hunk_inline_diff_mode(hunk: dict) -> str:
     mode = str(hunk.get("inline_diff_mode", "")).strip().lower()
+    if mode == "new":
+        return "off"
     if mode in INLINE_DIFF_MODES:
         return mode
     return "full" if bool(hunk.get("inline_diff_enabled", True)) else "off"
@@ -57,8 +59,10 @@ def hunk_inline_diff_mode(hunk: dict) -> str:
 
 def normalize_inline_diff_mode(value: str | None, default: str = "full") -> str:
     mode = str(value or default).strip().lower()
+    if mode == "new":
+        return "off"
     if mode not in INLINE_DIFF_MODES:
-        raise ValueError("inline_diff_default_mode は full, new, off のいずれかを指定してください")
+        raise ValueError("inline_diff_default_mode は full, off のいずれかを指定してください")
     return mode
 
 
@@ -945,6 +949,8 @@ def build_code_html(
     render_config = config or _default_render_config()
     if render_config.get("diff_mode") == "patch":
         return build_patch_html(hunk, hunk_index, total, timestamp, render_config)
+    if render_config.get("diff_mode") == "added":
+        return build_added_patch_html(hunk, hunk_index, total, timestamp, render_config)
     if render_config.get("diff_mode") == "deleted":
         return build_deleted_patch_html(hunk, hunk_index, total, timestamp, render_config)
 
@@ -1296,16 +1302,28 @@ def build_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, co
     return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
 
 
-def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp: str, config: dict | None = None) -> str:
+def _build_filtered_patch_html(
+    hunk: dict,
+    hunk_index: int,
+    total: int,
+    timestamp: str,
+    change_type: str,
+    config: dict | None = None,
+) -> str:
+    if change_type not in {"added", "deleted"}:
+        raise ValueError("change_type は added, deleted のいずれかを指定してください")
+
     render_config = config or _default_render_config()
     lang = detect_language(hunk["filepath"])
     rows = []
     visible_rows = _visible_diff_rows(hunk)
     visible_diff_lines = [raw for raw, _, _ in visible_rows]
+    hidden_prefix = "-" if change_type == "added" else "+"
+    visible_prefix = "+" if change_type == "added" else "-"
 
     stripped_texts_by_index = _stripped_diff_texts_by_index(
         visible_diff_lines,
-        lambda raw: not raw.startswith("\\") and not raw.startswith("+"),
+        lambda raw: not raw.startswith("\\") and not raw.startswith(hidden_prefix),
     )
 
     for idx, (raw, old_ln, new_ln) in enumerate(visible_rows):
@@ -1313,8 +1331,7 @@ def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp:
             note = escape(raw)
             rows.append(
                 '<tr class="note">'
-                '<td class="lineno old"></td>'
-                '<td class="lineno new"></td>'
+                '<td class="lineno"></td>'
                 '<td class="marker">\\</td>'
                 f'<td class="code">{note}</td>'
                 '</tr>'
@@ -1322,33 +1339,71 @@ def build_deleted_patch_html(hunk: dict, hunk_index: int, total: int, timestamp:
             continue
 
         prefix = raw[0]
-        if prefix == "+":
+        if prefix == hidden_prefix:
             continue
 
         text = stripped_texts_by_index.get(idx, raw[1:])
         escaped = escape(text)
 
-        if prefix == "-":
+        if prefix == visible_prefix:
+            row_class = "added" if change_type == "added" else "deleted"
+            line_number = new_ln if change_type == "added" else ""
             rows.append(
-                '<tr class="deleted">'
-                '<td class="lineno old"></td>'
-                '<td class="lineno new"></td>'
-                '<td class="marker">-</td>'
+                f'<tr class="{row_class}">'
+                f'<td class="lineno">{line_number}</td>'
+                f'<td class="marker">{visible_prefix}</td>'
                 f'<td class="code">{escaped}</td>'
                 '</tr>'
             )
         else:
+            line_number = new_ln if change_type == "added" else old_ln
             rows.append(
                 '<tr>'
-                f'<td class="lineno old">{old_ln}</td>'
-                f'<td class="lineno new">{new_ln}</td>'
+                f'<td class="lineno">{line_number}</td>'
                 '<td class="marker"> </td>'
                 f'<td class="code">{escaped}</td>'
                 '</tr>'
             )
 
-    meta = f"-{hunk.get('old_start', hunk['start'])} +{hunk['start']} | {hunk_index}/{total} | {lang} | 削除"
+    if change_type == "added":
+        meta = f"+{hunk['start']} | {hunk_index}/{total} | {lang} | 追加"
+    else:
+        meta = f"-{hunk.get('old_start', hunk['start'])} | {hunk_index}/{total} | {lang} | 削除"
     return _compose_hunk_html(rows, hunk, meta, lang, timestamp, render_config)
+
+
+def build_added_patch_html(
+    hunk: dict,
+    hunk_index: int,
+    total: int,
+    timestamp: str,
+    config: dict | None = None,
+) -> str:
+    return _build_filtered_patch_html(
+        hunk,
+        hunk_index,
+        total,
+        timestamp,
+        "added",
+        config,
+    )
+
+
+def build_deleted_patch_html(
+    hunk: dict,
+    hunk_index: int,
+    total: int,
+    timestamp: str,
+    config: dict | None = None,
+) -> str:
+    return _build_filtered_patch_html(
+        hunk,
+        hunk_index,
+        total,
+        timestamp,
+        "deleted",
+        config,
+    )
 
 
 # ================================================================

@@ -57,14 +57,14 @@ INLINE_DIFF_MAX_CHANGED_CHARS = 120
 INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
 INLINE_DIFF_MIN_SIMILARITY = 0.62
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
-DIFF_MODES = {"file", "patch", "deleted"}
-PATCH_LIKE_DIFF_MODES = {"patch", "deleted"}
+DIFF_MODES = {"file", "patch", "added", "deleted"}
+PATCH_LIKE_DIFF_MODES = {"patch", "added", "deleted"}
 SOURCE_MODES = {"worktree", "staged", "commit", "range"}
 SOURCE_KEY_UNSTAGED = "unstaged"
 SOURCE_KEY_STAGED = "staged"
 SOURCE_COMMIT_PREFIX = "commit:"
 BACKGROUND_MODES = {"normal", "no_bg_footer", "transparent_no_footer"}
-INLINE_DIFF_MODES = {"full", "new", "off"}
+INLINE_DIFF_MODES = {"full", "off"}
 INLINE_ADDED_MUTES_LIMIT = 200
 INLINE_ADDED_MUTE_KEY_LIMIT = 1000
 MANUAL_ROW_HIGHLIGHTS_LIMIT = 500
@@ -916,6 +916,7 @@ _inline_diff_html = diff_renderer._inline_diff_html
 _merge_nearby_inline_fragments = diff_renderer._merge_nearby_inline_fragments
 _merge_inline_punctuation_fragments = diff_renderer._merge_inline_punctuation_fragments
 build_patch_html = diff_renderer.build_patch_html
+build_added_patch_html = diff_renderer.build_added_patch_html
 build_deleted_patch_html = diff_renderer.build_deleted_patch_html
 detect_language = diff_renderer.detect_language
 
@@ -987,7 +988,7 @@ def config():
         if "diff_mode" in data:
             mode = str(data["diff_mode"]).strip().lower()
             if mode not in DIFF_MODES:
-                raise ValueError("diff_mode は file, patch, deleted のいずれかを指定してください")
+                raise ValueError("diff_mode は file, patch, added, deleted のいずれかを指定してください")
             DIFF_MODE = mode
         if "inline_diff_default_mode" in data:
             INLINE_DIFF_DEFAULT_MODE = normalize_inline_diff_mode(str(data["inline_diff_default_mode"]))
@@ -1220,7 +1221,7 @@ def update_hunk_inline_diff(hunk_index: int):
     if "mode" in data:
         mode = str(data.get("mode", "")).strip().lower()
         if mode not in INLINE_DIFF_MODES:
-            return error_response("mode は full, new, off のいずれかを指定してください")
+            return error_response("mode は full, off のいずれかを指定してください")
     else:
         enabled = data.get("enabled")
         if not isinstance(enabled, bool):

@@ -272,7 +272,7 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"output_dir": selected})
         picker.assert_called_once()
 
-    def test_config_accepts_inline_diff_default_mode(self):
+    def test_config_migrates_legacy_new_inline_diff_default_to_off(self):
         original = diff2png.INLINE_DIFF_DEFAULT_MODE
         try:
             client = diff2png.app.test_client()
@@ -281,7 +281,7 @@ class HunkMergeTests(unittest.TestCase):
 
             get_response = client.get("/api/config")
             self.assertEqual(get_response.status_code, 200, get_response.get_data(as_text=True))
-            self.assertEqual(get_response.get_json()["inline_diff_default_mode"], "new")
+            self.assertEqual(get_response.get_json()["inline_diff_default_mode"], "off")
 
             invalid_response = client.post("/api/config", json={"inline_diff_default_mode": "invalid"})
             self.assertEqual(invalid_response.status_code, 400)
@@ -304,6 +304,19 @@ class HunkMergeTests(unittest.TestCase):
         finally:
             diff2png.DIFF_MODE = original
 
+    def test_config_accepts_added_diff_mode(self):
+        original = diff2png.DIFF_MODE
+        try:
+            client = diff2png.app.test_client()
+            response = client.post("/api/config", json={"diff_mode": "added"})
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+            get_response = client.get("/api/config")
+            self.assertEqual(get_response.status_code, 200, get_response.get_data(as_text=True))
+            self.assertEqual(get_response.get_json()["diff_mode"], "added")
+        finally:
+            diff2png.DIFF_MODE = original
+
     def test_config_accepts_inline_diff_max_changed_chars(self):
         original = diff2png.INLINE_DIFF_MAX_CHANGED_CHARS
         try:
@@ -320,7 +333,7 @@ class HunkMergeTests(unittest.TestCase):
         finally:
             diff2png.INLINE_DIFF_MAX_CHANGED_CHARS = original
 
-    def test_finalize_hunks_uses_inline_diff_default_mode(self):
+    def test_finalize_hunks_migrates_legacy_new_inline_diff_default_to_off(self):
         source_lines = [f"line {i}" for i in range(1, 11)]
         with patch.object(diff2png, "read_source_lines", return_value=source_lines):
             hunks = diff2png.finalize_hunks(
@@ -335,8 +348,8 @@ class HunkMergeTests(unittest.TestCase):
                 },
             )
 
-        self.assertEqual(hunks[0]["inline_diff_mode"], "new")
-        self.assertTrue(hunks[0]["inline_diff_enabled"])
+        self.assertEqual(hunks[0]["inline_diff_mode"], "off")
+        self.assertFalse(hunks[0]["inline_diff_enabled"])
 
         with patch.object(diff2png, "read_source_lines", return_value=source_lines):
             off_hunks = diff2png.finalize_hunks(
@@ -1275,7 +1288,7 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn('class="inline-deleted"', html)
         self.assertIn('status = &quot;published&quot;', html)
 
-    def test_normal_view_inline_diff_new_only_mode_shows_added_highlight_only(self):
+    def test_normal_view_migrates_legacy_new_inline_diff_mode_to_off(self):
         hunk = {
             "filepath": "sample.py",
             "start": 1,
@@ -1303,10 +1316,50 @@ class HunkMergeTests(unittest.TestCase):
                 {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
             )
 
-        self.assertIn('class="inline-added"', html)
+        self.assertNotIn('class="inline-added"', html)
         self.assertNotIn('class="inline-deleted"', html)
         self.assertNotIn('draft', html)
         self.assertIn('published', html)
+
+    def test_added_patch_mode_hides_deleted_rows_and_uses_new_line_number_column(self):
+        hunk = {
+            "filepath": "sample.py",
+            "start": 1,
+            "end": 2,
+            "default_start": 1,
+            "default_end": 2,
+            "old_start": 1,
+            "changed_lines": [2],
+            "diff_lines": [
+                " context = True",
+                '-status = "draft"',
+                '+status = "published"',
+            ],
+            "added_count": 1,
+            "deleted_count": 1,
+            "changed_count": 2,
+        }
+
+        html = diff2png.build_code_html(
+            hunk,
+            ".",
+            1,
+            1,
+            "2026-08-05 00:00:00",
+            {"type": "worktree"},
+            {"diff_mode": "added", "html_width": 960, "background_mode": "normal"},
+        )
+
+        self.assertIn('class="added"', html)
+        self.assertIn('context = True', html)
+        self.assertIn('status = &quot;published&quot;', html)
+        self.assertNotIn('class="deleted"', html)
+        self.assertNotIn('draft', html)
+        self.assertIn('<td class="lineno">1</td><td class="marker"> </td>', html)
+        self.assertIn('<td class="lineno">2</td><td class="marker">+</td>', html)
+        self.assertNotIn('class="lineno old"', html)
+        self.assertNotIn('class="lineno new"', html)
+        self.assertIn('| 追加', html)
 
     def test_deleted_patch_mode_hides_added_rows(self):
         hunk = {
@@ -1344,10 +1397,12 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn('class="inline-added"', html)
         self.assertNotIn('published', html)
         self.assertIn(
-            '<td class="lineno old"></td><td class="lineno new"></td>'
-            '<td class="marker">-</td>',
+            '<td class="lineno"></td><td class="marker">-</td>',
             html,
         )
+        self.assertIn('<td class="lineno">1</td><td class="marker"> </td>', html)
+        self.assertNotIn('class="lineno old"', html)
+        self.assertNotIn('class="lineno new"', html)
         self.assertIn('| 削除', html)
 
     def test_patch_modes_shrink_context_and_reset(self):
@@ -1381,7 +1436,7 @@ class HunkMergeTests(unittest.TestCase):
             )
 
         self.assertEqual((hunk["start"], hunk["end"]), (2, 4))
-        for mode in ("patch", "deleted"):
+        for mode in ("patch", "added", "deleted"):
             html = diff2png.build_code_html(
                 hunk,
                 ".",
@@ -1395,10 +1450,14 @@ class HunkMergeTests(unittest.TestCase):
             self.assertNotIn("context bottom", html)
             self.assertIn("context near top", html)
             self.assertIn("context near bottom", html)
-            self.assertIn("draft", html)
             if mode == "patch":
+                self.assertIn("draft", html)
+                self.assertIn("published", html)
+            elif mode == "added":
+                self.assertNotIn("draft", html)
                 self.assertIn("published", html)
             else:
+                self.assertIn("draft", html)
                 self.assertNotIn("published", html)
 
         with patch.object(diff2png, "read_source_lines", return_value=["line"] * 5):
@@ -1437,7 +1496,7 @@ class HunkMergeTests(unittest.TestCase):
             )
 
         self.assertEqual((hunk["start"], hunk["end"]), (4, 5))
-        for mode in ("patch", "deleted"):
+        for mode in ("patch", "added", "deleted"):
             html = diff2png.build_code_html(
                 hunk,
                 ".",
@@ -1560,7 +1619,7 @@ class HunkMergeTests(unittest.TestCase):
         self.assertFalse(hunks[1]["inline_diff_enabled"])
         self.assertEqual(hunks[1]["inline_diff_mode"], "off")
 
-    def test_hunk_inline_diff_endpoint_accepts_new_only_mode(self):
+    def test_hunk_inline_diff_endpoint_rejects_legacy_new_only_mode(self):
         if shutil.which("git") is None:
             self.skipTest("git is not available")
 
@@ -1602,11 +1661,9 @@ class HunkMergeTests(unittest.TestCase):
             finally:
                 diff2png.ANALYSIS_SESSIONS.clear()
 
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        data = response.get_json()
-        self.assertTrue(data["hunk"]["inline_diff_enabled"])
-        self.assertEqual(data["hunk"]["inline_diff_mode"], "new")
-        self.assertEqual(hunks[0]["inline_diff_mode"], "new")
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertIn("full, off", response.get_json()["error"])
+        self.assertEqual(hunks[0]["inline_diff_mode"], "full")
 
     def test_hunk_inline_added_mute_endpoint_updates_target_hunk(self):
         if shutil.which("git") is None:

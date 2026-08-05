@@ -1292,11 +1292,6 @@
       background: rgba(91, 138, 240, 0.08);
     }
 
-    .inline-diff-mode-btn.active[data-inline-diff-mode="new"] {
-      color: var(--green);
-      background: rgba(62, 207, 110, 0.08);
-    }
-
     .inline-diff-mode-btn:disabled {
       cursor: not-allowed;
       opacity: 0.45;
@@ -1768,7 +1763,8 @@
   </header>
   <select id="sourceDiffMode" onchange="onSourceDiffModeChange()" hidden aria-hidden="true" tabindex="-1">
     <option value="file">通常表示</option>
-    <option value="patch">パッチ表示（+/-）</option>
+    <option value="patch">共通差分表示（+/-）</option>
+    <option value="added">追加表示</option>
     <option value="deleted">削除表示</option>
   </select>
 
@@ -1799,7 +1795,6 @@
           <div class="setting-row">
             <select id="cfg-inline-default">
               <option value="full">ON</option>
-              <option value="new">緑のみ</option>
               <option value="off">OFF</option>
             </select>
           </div>
@@ -2126,7 +2121,9 @@
         <button type="button" class="preview-mode-btn" data-diff-mode="file" onclick="setPreviewDiffMode('file')"
           aria-pressed="true">通常</button>
         <button type="button" class="preview-mode-btn" data-diff-mode="patch" onclick="setPreviewDiffMode('patch')"
-          aria-pressed="false">パッチ</button>
+          aria-pressed="false">共通差分</button>
+        <button type="button" class="preview-mode-btn" data-diff-mode="added" onclick="setPreviewDiffMode('added')"
+          aria-pressed="false">追加</button>
         <button type="button" class="preview-mode-btn" data-diff-mode="deleted" onclick="setPreviewDiffMode('deleted')"
           aria-pressed="false">削除</button>
       </div>
@@ -2135,8 +2132,6 @@
         <div class="inline-diff-segment" role="group" aria-label="行内差分">
           <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="full"
             onclick="setActiveInlineDiffMode('full')" disabled aria-pressed="true">ON</button>
-          <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="new"
-            onclick="setActiveInlineDiffMode('new')" disabled aria-pressed="false">緑のみ</button>
           <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="off"
             onclick="setActiveInlineDiffMode('off')" disabled aria-pressed="false">OFF</button>
         </div>
@@ -2441,15 +2436,18 @@
     }
 
     function applyUiPrefsToControls(prefs) {
-      if (prefs.diff_mode === 'file' || prefs.diff_mode === 'patch' || prefs.diff_mode === 'deleted') {
+      if (
+        prefs.diff_mode === 'file' ||
+        prefs.diff_mode === 'patch' ||
+        prefs.diff_mode === 'added' ||
+        prefs.diff_mode === 'deleted'
+      ) {
         document.getElementById('sourceDiffMode').value = prefs.diff_mode;
       }
-      if (
-        prefs.inline_diff_default_mode === 'full' ||
-        prefs.inline_diff_default_mode === 'new' ||
-        prefs.inline_diff_default_mode === 'off'
-      ) {
+      if (prefs.inline_diff_default_mode === 'full' || prefs.inline_diff_default_mode === 'off') {
         document.getElementById('cfg-inline-default').value = prefs.inline_diff_default_mode;
+      } else if (prefs.inline_diff_default_mode === 'new') {
+        document.getElementById('cfg-inline-default').value = 'off';
       } else if (prefs.inline_diff_default_mode === 'same') {
         document.getElementById('cfg-inline-default').value = 'full';
       }
@@ -2701,7 +2699,7 @@
     }
 
     async function setPreviewDiffMode(mode) {
-      if (mode !== 'file' && mode !== 'patch' && mode !== 'deleted') return;
+      if (mode !== 'file' && mode !== 'patch' && mode !== 'added' && mode !== 'deleted') return;
       if (!state.analysisId) return;
 
       const select = document.getElementById('sourceDiffMode');
@@ -3229,7 +3227,7 @@
         const changed = h.changed_count ?? h.changed_lines.length;
         const added = h.added_count ?? changed;
         const deleted = h.deleted_count ?? 0;
-        const isPatch = currentDiffMode === 'patch' || currentDiffMode === 'deleted';
+        const isPatch = currentDiffMode !== 'file';
         const badgeClass = 'hunk-badge';
         const minusClass = deleted > 0 ? 'minus danger' : 'minus';
         let badge;
@@ -3696,7 +3694,7 @@
       const h = state.hunks[index];
       const isPatch = currentDiffMode !== 'file';
       const mode = getInlineDiffMode(h);
-      const titleByMode = { full: 'ON', new: '緑のみ', off: 'OFF' };
+      const titleByMode = { full: 'ON', off: 'OFF' };
       const title = isPatch
         ? '通常表示以外では行内差分は使用しません'
         : `このhunkの行内差分: ${titleByMode[mode]}`;
@@ -3742,7 +3740,8 @@
     function getInlineDiffMode(hunk) {
       if (!hunk) return 'full';
       const mode = String(hunk.inline_diff_mode || '').toLowerCase();
-      if (mode === 'full' || mode === 'new' || mode === 'off') return mode;
+      if (mode === 'new') return 'off';
+      if (mode === 'full' || mode === 'off') return mode;
       return hunk.inline_diff_enabled === false ? 'off' : 'full';
     }
 
@@ -4074,7 +4073,7 @@
 
       const h = state.hunks[index];
       if (!h) return;
-      if (mode !== 'full' && mode !== 'new' && mode !== 'off') return;
+      if (mode !== 'full' && mode !== 'off') return;
       if (getInlineDiffMode(h) === mode) return;
       state.inlineDiffUpdating = true;
 
@@ -4510,9 +4509,11 @@
         document.getElementById('cfg-background').value = cfg.background_mode || (cfg.transparent_background ? 'transparent_no_footer' : 'normal');
         const inlineDefault = String(cfg.inline_diff_default_mode || 'full').toLowerCase();
         document.getElementById('cfg-inline-default').value =
-          (inlineDefault === 'full' || inlineDefault === 'new' || inlineDefault === 'off')
-            ? inlineDefault
-            : 'full';
+          inlineDefault === 'new'
+            ? 'off'
+            : (inlineDefault === 'full' || inlineDefault === 'off')
+              ? inlineDefault
+              : 'full';
 
         const prefs = loadUiPrefs();
         applyUiPrefsToControls(prefs);

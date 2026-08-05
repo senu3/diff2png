@@ -686,6 +686,16 @@ def adjust_hunk_range(
     elif action == "shrink_down":
         next_start = start
         next_end = max(end - delta, start)
+    elif action == "reset_start":
+        if default_start > end:
+            raise ValueError("終了位置を先に初期範囲へ戻してください")
+        next_start = default_start
+        next_end = end
+    elif action == "reset_end":
+        if default_end < start:
+            raise ValueError("開始位置を先に初期範囲へ戻してください")
+        next_start = start
+        next_end = default_end
     elif action == "reset":
         next_start = default_start
         next_end = default_end

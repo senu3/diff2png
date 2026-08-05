@@ -479,6 +479,32 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual((expanded_up["start"], expanded_up["end"]), (27, 30))
         self.assertEqual((expanded_down["start"], expanded_down["end"]), (27, 30))
 
+    def test_adjust_hunk_range_resets_each_edge_independently(self):
+        source_lines = [f"line {i}" for i in range(1, 31)]
+        start_hunk = {
+            **_raw_hunk(10, 12),
+            "default_start": 8,
+            "default_end": 14,
+        }
+        end_hunk = dict(start_hunk)
+
+        with patch.object(diff2png, "read_source_lines", return_value=source_lines):
+            reset_start = diff2png.adjust_hunk_range(
+                start_hunk,
+                ".",
+                {"type": "worktree"},
+                "reset_start",
+            )
+            reset_end = diff2png.adjust_hunk_range(
+                end_hunk,
+                ".",
+                {"type": "worktree"},
+                "reset_end",
+            )
+
+        self.assertEqual((reset_start["start"], reset_start["end"]), (8, 12))
+        self.assertEqual((reset_end["start"], reset_end["end"]), (10, 14))
+
     def test_adjust_hunk_range_can_shrink_past_changes_to_one_line(self):
         source_lines = [f"line {i}" for i in range(1, 31)]
         shrink_up_hunk = {

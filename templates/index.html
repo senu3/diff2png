@@ -1507,10 +1507,9 @@
 
     .range-overlay-line:focus-within {
       border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(91, 138, 240, 0.15);
     }
 
-    .range-line-input {
+    .range-overlay .range-line-input {
       width: 64px;
       min-width: 0;
       height: 24px;
@@ -1524,6 +1523,16 @@
       line-height: 1;
       font-variant-numeric: tabular-nums;
       box-sizing: border-box;
+      box-shadow: none;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: textfield;
+    }
+
+    .range-line-input::-webkit-inner-spin-button,
+    .range-line-input::-webkit-outer-spin-button {
+      margin: 0;
+      appearance: none;
     }
 
     .range-line-input:disabled {
@@ -1547,6 +1556,14 @@
       width: 28px;
       min-width: 28px;
       padding: 0;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .range-overlay .range-step-btn {
+      min-width: 72px;
+      padding: 0 8px;
+      gap: 5px;
       touch-action: none;
       user-select: none;
     }
@@ -2251,22 +2268,24 @@
             inputmode="numeric" disabled aria-label="開始行"
             onkeydown="onRangeLineInputKeydown(event, 'start')" onblur="commitRangeLineInput('start')">
         </label>
-        <button class="btn btn-ghost range-icon-btn range-step-btn" id="rangeExpandUpBtn"
+        <button class="btn btn-ghost range-step-btn" id="rangeExpandUpBtn"
           data-range-action="expand_up" disabled
           title="上に広げる（長押しで連続）" aria-label="上に広げる">
           <svg class="icon icon-sm" aria-hidden="true">
             <use href="#icon-arrow-up-from-line"></use>
           </svg>
+          <span>広げる</span>
         </button>
-        <button class="btn btn-ghost range-icon-btn range-step-btn" id="rangeShrinkUpBtn"
+        <button class="btn btn-ghost range-step-btn" id="rangeShrinkUpBtn"
           data-range-action="shrink_up" disabled
           title="上を狭める（長押しで連続）" aria-label="上を狭める">
           <svg class="icon icon-sm" aria-hidden="true">
             <use href="#icon-arrow-down-to-line"></use>
           </svg>
+          <span>狭める</span>
         </button>
-        <button class="btn btn-ghost range-icon-btn" id="rangeResetTopBtn" onclick="adjustActiveRange('reset')"
-          disabled title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
+        <button class="btn btn-ghost range-icon-btn" id="rangeResetTopBtn" onclick="adjustActiveRange('reset_start')"
+          disabled title="開始位置を解析直後へ戻す" aria-label="開始位置を解析直後へ戻す">
           <svg class="icon icon-sm" aria-hidden="true">
             <use href="#icon-undo"></use>
           </svg>
@@ -2288,22 +2307,24 @@
             inputmode="numeric" disabled aria-label="終了行"
             onkeydown="onRangeLineInputKeydown(event, 'end')" onblur="commitRangeLineInput('end')">
         </label>
-        <button class="btn btn-ghost range-icon-btn range-step-btn" id="rangeExpandDownBtn"
+        <button class="btn btn-ghost range-step-btn" id="rangeExpandDownBtn"
           data-range-action="expand_down" disabled
           title="下に広げる（長押しで連続）" aria-label="下に広げる">
           <svg class="icon icon-sm" aria-hidden="true">
             <use href="#icon-arrow-down-from-line"></use>
           </svg>
+          <span>広げる</span>
         </button>
-        <button class="btn btn-ghost range-icon-btn range-step-btn" id="rangeShrinkDownBtn"
+        <button class="btn btn-ghost range-step-btn" id="rangeShrinkDownBtn"
           data-range-action="shrink_down" disabled
           title="下を狭める（長押しで連続）" aria-label="下を狭める">
           <svg class="icon icon-sm" aria-hidden="true">
             <use href="#icon-arrow-up-to-line"></use>
           </svg>
+          <span>狭める</span>
         </button>
-        <button class="btn btn-ghost range-icon-btn" id="rangeResetBottomBtn" onclick="adjustActiveRange('reset')"
-          disabled title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
+        <button class="btn btn-ghost range-icon-btn" id="rangeResetBottomBtn" onclick="adjustActiveRange('reset_end')"
+          disabled title="終了位置を解析直後へ戻す" aria-label="終了位置を解析直後へ戻す">
           <svg class="icon icon-sm" aria-hidden="true">
             <use href="#icon-undo"></use>
           </svg>
@@ -3897,8 +3918,12 @@
       const busy = state.rangeAdjusting;
       const start = Number(h.start) || 1;
       const end = Number(h.end) || start;
+      const defaultStart = Number(h.default_start) || start;
+      const defaultEnd = Number(h.default_end) || end;
       const totalLines = Math.max(Number(h.file_line_count) || end, end, 1);
       const isSingleLine = Number(h.start) >= Number(h.end);
+      const canResetStart = defaultStart <= end && start !== defaultStart;
+      const canResetEnd = defaultEnd >= start && end !== defaultEnd;
       document.querySelectorAll('.range-overlay').forEach(el => {
         el.classList.toggle('hidden', !adjustable);
       });
@@ -3908,8 +3933,20 @@
       document.getElementById('rangeExpandUpBtn').disabled = !adjustable || busy || isPatch || start <= 1;
       document.getElementById('rangeShrinkDownBtn').disabled = !adjustable || busy || isSingleLine;
       document.getElementById('rangeExpandDownBtn').disabled = !adjustable || busy || isPatch || end >= totalLines;
-      document.getElementById('rangeResetTopBtn').disabled = !adjustable || busy || !h.range_adjusted;
-      document.getElementById('rangeResetBottomBtn').disabled = !adjustable || busy || !h.range_adjusted;
+      const resetTopBtn = document.getElementById('rangeResetTopBtn');
+      const resetBottomBtn = document.getElementById('rangeResetBottomBtn');
+      resetTopBtn.disabled = !adjustable || busy || !canResetStart;
+      resetBottomBtn.disabled = !adjustable || busy || !canResetEnd;
+      const resetTopTitle = defaultStart > end
+        ? '終了位置を先に初期範囲へ戻してください'
+        : '開始位置を解析直後へ戻す';
+      const resetBottomTitle = defaultEnd < start
+        ? '開始位置を先に初期範囲へ戻してください'
+        : '終了位置を解析直後へ戻す';
+      resetTopBtn.title = resetTopTitle;
+      resetTopBtn.setAttribute('aria-label', resetTopTitle);
+      resetBottomBtn.title = resetBottomTitle;
+      resetBottomBtn.setAttribute('aria-label', resetBottomTitle);
       const startInput = document.getElementById('rangeStartInput');
       const endInput = document.getElementById('rangeEndInput');
       startInput.disabled = !adjustable || busy;

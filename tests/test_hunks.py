@@ -882,7 +882,7 @@ class HunkMergeTests(unittest.TestCase):
         self.assertNotIn('<tr class="deleted">', html)
         self.assertNotIn("removed one", html)
 
-    def test_normal_view_marks_unpaired_eof_deletion_after_last_line(self):
+    def test_normal_view_shows_eof_deletion_two_lines_from_addition(self):
         hunk = {
             "filepath": "sample.py",
             "start": 1,
@@ -914,7 +914,10 @@ class HunkMergeTests(unittest.TestCase):
                 {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
             )
 
-        self.assertIn('<td class="lineno deletion-after">3</td>', html)
+        self.assertIn('<tr class="deleted">', html)
+        self.assertIn('<td class="lineno"></td><td class="marker">-</td>', html)
+        self.assertLess(html.index("second"), html.index("removed"))
+        self.assertNotIn('<td class="lineno deletion-after">3</td>', html)
 
     def test_normal_view_does_not_mark_paired_replacement_as_line_deletion(self):
         hunk = {

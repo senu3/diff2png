@@ -20,7 +20,7 @@ INLINE_DIFF_MIN_SIMILARITY = 0.62
 INLINE_DIFF_CONTROL_HEADER_PAIR_SCORE = 0.7
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 INLINE_DIFF_ISOLATED_DELETION_MAX_LINES = 2
-INLINE_DIFF_ISOLATED_DELETION_ADDED_DISTANCE = 2
+INLINE_DIFF_ISOLATED_DELETION_MIN_ADDED_DISTANCE = 2
 INLINE_DIFF_MODES = {"full", "new", "off"}
 INLINE_ADDED_MUTES_LIMIT = 200
 INLINE_ADDED_MUTE_KEY_LIMIT = 1000
@@ -895,7 +895,7 @@ def _normal_view_visible_deletions(
         if _normal_view_anchor_is_visible(hunk, deletion["anchor"])
         and all(
             abs(added_lineno - deletion["anchor"])
-            > INLINE_DIFF_ISOLATED_DELETION_ADDED_DISTANCE
+            >= INLINE_DIFF_ISOLATED_DELETION_MIN_ADDED_DISTANCE
             for added_lineno in added_linenos
         )
     ]

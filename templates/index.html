@@ -1216,19 +1216,16 @@
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       background: var(--surface);
       flex-shrink: 0;
     }
 
-    .preview-toolbar .preview-label {
-      font-size: 11px;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      display: inline-flex;
+    .preview-toolbar-context {
+      display: flex;
       align-items: center;
-      gap: 6px;
+      flex: 1;
+      min-width: 0;
     }
 
     .preview-toolbar .preview-file {
@@ -1242,19 +1239,23 @@
       white-space: nowrap;
     }
 
+    .preview-toolbar-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
     .inline-diff-control {
       display: inline-flex;
       align-items: center;
       height: 28px;
-      gap: 5px;
+      gap: 6px;
       flex-shrink: 0;
     }
 
-    .inline-diff-label {
-      color: var(--text-dim);
-      font-size: 11px;
-      line-height: 1;
-      white-space: nowrap;
+    .inline-diff-control.hidden {
+      display: none;
     }
 
     .inline-diff-segment {
@@ -1303,11 +1304,9 @@
     }
 
     .inline-added-mute-toggle {
+      width: 28px;
       height: 28px;
-      padding: 0 9px;
-      font-size: 11px;
-      line-height: 1;
-      white-space: nowrap;
+      padding: 0;
       flex-shrink: 0;
     }
 
@@ -1351,54 +1350,34 @@
       opacity: 0.45;
     }
 
-    .preview-toolbar .nav-btns {
-      display: flex;
-      gap: 4px;
-    }
-
-    .preview-toolbar .range-btns {
-      display: flex;
-      gap: 4px;
-      flex-shrink: 0;
+    .preview-toolbar-nav {
+      display: grid;
+      grid-template-columns: 24px 48px 24px;
       align-items: center;
-    }
-
-    .preview-toolbar .range-btns.hidden {
-      display: none;
-    }
-
-    .range-btns .btn {
-      width: 28px;
       height: 28px;
+      padding: 2px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      flex-shrink: 0;
+    }
+
+    .preview-toolbar-nav .btn {
+      width: 24px;
+      min-width: 24px;
+      height: 22px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
       padding: 0;
-      font-size: 12px;
-      line-height: 1;
-    }
-
-    .range-group {
-      display: inline-flex;
-      align-items: center;
-      gap: 3px;
-    }
-
-    .range-label {
-      font-size: 11px;
-      color: var(--text-dim);
-      margin: 0 2px 0 6px;
-      white-space: nowrap;
     }
 
     .nav-count {
       font-family: var(--mono);
       font-size: 11px;
       color: var(--text-dim);
-      min-width: 48px;
-      text-align: center;
-      flex-shrink: 0;
-    }
-
-    .nav-btns .btn {
       min-width: 0;
+      text-align: center;
     }
 
     .range-disabled-note {
@@ -1490,6 +1469,13 @@
       height: 28px;
       padding: 0 8px;
       font-size: 12px;
+    }
+
+    .range-overlay .range-reset-btn {
+      width: 28px;
+      min-width: 28px;
+      padding: 0;
+      margin-left: 2px;
     }
 
     .preview-frame-wrap::-webkit-scrollbar {
@@ -1740,6 +1726,10 @@
     <symbol id="icon-undo" viewBox="0 0 24 24">
       <path d="M9 14 4 9l5-5" />
       <path d="M4 9h10a6 6 0 1 1 0 12h-2" />
+    </symbol>
+    <symbol id="icon-highlighter" viewBox="0 0 24 24">
+      <path d="m9 11-6 6v3h9l3-3" />
+      <path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" />
     </symbol>
     <symbol id="icon-trash" viewBox="0 0 24 24">
       <path d="M3 6h18" />
@@ -2117,49 +2107,44 @@
 
   <main>
     <div class="preview-toolbar">
-      <span class="preview-label"><svg class="icon icon-sm" aria-hidden="true">
-          <use href="#icon-search"></use>
-        </svg>Preview</span>
-      <span class="preview-file" id="previewFile">—</span>
-      <span class="inline-diff-label">全体表示</span>
-      <div class="preview-mode-segment" aria-label="表示モード">
-        <button type="button" class="preview-mode-btn" data-diff-mode="file" onclick="setPreviewDiffMode('file')"
-          aria-pressed="true">通常</button>
-        <button type="button" class="preview-mode-btn" data-diff-mode="patch" onclick="setPreviewDiffMode('patch')"
-          aria-pressed="false">パッチ</button>
-        <button type="button" class="preview-mode-btn" data-diff-mode="deleted" onclick="setPreviewDiffMode('deleted')"
-          aria-pressed="false">削除</button>
+      <div class="preview-toolbar-context">
+        <span class="preview-file" id="previewFile">—</span>
       </div>
-      <div class="inline-diff-control" aria-label="行内差分">
-        <span class="inline-diff-label">行内差分</span>
-        <div class="inline-diff-segment" role="group" aria-label="行内差分">
-          <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="full"
-            onclick="setActiveInlineDiffMode('full')" disabled aria-pressed="true">ON</button>
-          <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="new"
-            onclick="setActiveInlineDiffMode('new')" disabled aria-pressed="false">緑のみ</button>
-          <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="off"
-            onclick="setActiveInlineDiffMode('off')" disabled aria-pressed="false">OFF</button>
+      <div class="preview-toolbar-controls">
+        <div class="preview-mode-segment" role="group" aria-label="表示モード">
+          <button type="button" class="preview-mode-btn" data-diff-mode="file" onclick="setPreviewDiffMode('file')"
+            aria-pressed="true">通常</button>
+          <button type="button" class="preview-mode-btn" data-diff-mode="patch" onclick="setPreviewDiffMode('patch')"
+            aria-pressed="false">パッチ</button>
+          <button type="button" class="preview-mode-btn" data-diff-mode="deleted" onclick="setPreviewDiffMode('deleted')"
+            aria-pressed="false">削除</button>
+        </div>
+        <div class="inline-diff-control" aria-label="行内差分とハイライト編集">
+          <div class="inline-diff-segment" role="group" aria-label="行内差分">
+            <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="full"
+              onclick="setActiveInlineDiffMode('full')" disabled aria-pressed="true">ON</button>
+            <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="new"
+              onclick="setActiveInlineDiffMode('new')" disabled aria-pressed="false">緑のみ</button>
+            <button type="button" class="inline-diff-mode-btn" data-inline-diff-mode="off"
+              onclick="setActiveInlineDiffMode('off')" disabled aria-pressed="false">OFF</button>
+          </div>
+          <button class="btn btn-ghost inline-added-mute-toggle" id="inlineAddedMuteBtn"
+            onclick="toggleInlineAddedMutePicker()" disabled title="ハイライト編集"
+            aria-label="ハイライト編集">
+            <svg class="icon icon-sm" aria-hidden="true">
+              <use href="#icon-highlighter"></use>
+            </svg>
+          </button>
         </div>
       </div>
-      <button class="btn btn-ghost inline-added-mute-toggle" id="inlineAddedMuteBtn"
-        onclick="toggleInlineAddedMutePicker()" disabled title="追加ハイライトを編集"
-        aria-label="追加ハイライトを編集">ハイライト編集</button>
-      <div class="range-btns">
-        <button class="btn btn-ghost" id="rangeResetBtn" onclick="adjustActiveRange('reset')" disabled
-          title="解析直後の範囲に戻す" aria-label="解析直後の範囲に戻す">
-          <svg class="icon icon-sm" aria-hidden="true">
-            <use href="#icon-undo"></use>
-          </svg>
-        </button>
-      </div>
-      <span class="nav-count" id="previewNavCount">— / —</span>
-      <div class="nav-btns">
+      <div class="preview-toolbar-nav" role="group" aria-label="hunk移動">
         <button class="btn btn-ghost icon-btn-sm" id="prevBtn" onclick="navigate(-1)" disabled title="前へ"
           aria-label="前へ">
           <svg class="icon icon-sm" aria-hidden="true">
             <use href="#icon-chevron-left"></use>
           </svg>
         </button>
+        <span class="nav-count" id="previewNavCount">— / —</span>
         <button class="btn btn-ghost icon-btn-sm" id="nextBtn" onclick="navigate(1)" disabled title="次へ"
           aria-label="次へ">
           <svg class="icon icon-sm" aria-hidden="true">
@@ -2186,6 +2171,13 @@
             <use href="#icon-arrow-down-to-line"></use>
           </svg>
           <span>狭める</span>
+        </button>
+        <button class="btn btn-ghost range-reset-btn hidden" id="rangeResetBtn"
+          onclick="adjustActiveRange('reset')" disabled title="解析直後の範囲に戻す"
+          aria-label="解析直後の範囲に戻す">
+          <svg class="icon icon-sm" aria-hidden="true">
+            <use href="#icon-undo"></use>
+          </svg>
         </button>
       </div>
       <div class="preview-content" id="previewContent">
@@ -3695,6 +3687,7 @@
     function updateInlineDiffControls(index) {
       const h = state.hunks[index];
       const isPatch = currentDiffMode !== 'file';
+      document.querySelector('.inline-diff-control')?.classList.toggle('hidden', isPatch);
       const mode = getInlineDiffMode(h);
       const titleByMode = { full: 'ON', new: '緑のみ', off: 'OFF' };
       const title = isPatch
@@ -3760,7 +3753,10 @@
       document.getElementById('rangeExpandUpBtn').disabled = !adjustable || isPatch;
       document.getElementById('rangeShrinkDownBtn').disabled = !adjustable || isSingleLine;
       document.getElementById('rangeExpandDownBtn').disabled = !adjustable || isPatch;
-      document.getElementById('rangeResetBtn').disabled = !adjustable || !h.range_adjusted;
+      const resetBtn = document.getElementById('rangeResetBtn');
+      const canReset = adjustable && Boolean(h.range_adjusted);
+      resetBtn.disabled = !canReset;
+      resetBtn.classList.toggle('hidden', !canReset);
       updateInlineDiffControls(index);
       updateInlineAddedMuteButton(index);
     }

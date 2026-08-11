@@ -1384,6 +1384,11 @@ def update_hunk_inline_change_hidden(hunk_index: int):
     else:
         hidden_changes.discard(key)
     hunk["inline_hidden_changes"] = sorted(hidden_changes)
+
+    if key.startswith("added:"):
+        mutes = hunk_inline_added_mutes(hunk)
+        mutes.discard(key.removeprefix("added:"))
+        hunk["inline_added_mutes"] = sorted(mutes)
     return jsonify({"hunk": make_hunk_summary(hunk)})
 
 

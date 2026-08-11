@@ -4102,9 +4102,15 @@
       });
       doc.querySelectorAll('span.inline-added, span.inline-deleted').forEach(span => {
         if (enabled) {
-          const kind = span.classList.contains('inline-deleted') ? '削除文字' : '追加文字';
-          const action = span.classList.contains('inline-change-hidden') ? '戻す' : '非表示';
-          span.setAttribute('title', `クリックで${kind}を${action}`);
+          const isDeleted = span.classList.contains('inline-deleted');
+          const kind = isDeleted ? '削除文字' : '追加文字';
+          const state = getInlineChangeSpanState(span);
+          const title = state === 'hidden'
+            ? `クリックで${kind}を元の表示に戻す`
+            : state === 'muted' || isDeleted
+              ? `クリックで${kind}を非表示にする`
+              : 'クリックで追加文字のハイライトを消す';
+          span.setAttribute('title', title);
         } else {
           span.removeAttribute('title');
         }
@@ -4118,6 +4124,17 @@
       const spansInRow = Array.from(row?.querySelectorAll(`span.inline-${kind}`) || []);
       const indexInRow = Math.max(0, spansInRow.indexOf(span));
       return `${kind}:${line}:${indexInRow}:${span.textContent || ''}`;
+    }
+
+    function getInlineChangeSpanState(span) {
+      if (span?.classList.contains('inline-change-hidden')) return 'hidden';
+      if (span?.classList.contains('inline-added-muted')) return 'muted';
+      return 'visible';
+    }
+
+    function applyInlineChangeSpanState(span, nextState) {
+      span?.classList.toggle('inline-added-muted', nextState === 'muted');
+      span?.classList.toggle('inline-change-hidden', nextState === 'hidden');
     }
 
     function getPreviewRowLineNumber(row) {
@@ -4152,24 +4169,35 @@
       if (getInlineDiffMode(state.hunks[index]) === 'off') return;
 
       const key = getInlineChangeKey(span);
-      const nextHidden = !span.classList.contains('inline-change-hidden');
+      const isAdded = span.classList.contains('inline-added');
+      const previousState = getInlineChangeSpanState(span);
+      const nextState = previousState === 'hidden'
+        ? 'visible'
+        : isAdded && previousState === 'visible'
+          ? 'muted'
+          : 'hidden';
+      const endpoint = nextState === 'muted'
+        ? `/api/hunk-inline-added-mute/${index}`
+        : `/api/hunk-inline-change-hidden/${index}`;
+      const payload = nextState === 'muted'
+        ? { key: key.replace(/^added:/, ''), muted: true }
+        : { key, hidden: nextState === 'hidden' };
       state.inlineChangeUpdating = true;
-      span.classList.toggle('inline-change-hidden', nextHidden);
+      applyInlineChangeSpanState(span, nextState);
 
       try {
-        const res = await fetch(`/api/hunk-inline-change-hidden/${index}`, {
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             repo_path: state.repoPath,
             analysis_id: state.analysisId,
-            key,
-            hidden: nextHidden,
+            ...payload,
           }),
         });
         const data = await res.json();
         if (!res.ok) {
-          span.classList.toggle('inline-change-hidden', !nextHidden);
+          applyInlineChangeSpanState(span, previousState);
           showToast(data.error || '行内差分の表示変更に失敗しました', 'error');
           return;
         }
@@ -4177,7 +4205,7 @@
         updateInlineChangeEditButton(index);
         updatePreviewInlineChangeEditMode();
       } catch (e) {
-        span.classList.toggle('inline-change-hidden', !nextHidden);
+        applyInlineChangeSpanState(span, previousState);
         showToast('行内差分の表示変更に失敗しました: ' + e.message, 'error');
       } finally {
         state.inlineChangeUpdating = false;

@@ -1864,6 +1864,7 @@ class HunkMergeTests(unittest.TestCase):
                     "changed_count": 2,
                     "inline_diff_mode": "full",
                     "inline_diff_enabled": True,
+                    "inline_added_mutes": ["1:0:new"],
                 },
             ]
 
@@ -1899,6 +1900,8 @@ class HunkMergeTests(unittest.TestCase):
         expected = ["added:1:0:new", "deleted:1:0:old"]
         self.assertEqual(data["hunk"]["inline_hidden_changes"], expected)
         self.assertEqual(hunks[0]["inline_hidden_changes"], expected)
+        self.assertEqual(data["hunk"]["inline_added_mutes"], [])
+        self.assertEqual(hunks[0]["inline_added_mutes"], [])
 
     def test_hunk_highlights_reset_endpoint_clears_all_edit_types(self):
         if shutil.which("git") is None:

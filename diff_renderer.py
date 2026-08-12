@@ -12,12 +12,9 @@ DIFF_MODE = "file"
 INLINE_DIFF_DEFAULT_MODE = "full"
 INLINE_DIFF_MAX_CHANGED_CHARS = 120
 INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
-INLINE_DIFF_MERGE_EQUAL_MAX_CHARS = 12
-INLINE_DIFF_ABSORB_EQUAL_MAX_CHARS = 32
-INLINE_DIFF_SMALL_FRAGMENT_MAX_CHARS = 2
-INLINE_DIFF_LARGE_FRAGMENT_MIN_CHARS = 6
+INLINE_DIFF_MERGE_SEPARATOR_MAX_CHARS = 12
+INLINE_DIFF_NEGATION_BRIDGE_MAX_CHARS = 32
 INLINE_DIFF_MIN_SIMILARITY = 0.62
-INLINE_DIFF_CONTROL_HEADER_PAIR_SCORE = 0.7
 INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 INLINE_DIFF_ISOLATED_DELETION_MAX_LINES = 2
 INLINE_DIFF_ISOLATED_DELETION_MIN_ADDED_DISTANCE = 2
@@ -483,10 +480,6 @@ def _line_replacements_for_diff_lines(
             if not structurally_pairable(old_text, new_text):
                 return 0.0
             score = similarity(old_text, new_text)
-            old_header = _control_header_kind(old_text)
-            new_header = _control_header_kind(new_text)
-            if old_header and old_header == new_header:
-                score = max(score, INLINE_DIFF_CONTROL_HEADER_PAIR_SCORE)
             if allow_html_tag_pairing:
                 score = max(score, html_tag_shape_similarity(old_text, new_text))
             return score
@@ -505,7 +498,10 @@ def _line_replacements_for_diff_lines(
         if deleted_count == 1 and added_count == 1:
             old_text = deleted_block[0][1]
             new_text = added_block[0][1]
-            if directly_pairable(old_text, new_text) and structurally_pairable(old_text, new_text):
+            if (
+                directly_pairable(old_text, new_text)
+                and candidate_score(old_text, new_text) >= INLINE_DIFF_MIN_SIMILARITY
+            ):
                 add_direct_pairs()
             return
 
@@ -529,8 +525,11 @@ def _line_replacements_for_diff_lines(
                     shifted = True
                     break
             if not shifted and all(
-                directly_pairable(old_text, new_text) and structurally_pairable(old_text, new_text)
-                for (_, old_text), (_, new_text) in zip(deleted_block, added_block)
+                directly_pairable(old_text, new_text)
+                and score_matrix[idx][idx] >= INLINE_DIFF_MIN_SIMILARITY
+                for idx, ((_, old_text), (_, new_text)) in enumerate(
+                    zip(deleted_block, added_block)
+                )
             ):
                 add_direct_pairs()
                 return
@@ -754,13 +753,17 @@ def _merge_nearby_inline_fragments(
     def is_change(tag: str) -> bool:
         return tag in {"insert", "delete", "replace"}
 
-    def is_short_equal(opcode: tuple[str, int, int, int, int]) -> bool:
+    def is_short_separator(opcode: tuple[str, int, int, int, int]) -> bool:
         tag, i1, i2, j1, j2 = opcode
         if tag != "equal":
             return False
         old_part = "".join(old_tokens[i1:i2])
         new_part = "".join(new_tokens[j1:j2])
-        return old_part == new_part and len(old_part) <= INLINE_DIFF_MERGE_EQUAL_MAX_CHARS
+        return (
+            old_part == new_part
+            and len(old_part) <= INLINE_DIFF_MERGE_SEPARATOR_MAX_CHARS
+            and not re.search(r"\w", old_part)
+        )
 
     def is_closing_parenthesis_boundary(
         opcode: tuple[str, int, int, int, int],
@@ -772,31 +775,47 @@ def _merge_nearby_inline_fragments(
         new_part = "".join(new_tokens[j1:j2])
         return old_part == new_part and ")" in old_part
 
-    def change_size(opcode: tuple[str, int, int, int, int]) -> int:
+    def change_text(opcode: tuple[str, int, int, int, int]) -> tuple[str, str]:
         tag, i1, i2, j1, j2 = opcode
         if not is_change(tag):
-            return 0
-        old_length = len("".join(old_tokens[i1:i2]))
-        new_length = len("".join(new_tokens[j1:j2]))
-        return max(old_length, new_length)
+            return "", ""
+        return "".join(old_tokens[i1:i2]), "".join(new_tokens[j1:j2])
 
-    def should_absorb_small_change(
+    def is_negation_only_change(opcode: tuple[str, int, int, int, int]) -> bool:
+        old_part, new_part = change_text(opcode)
+        old_compact = old_part.strip()
+        new_compact = new_part.strip()
+        old_without_parentheses = old_compact.replace("(", "").replace(")", "")
+        new_without_parentheses = new_compact.replace("(", "").replace(")", "")
+        return (
+            old_compact == "!"
+            or new_compact == "!"
+            or (old_without_parentheses == "!" and new_without_parentheses == "")
+            or (new_without_parentheses == "!" and old_without_parentheses == "")
+            or (
+                old_compact.count("!") == 1
+                and old_compact.replace("!", "", 1) == new_compact
+            )
+            or (
+                new_compact.count("!") == 1
+                and new_compact.replace("!", "", 1) == old_compact
+            )
+        )
+
+    def should_bridge_negation_change(
         equal_opcode: tuple[str, int, int, int, int],
-        current_change_size: int,
-        next_change_size: int,
+        current_opcode: tuple[str, int, int, int, int],
+        next_opcode: tuple[str, int, int, int, int],
     ) -> bool:
         tag, i1, i2, j1, j2 = equal_opcode
         if tag != "equal":
             return False
         old_part = "".join(old_tokens[i1:i2])
         new_part = "".join(new_tokens[j1:j2])
-        if old_part != new_part or len(old_part) > INLINE_DIFF_ABSORB_EQUAL_MAX_CHARS:
-            return False
-        smaller = min(current_change_size, next_change_size)
-        larger = max(current_change_size, next_change_size)
         return (
-            smaller <= INLINE_DIFF_SMALL_FRAGMENT_MAX_CHARS
-            and larger >= INLINE_DIFF_LARGE_FRAGMENT_MIN_CHARS
+            old_part == new_part
+            and len(old_part) <= INLINE_DIFF_NEGATION_BRIDGE_MAX_CHARS
+            and (is_negation_only_change(current_opcode) or is_negation_only_change(next_opcode))
         )
 
     def merged_tag(i1: int, i2: int, j1: int, j2: int) -> str:
@@ -818,33 +837,30 @@ def _merge_nearby_inline_fragments(
         end_idx = idx
         end_i2 = i2
         end_j2 = j2
-        accumulated_change_size = change_size(opcodes[idx])
+        used_negation_bridge = False
         while (
             end_idx + 2 < len(opcodes)
             and is_change(opcodes[end_idx + 2][0])
         ):
             equal_opcode = opcodes[end_idx + 1]
             next_opcode = opcodes[end_idx + 2]
-            next_change_size = change_size(next_opcode)
             if (
                 preserve_closing_parenthesis_boundary
                 and is_closing_parenthesis_boundary(equal_opcode)
             ):
                 break
-            if not (
-                is_short_equal(equal_opcode)
-                or should_absorb_small_change(
-                    equal_opcode,
-                    accumulated_change_size,
-                    next_change_size,
-                )
-            ):
+            merge_separator = is_short_separator(equal_opcode)
+            bridge_negation = (
+                not used_negation_bridge
+                and should_bridge_negation_change(equal_opcode, opcodes[end_idx], next_opcode)
+            )
+            if not (merge_separator or bridge_negation):
                 break
             _, _, equal_i2, _, equal_j2 = opcodes[end_idx + 1]
             _, _, next_i2, _, next_j2 = opcodes[end_idx + 2]
             end_i2 = next_i2 if next_i2 != equal_i2 else equal_i2
             end_j2 = next_j2 if next_j2 != equal_j2 else equal_j2
-            accumulated_change_size += next_change_size
+            used_negation_bridge = used_negation_bridge or bridge_negation
             end_idx += 2
 
         if end_idx == idx:

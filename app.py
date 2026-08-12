@@ -56,9 +56,6 @@ ANALYSIS_SESSIONS: dict[str, dict] = {}
 MAX_ANALYSIS_SESSIONS = 20
 GIT_TIMEOUT_SECONDS = 30
 INLINE_DIFF_MAX_CHANGED_CHARS = 120
-INLINE_DIFF_MAX_CHANGED_CHARS_LIMIT = 500
-INLINE_DIFF_MIN_SIMILARITY = 0.62
-INLINE_DIFF_TAG_BLOCK_MIN_SIMILARITY = 0.8
 DIFF_MODES = {"file", "patch", "added", "deleted"}
 PATCH_LIKE_DIFF_MODES = {"patch", "added", "deleted"}
 SOURCE_MODES = {"worktree", "staged", "commit", "range"}
@@ -66,12 +63,6 @@ SOURCE_KEY_UNSTAGED = "unstaged"
 SOURCE_KEY_STAGED = "staged"
 SOURCE_COMMIT_PREFIX = "commit:"
 BACKGROUND_MODES = {"normal", "no_bg_footer", "transparent_no_footer"}
-INLINE_DIFF_MODES = {"full", "off"}
-INLINE_ADDED_MUTES_LIMIT = 200
-INLINE_ADDED_MUTE_KEY_LIMIT = 1000
-INLINE_HIDDEN_CHANGES_LIMIT = 400
-MANUAL_ROW_HIGHLIGHTS_LIMIT = 500
-MANUAL_ROW_HIGHLIGHT_COLORS = {"green", "yellow"}
 _FILENAME_UNSAFE_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 _FILENAME_REPEAT_UNDERSCORE_RE = re.compile(r"_+")
 _OUTPUT_PNG_RE = re.compile(r"^\d{8}_\d{6}_\d{3}_.+_L\d+\.png$", re.IGNORECASE)
@@ -1304,7 +1295,7 @@ def update_hunk_inline_diff(hunk_index: int):
 
     if "mode" in data:
         mode = str(data.get("mode", "")).strip().lower()
-        if mode not in INLINE_DIFF_MODES:
+        if mode not in diff_renderer.INLINE_DIFF_MODES:
             return error_response("mode は full, off のいずれかを指定してください")
     else:
         enabled = data.get("enabled")
@@ -1343,7 +1334,7 @@ def update_hunk_inline_added_mute(hunk_index: int):
 
     mutes = hunk_inline_added_mutes(hunk)
     if muted:
-        if len(mutes) >= INLINE_ADDED_MUTES_LIMIT and key not in mutes:
+        if len(mutes) >= diff_renderer.INLINE_ADDED_MUTES_LIMIT and key not in mutes:
             return error_response("ミュート数が上限に達しました")
         mutes.add(key)
     else:
@@ -1378,7 +1369,7 @@ def update_hunk_inline_change_hidden(hunk_index: int):
 
     hidden_changes = hunk_inline_hidden_changes(hunk)
     if hidden:
-        if len(hidden_changes) >= INLINE_HIDDEN_CHANGES_LIMIT and key not in hidden_changes:
+        if len(hidden_changes) >= diff_renderer.INLINE_HIDDEN_CHANGES_LIMIT and key not in hidden_changes:
             return error_response("非表示数が上限に達しました")
         hidden_changes.add(key)
     else:
@@ -1433,7 +1424,7 @@ def update_hunk_row_highlight(hunk_index: int):
 
     highlights = hunk_manual_row_highlights(hunk)
     if color:
-        if len(highlights) >= MANUAL_ROW_HIGHLIGHTS_LIMIT and lineno not in highlights:
+        if len(highlights) >= diff_renderer.MANUAL_ROW_HIGHLIGHTS_LIMIT and lineno not in highlights:
             return error_response("行背景の編集数が上限に達しました")
         highlights[lineno] = color
     else:

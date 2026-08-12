@@ -1076,19 +1076,19 @@ class HunkMergeTests(unittest.TestCase):
         self.assertEqual(html.count('class="inline-deleted"'), 1)
         self.assertEqual(html.count('class="inline-added"'), 1)
 
-    def test_inline_diff_merges_changes_separated_by_twelve_equal_characters(self):
+    def test_inline_diff_keeps_identifier_between_changes_unhighlighted(self):
         html = diff2png._inline_diff_html(
             "value = old + middle + left",
             "value = new + middle + right",
         )
 
-        self.assertIn(
-            '<span class="inline-deleted">old + middle + left</span>'
-            '<span class="inline-added">new + middle + right</span>',
-            html,
-        )
-        self.assertEqual(html.count('class="inline-deleted"'), 1)
-        self.assertEqual(html.count('class="inline-added"'), 1)
+        self.assertIn('class="inline-deleted">old</span>', html)
+        self.assertIn('class="inline-added">new</span>', html)
+        self.assertIn(' + middle + ', html)
+        self.assertIn('class="inline-deleted">left</span>', html)
+        self.assertIn('class="inline-added">right</span>', html)
+        self.assertEqual(html.count('class="inline-deleted"'), 2)
+        self.assertEqual(html.count('class="inline-added"'), 2)
 
     def test_inline_diff_absorbs_leading_bang_into_larger_change_across_variable(self):
         html = diff2png._inline_diff_html(
@@ -1293,8 +1293,10 @@ class HunkMergeTests(unittest.TestCase):
 
         self.assertIn('<span class="inline-deleted">table</span>', html)
         self.assertIn(
-            '<span class="inline-deleted">td&gt;value&lt;/td</span>'
-            '<span class="inline-added">div&gt;value&lt;/div</span>',
+            '&lt;<span class="inline-deleted">td</span>'
+            '<span class="inline-added">div</span>&gt;value&lt;/'
+            '<span class="inline-deleted">td</span>'
+            '<span class="inline-added">div</span>&gt;',
             html,
         )
         self.assertGreaterEqual(html.count('class="inline-added"'), 5)
@@ -2266,7 +2268,7 @@ class HunkMergeTests(unittest.TestCase):
 
         replacements = diff2png._line_replacements_by_new_lineno(hunk)
 
-        self.assertIn(1, replacements)
+        self.assertNotIn(1, replacements)
 
         with patch.object(diff2png, "read_source_lines", return_value=[new_text]):
             html = diff2png.build_code_html(
@@ -2279,7 +2281,7 @@ class HunkMergeTests(unittest.TestCase):
                 {"diff_mode": "file", "html_width": 960, "background_mode": "normal"},
             )
 
-        self.assertIn('class="changed"', html)
+        self.assertIn('class="added"', html)
         self.assertNotIn('class="changed inline-rendered"', html)
         self.assertNotIn('class="inline-added"', html)
 
@@ -2588,6 +2590,38 @@ class HunkMergeTests(unittest.TestCase):
 
         self.assertNotIn('class="inline-deleted"', html)
         self.assertNotIn('class="inline-added"', html)
+
+    def test_normal_view_does_not_pair_dissimilar_replacement_blocks(self):
+        cases = {
+            "single_line": [
+                "-const value = buildConfig()",
+                "+renderDashboard()",
+            ],
+            "equal_size": [
+                "-const alpha = loadUser()",
+                "-const beta = loadTeam()",
+                "+renderDashboard()",
+                "+sendNotification()",
+            ],
+            "unrelated_control_block": [
+                "-if (legacyUserIsEnabled) {",
+                "-    loadLegacyProfile();",
+                "+if (diskSpaceIsLow) {",
+                "+    purgeTemporaryFiles();",
+            ],
+        }
+
+        for name, diff_lines in cases.items():
+            with self.subTest(name=name):
+                added_count = sum(line.startswith("+") for line in diff_lines)
+                replacements = diff2png._line_replacements_for_diff_lines(
+                    1,
+                    1,
+                    list(range(1, added_count + 1)),
+                    diff_lines,
+                )
+
+                self.assertEqual(replacements, {})
 
     def test_normal_view_does_not_inline_pair_with_far_added_line(self):
         hunk = {
@@ -2933,8 +2967,10 @@ class HunkMergeTests(unittest.TestCase):
         html = preview_response.get_data(as_text=True)
         self.assertIn('<span class="inline-deleted">table</span>', html)
         self.assertIn(
-            '<span class="inline-deleted">td&gt;value&lt;/td</span>'
-            '<span class="inline-added">div&gt;value&lt;/div</span>',
+            '&lt;<span class="inline-deleted">td</span>'
+            '<span class="inline-added">div</span>&gt;value&lt;/'
+            '<span class="inline-deleted">td</span>'
+            '<span class="inline-added">div</span>&gt;',
             html,
         )
         self.assertGreaterEqual(html.count('class="inline-added"'), 5)

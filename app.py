@@ -41,6 +41,7 @@ OUTPUT_DIR_NAME = "diff_screenshots"
 OUTPUT_DIR = APP_ROOT / OUTPUT_DIR_NAME
 HTML_WIDTH = 960
 DIFF_MODE = "file"
+DIFF_ALGORITHM = "histogram"
 # 背景モード: 'normal' | 'no_bg_footer' | 'transparent_no_footer'
 BACKGROUND_MODE = 'normal'
 INLINE_DIFF_DEFAULT_MODE = "full"
@@ -57,6 +58,7 @@ MAX_ANALYSIS_SESSIONS = 20
 GIT_TIMEOUT_SECONDS = 30
 INLINE_DIFF_MAX_CHANGED_CHARS = 120
 DIFF_MODES = {"file", "patch", "added", "deleted"}
+DIFF_ALGORITHMS = {"myers", "minimal", "patience", "histogram"}
 PATCH_LIKE_DIFF_MODES = {"patch", "added", "deleted"}
 SOURCE_MODES = {"worktree", "staged", "commit", "range"}
 SOURCE_KEY_UNSTAGED = "unstaged"
@@ -104,23 +106,25 @@ def get_diff(
     source_mode: str = "worktree",
     base_ref: str | None = None,
     target_ref: str | None = None,
+    diff_algorithm: str | None = None,
 ) -> str:
+    algorithm = normalize_diff_algorithm(diff_algorithm)
     if source_mode == "worktree":
-        cmd = ["git", "diff", "HEAD"]
+        cmd = ["git", "diff", f"--diff-algorithm={algorithm}", "HEAD"]
     elif source_mode == "staged":
         # インデックス（ステージング済み）のみを表示
-        cmd = ["git", "diff", "--staged"]
+        cmd = ["git", "diff", f"--diff-algorithm={algorithm}", "--staged"]
     elif source_mode == "commit":
         commit = (target_ref or "").strip()
         if not commit:
             raise RuntimeError("コミットを選択してください")
-        cmd = ["git", "diff", f"{commit}^", commit]
+        cmd = ["git", "diff", f"--diff-algorithm={algorithm}", f"{commit}^", commit]
     elif source_mode == "range":
         base = (base_ref or "").strip()
         target = (target_ref or "").strip()
         if not base or not target:
             raise RuntimeError("比較元/比較先コミットを選択してください")
-        cmd = ["git", "diff", base, target]
+        cmd = ["git", "diff", f"--diff-algorithm={algorithm}", base, target]
     else:
         raise RuntimeError("不正な差分ソースです")
 
@@ -278,12 +282,14 @@ def get_diff_for_source_selection(
     selection: dict,
     context_lines: int | None = None,
     merge_threshold: int | None = None,
+    diff_algorithm: str | None = None,
 ) -> tuple[str, str]:
     base_source = selection["base_source"]
     target_source = selection["target_source"]
     base_type = base_source["type"]
     target_type = target_source["type"]
-    args = ["diff"]
+    algorithm = normalize_diff_algorithm(diff_algorithm)
+    args = ["diff", f"--diff-algorithm={algorithm}"]
 
     if target_type == "worktree":
         if base_type == "ref":
@@ -456,6 +462,7 @@ def current_config_snapshot() -> dict:
         "html_width": HTML_WIDTH,
         "output_dir": OUTPUT_DIR_NAME,
         "diff_mode": DIFF_MODE,
+        "diff_algorithm": DIFF_ALGORITHM,
         "background_mode": BACKGROUND_MODE,
         "inline_diff_default_mode": INLINE_DIFF_DEFAULT_MODE,
         "inline_diff_max_changed_chars": INLINE_DIFF_MAX_CHANGED_CHARS,
@@ -528,14 +535,27 @@ def hunks_payload(
     return payload
 
 
-def diff_command_label(source_mode: str, base_ref: str, target_ref: str) -> str:
+def normalize_diff_algorithm(value: str | None) -> str:
+    algorithm = str(value or DIFF_ALGORITHM).strip().lower()
+    if algorithm not in DIFF_ALGORITHMS:
+        raise ValueError("diff_algorithm は myers, minimal, patience, histogram のいずれかを指定してください")
+    return algorithm
+
+
+def diff_command_label(
+    source_mode: str,
+    base_ref: str,
+    target_ref: str,
+    diff_algorithm: str | None = None,
+) -> str:
+    option = f"--diff-algorithm={normalize_diff_algorithm(diff_algorithm)}"
     if source_mode == "worktree":
-        return "git diff HEAD"
+        return f"git diff {option} HEAD"
     if source_mode == "staged":
-        return "git diff --staged"
+        return f"git diff {option} --staged"
     if source_mode == "commit":
-        return f"git diff {target_ref}^ {target_ref}"
-    return f"git diff {base_ref} {target_ref}"
+        return f"git diff {option} {target_ref}^ {target_ref}"
+    return f"git diff {option} {base_ref} {target_ref}"
 
 
 def get_analysis_diff_text(
@@ -549,6 +569,7 @@ def get_analysis_diff_text(
         "source_mode": source_mode,
         "base_ref": base_ref,
         "target_ref": target_ref,
+        "diff_algorithm": str(config.get("diff_algorithm", DIFF_ALGORITHM)),
     }
     if config.get("diff_mode") in PATCH_LIKE_DIFF_MODES:
         return get_diff(
@@ -1015,7 +1036,7 @@ def browse_repo():
 
 @app.route("/api/config", methods=["GET", "POST"])
 def config():
-    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME, DIFF_MODE, BACKGROUND_MODE, INLINE_DIFF_DEFAULT_MODE, INLINE_DIFF_MAX_CHANGED_CHARS
+    global CONTEXT_LINES, MERGE_THRESHOLD, HTML_WIDTH, OUTPUT_DIR, OUTPUT_DIR_NAME, DIFF_MODE, DIFF_ALGORITHM, BACKGROUND_MODE, INLINE_DIFF_DEFAULT_MODE, INLINE_DIFF_MAX_CHANGED_CHARS
     if request.method == "GET":
         return jsonify(current_config_snapshot())
     data = request_json_data()
@@ -1033,6 +1054,8 @@ def config():
             if mode not in DIFF_MODES:
                 raise ValueError("diff_mode は file, patch, added, deleted のいずれかを指定してください")
             DIFF_MODE = mode
+        if "diff_algorithm" in data:
+            DIFF_ALGORITHM = normalize_diff_algorithm(str(data["diff_algorithm"]))
         if "inline_diff_default_mode" in data:
             INLINE_DIFF_DEFAULT_MODE = normalize_inline_diff_mode(str(data["inline_diff_default_mode"]))
         if "inline_diff_max_changed_chars" in data:
@@ -1110,10 +1133,16 @@ def analyze():
                 source_selection,
                 context_lines=context_lines,
                 merge_threshold=merge_threshold,
+                diff_algorithm=str(config_snapshot.get("diff_algorithm", DIFF_ALGORITHM)),
             )
         else:
             content_source = content_source_for_diff(source_mode, target_ref)
-            diff_cmd_label = diff_command_label(source_mode, base_ref, target_ref)
+            diff_cmd_label = diff_command_label(
+                source_mode,
+                base_ref,
+                target_ref,
+                str(config_snapshot.get("diff_algorithm", DIFF_ALGORITHM)),
+            )
             diff_text = get_analysis_diff_text(str(repo), source_mode, base_ref, target_ref, config_snapshot)
     except (RuntimeError, ValueError) as e:
         return error_response(str(e))
@@ -1168,7 +1197,10 @@ def reconfigure_analysis():
 
     previous_config = session_config(session)
     config_snapshot = current_config_snapshot()
-    if previous_config.get("diff_mode") != config_snapshot.get("diff_mode"):
+    if (
+        previous_config.get("diff_mode") != config_snapshot.get("diff_mode")
+        or previous_config.get("diff_algorithm") != config_snapshot.get("diff_algorithm")
+    ):
         return jsonify({"requires_reanalyze": True})
 
     raw_hunks = session.get("raw_hunks")

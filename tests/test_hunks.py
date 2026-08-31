@@ -64,13 +64,41 @@ class HunkMergeTests(unittest.TestCase):
                 selection,
                 context_lines=4,
                 merge_threshold=8,
+                diff_algorithm="patience",
             )
 
         self.assertEqual(diff_text, "diff text")
-        self.assertEqual(label, "git diff --cached base-ref -U4 --inter-hunk-context=8")
+        self.assertEqual(
+            label,
+            "git diff --diff-algorithm=patience --cached base-ref -U4 --inter-hunk-context=8",
+        )
         run_git.assert_called_once_with(
             ".",
-            ["diff", "--cached", "base-ref", "-U4", "--inter-hunk-context=8"],
+            [
+                "diff",
+                "--diff-algorithm=patience",
+                "--cached",
+                "base-ref",
+                "-U4",
+                "--inter-hunk-context=8",
+            ],
+        )
+
+    def test_get_diff_passes_selected_algorithm_to_git(self):
+        result = subprocess.CompletedProcess([], 0, "diff text", "")
+
+        with patch.object(diff2png, "run_git", return_value=result) as run_git:
+            diff_text = diff2png.get_diff(
+                ".",
+                context_lines=0,
+                source_mode="worktree",
+                diff_algorithm="minimal",
+            )
+
+        self.assertEqual(diff_text, "diff text")
+        run_git.assert_called_once_with(
+            ".",
+            ["diff", "--diff-algorithm=minimal", "HEAD", "-U0"],
         )
 
     def test_analyze_combines_selected_history_and_current_changes(self):
@@ -316,6 +344,36 @@ class HunkMergeTests(unittest.TestCase):
             self.assertEqual(get_response.get_json()["diff_mode"], "added")
         finally:
             diff2png.DIFF_MODE = original
+
+    def test_config_accepts_supported_diff_algorithms(self):
+        original = diff2png.DIFF_ALGORITHM
+        try:
+            client = diff2png.app.test_client()
+            for algorithm in ("myers", "minimal", "patience", "histogram"):
+                with self.subTest(algorithm=algorithm):
+                    response = client.post("/api/config", json={"diff_algorithm": algorithm})
+                    self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                    self.assertEqual(client.get("/api/config").get_json()["diff_algorithm"], algorithm)
+
+            invalid_response = client.post("/api/config", json={"diff_algorithm": "unknown"})
+            self.assertEqual(invalid_response.status_code, 400)
+            self.assertIn("diff_algorithm", invalid_response.get_json()["error"])
+        finally:
+            diff2png.DIFF_ALGORITHM = original
+
+    def test_settings_drawer_exposes_diff_algorithm_options(self):
+        client = diff2png.app.test_client()
+        response = client.get("/")
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('id="cfg-diff-algorithm"', html)
+        self.assertIn('aria-describedby="diffAlgorithmHelp"', html)
+        self.assertIn('role="dialog"', html)
+        self.assertIn("handleDrawerKeydown(event)", html)
+        for algorithm in ("myers", "minimal", "patience", "histogram"):
+            self.assertIn(f'value="{algorithm}"', html)
+        self.assertIn("changedKeys.includes('diff_algorithm')", html)
 
     def test_config_accepts_inline_diff_max_changed_chars(self):
         original = diff2png.INLINE_DIFF_MAX_CHANGED_CHARS

@@ -245,7 +245,7 @@
     .setting-label code {
       font-family: var(--mono);
       font-size: 10px;
-      color: var(--text-dim);
+      color: var(--text);
       background: var(--bg);
       padding: 1px 5px;
       border-radius: 3px;
@@ -253,7 +253,7 @@
 
     .setting-desc {
       font-size: 11px;
-      color: var(--text-dim);
+      color: var(--text);
       margin-bottom: 8px;
       line-height: 1.5;
     }
@@ -1698,6 +1698,16 @@
     }
 
     @media (max-width: 560px) {
+      .drawer-close {
+        width: 44px;
+        height: 44px;
+      }
+
+      .drawer select,
+      .drawer-footer .btn {
+        min-height: 44px;
+      }
+
       .selection-bar {
         grid-template-columns: minmax(0, 1fr);
       }
@@ -1847,7 +1857,8 @@
     <span class="subtitle">git diff HEAD → PNG</span>
     <span class="spacer"></span>
     <span class="status" id="statusBar">待機中</span>
-    <button class="btn btn-ghost icon-btn" id="gearBtn" onclick="toggleDrawer()" title="表示設定" aria-label="表示設定">
+    <button class="btn btn-ghost icon-btn" id="gearBtn" onclick="toggleDrawer()" title="設定" aria-label="設定"
+      aria-controls="drawer" aria-expanded="false">
       <svg class="icon" aria-hidden="true">
         <use href="#icon-settings"></use>
       </svg>
@@ -1862,18 +1873,39 @@
 
   <!-- Settings Drawer -->
   <div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
-  <div class="drawer" id="drawer">
+  <div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle"
+    aria-hidden="true" onkeydown="handleDrawerKeydown(event)" inert>
     <div class="drawer-header">
-      <h2><svg class="icon icon-sm" aria-hidden="true">
+      <h2 id="drawerTitle"><svg class="icon icon-sm" aria-hidden="true">
           <use href="#icon-settings"></use>
-        </svg>表示設定</h2>
-      <button class="drawer-close" onclick="closeDrawer()" title="閉じる" aria-label="閉じる">
+        </svg>設定</h2>
+      <button class="drawer-close" id="drawerCloseBtn" onclick="closeDrawer()" title="閉じる" aria-label="閉じる">
         <svg class="icon" aria-hidden="true">
           <use href="#icon-x"></use>
         </svg>
       </button>
     </div>
     <div class="drawer-body">
+
+      <div class="setting-group">
+        <div class="setting-group-label">差分 / 検出</div>
+
+        <div class="setting-item">
+          <label class="setting-label" for="cfg-diff-algorithm">
+            <span>差分アルゴリズム</span>
+            <code>diff_algorithm</code>
+          </label>
+          <div class="setting-desc" id="diffAlgorithmHelp">Gitが共通行を選ぶ方法。Histogramは重複の多いコードで読みやすい差分になりやすいです。</div>
+          <div class="setting-row">
+            <select id="cfg-diff-algorithm" aria-describedby="diffAlgorithmHelp">
+              <option value="histogram">Histogram（推奨）</option>
+              <option value="myers">Myers（Git標準）</option>
+              <option value="patience">Patience</option>
+              <option value="minimal">Minimal（最小差分）</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
       <div class="setting-group">
         <div class="setting-group-label">表示 / 行内差分</div>
@@ -2580,6 +2612,9 @@
       ) {
         document.getElementById('sourceDiffMode').value = prefs.diff_mode;
       }
+      if (['myers', 'minimal', 'patience', 'histogram'].includes(prefs.diff_algorithm)) {
+        document.getElementById('cfg-diff-algorithm').value = prefs.diff_algorithm;
+      }
       if (prefs.inline_diff_default_mode === 'full' || prefs.inline_diff_default_mode === 'off') {
         document.getElementById('cfg-inline-default').value = prefs.inline_diff_default_mode;
       } else if (prefs.inline_diff_default_mode === 'new') {
@@ -2758,6 +2793,7 @@
     function buildConfigPayload() {
       return {
         diff_mode: getSelectedDiffMode(),
+        diff_algorithm: document.getElementById('cfg-diff-algorithm').value,
         context_lines: parseInt(document.getElementById('cfg-context').value, 10),
         merge_threshold: parseInt(document.getElementById('cfg-merge').value, 10),
         html_width: parseInt(document.getElementById('cfg-width').value, 10),
@@ -2771,6 +2807,7 @@
     function normalizeConfigPayload(payload) {
       return {
         diff_mode: payload.diff_mode,
+        diff_algorithm: payload.diff_algorithm || 'histogram',
         context_lines: Number(payload.context_lines),
         merge_threshold: Number(payload.merge_threshold),
         html_width: Number(payload.html_width),
@@ -4945,7 +4982,8 @@
     }
 
     // ---- 設定ドロワー ----
-    const DEFAULTS = { diffMode: 'file', inlineDiffDefault: 'full', context: 5, merge: 8, width: 960, outdir: 'diff_screenshots', background: 'normal' };
+    const DEFAULTS = { diffMode: 'file', diffAlgorithm: 'histogram', inlineDiffDefault: 'full', context: 5, merge: 8, width: 960, outdir: 'diff_screenshots', background: 'normal' };
+    let drawerReturnFocus = null;
 
     function toggleDrawer() {
       const isOpen = document.getElementById('drawer').classList.contains('open');
@@ -4953,19 +4991,57 @@
     }
 
     function openDrawer() {
-      document.getElementById('drawer').classList.add('open');
+      const drawer = document.getElementById('drawer');
+      drawerReturnFocus = document.activeElement;
+      drawer.removeAttribute('inert');
+      drawer.setAttribute('aria-hidden', 'false');
+      drawer.classList.add('open');
       document.getElementById('drawerOverlay').classList.add('open');
       document.getElementById('gearBtn').classList.add('open');
+      document.getElementById('gearBtn').setAttribute('aria-expanded', 'true');
+      requestAnimationFrame(() => document.getElementById('drawerCloseBtn').focus());
     }
 
     function closeDrawer() {
-      document.getElementById('drawer').classList.remove('open');
+      const drawer = document.getElementById('drawer');
+      drawer.classList.remove('open');
+      drawer.setAttribute('aria-hidden', 'true');
+      drawer.setAttribute('inert', '');
       document.getElementById('drawerOverlay').classList.remove('open');
       document.getElementById('gearBtn').classList.remove('open');
+      document.getElementById('gearBtn').setAttribute('aria-expanded', 'false');
+      if (drawerReturnFocus instanceof HTMLElement) {
+        drawerReturnFocus.focus();
+      }
+      drawerReturnFocus = null;
+    }
+
+    function handleDrawerKeydown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDrawer();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const drawer = document.getElementById('drawer');
+      const focusable = [...drawer.querySelectorAll('button, select, input, [tabindex]:not([tabindex="-1"])')]
+        .filter(element => !element.disabled);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
 
     function resetConfig() {
       document.getElementById('sourceDiffMode').value = DEFAULTS.diffMode;
+      document.getElementById('cfg-diff-algorithm').value = DEFAULTS.diffAlgorithm;
       document.getElementById('cfg-inline-default').value = DEFAULTS.inlineDiffDefault;
       setSlider('cfg-context', 'cfg-context-val', DEFAULTS.context);
       setSlider('cfg-merge', 'cfg-merge-val', DEFAULTS.merge);
@@ -5002,7 +5078,9 @@
         }
 
         const changedKeys = changedConfigKeys(previousConfig, payload);
-        const needsFullAnalyze = changedKeys.includes('diff_mode');
+        const needsFullAnalyze =
+          changedKeys.includes('diff_mode') ||
+          changedKeys.includes('diff_algorithm');
         const needsHunkReconfigure =
           changedKeys.includes('context_lines') ||
           changedKeys.includes('merge_threshold') ||
@@ -5048,6 +5126,7 @@
         const cfg = await res.json();
         currentDiffMode = cfg.diff_mode || 'file';
         document.getElementById('sourceDiffMode').value = currentDiffMode;
+        document.getElementById('cfg-diff-algorithm').value = cfg.diff_algorithm || 'histogram';
         updatePreviewDiffModeSegment();
         setSlider('cfg-context', 'cfg-context-val', cfg.context_lines);
         setSlider('cfg-merge', 'cfg-merge-val', cfg.merge_threshold);
